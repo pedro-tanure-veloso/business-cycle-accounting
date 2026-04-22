@@ -21,6 +21,7 @@ def solve_counterfactual(
     P_var: np.ndarray,
     active_wedges: list[int],
     ss_model: BCAStateSpace | None = None,
+    P_0: np.ndarray | None = None,
 ) -> dict:
     """
     Re-solve the model for a counterfactual where only active_wedges fluctuate.
@@ -100,6 +101,8 @@ def solve_counterfactual(
         "P_l": build_policy(static_cf["l"]),
         "P_x": build_policy(static_cf["x"]),
         "active_wedges": active_wedges,
+        "P_var": P_var,
+        "P_0": P_0 if P_0 is not None else np.zeros(4),
     }
 
 
@@ -112,13 +115,15 @@ def run_counterfactual(
     but restricted decision rules.
 
     In the counterfactual economy, only active wedges fluctuate —
-    inactive wedges are held at steady state (zero in log-deviations).
+    inactive wedges are held at their VAR unconditional means
+    (I - P_var)^{-1} P_0, which equals zero when wedges are zero-mean centered.
 
     Parameters
     ----------
     smoothed_states : T x 5 array [k_hat, A_hat, taul_hat, taux_hat, g_hat]
     cf_policies : dict with P_k, P_y, P_l, P_x, active_wedges
-                  from solve_counterfactual
+                  from solve_counterfactual; optionally P_0 and P_var for
+                  computing unconditional means of inactive wedges
 
     Returns
     -------
@@ -129,10 +134,22 @@ def run_counterfactual(
 
     active_wedges = cf_policies.get("active_wedges", [0, 1, 2, 3])
 
-    # Zero out inactive wedges (they are at SS in the counterfactual)
+    # Unconditional mean of the VAR: (I - P)^{-1} P_0
+    # With zero-mean centered wedges this is ~0, but compute exactly when available.
+    P_0 = cf_policies.get("P_0", np.zeros(4))
+    P_var_mat = cf_policies.get("P_var", None)
+    if P_var_mat is not None:
+        try:
+            unconditional_mean = np.linalg.solve(np.eye(4) - P_var_mat, P_0)
+        except np.linalg.LinAlgError:
+            unconditional_mean = np.zeros(4)
+    else:
+        unconditional_mean = np.zeros(4)
+
+    # Hold inactive wedges at their unconditional mean
     for j in range(4):
         if j not in active_wedges:
-            wedges[:, j] = 0.0
+            wedges[:, j] = unconditional_mean[j]
 
     P_k = cf_policies["P_k"]
     P_y = cf_policies["P_y"]
@@ -161,6 +178,7 @@ def run_all_counterfactuals(
     smoothed_states: np.ndarray,
     model: PrototypeModel,
     P_var: np.ndarray,
+    P_0: np.ndarray | None = None,
 ) -> dict:
     """
     Run all single-wedge counterfactual experiments.
@@ -171,7 +189,7 @@ def run_all_counterfactuals(
     results = {}
 
     for i, name in enumerate(wedge_names):
-        cf_pol = solve_counterfactual(model, P_var, active_wedges=[i])
+        cf_pol = solve_counterfactual(model, P_var, active_wedges=[i], P_0=P_0)
         results[name] = run_counterfactual(smoothed_states, cf_pol)
 
     return results

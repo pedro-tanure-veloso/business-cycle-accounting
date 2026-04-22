@@ -218,6 +218,56 @@ class BCAStateSpace(MLEModel):
         self["state_cov"] = V
 
 
+def estimate_var_ols(
+    wedge_hats: np.ndarray,
+) -> dict:
+    """
+    Estimate VAR(1) on directly-extracted wedge series by OLS.
+
+    This is the correct procedure when wedges are already observed (extracted
+    from static FOCs + Euler recursion). No Kalman filter is needed.
+
+    Parameters
+    ----------
+    wedge_hats : T x 4 array [A_hat, taul_hat, taux_hat, g_hat]
+                 all in log-deviations from sample mean (zero mean)
+
+    Returns
+    -------
+    dict with P_0 (intercept), P (transition matrix), Q (Cholesky), V (covariance)
+    """
+    T, n = wedge_hats.shape
+    Y = wedge_hats[1:, :]    # (T-1) x 4 — dependent variables
+    X = wedge_hats[:-1, :]   # (T-1) x 4 — one-period lags
+
+    # Augmented with intercept: Y = [ones | X] @ [P_0; P_var.T] + residuals
+    X_aug = np.column_stack([np.ones(T - 1), X])  # (T-1) x 5
+    coeffs, _, _, _ = np.linalg.lstsq(X_aug, Y, rcond=None)
+
+    P_0 = coeffs[0, :]       # intercept (4,)
+    P_var = coeffs[1:, :].T  # transition matrix (4 x 4)
+
+    residuals = Y - X_aug @ coeffs
+    dof = T - 1 - (n + 1)  # observations minus (lags + intercept) per equation
+    V = residuals.T @ residuals / max(dof, 1)
+
+    try:
+        Q = np.linalg.cholesky(V)
+    except np.linalg.LinAlgError:
+        Q = np.diag(np.sqrt(np.maximum(np.diag(V), 0)))
+
+    eigs = np.abs(np.linalg.eigvals(P_var))
+    if np.max(eigs) >= 1.0:
+        import warnings
+        warnings.warn(
+            f"VAR is non-stationary: max |eigenvalue| = {np.max(eigs):.4f}. "
+            "Counterfactuals may be unreliable.",
+            stacklevel=2,
+        )
+
+    return {"P_0": P_0, "P": P_var, "Q": Q, "V": V}
+
+
 def estimate_var(
     df: pd.DataFrame,
     params: CalibrationParams | None = None,

@@ -1,8 +1,12 @@
 """
-Static wedge extraction for BCA (BCKM 2016).
+Wedge extraction for BCA (BCKM 2016).
 
-Extracts efficiency, labor, and government wedges from data.
-(Investment wedge requires the solved VAR — see Milestone 5.)
+A and (1-tau_l) are extracted from static FOCs.
+g is read directly from data.
+(1+tau_x) is extracted from the CKM Euler equation using backward recursion.
+
+No Kalman smoother is used for wedge extraction — that machinery is reserved
+for VAR parameter estimation only.
 """
 
 import numpy as np
@@ -147,6 +151,132 @@ def extract_static_wedges(
     )
 
     return result
+
+
+def extract_investment_wedge(
+    c: np.ndarray,
+    x: np.ndarray,
+    k: np.ndarray,
+    y: np.ndarray,
+    params: CalibrationParams,
+) -> np.ndarray:
+    """
+    Investment wedge (1+tau_x) via CKM backward Euler recursion.
+
+    The exact CKM Euler (with adjustment costs and tax on all capital transactions):
+        (1+tau_x_t) * q_t = beta/ng * (c_t/c_{t+1}) *
+            [alpha*(y/k)_{t+1} + (1-delta)*(1+tau_x_{t+1})*q_{t+1}]
+
+    Uses ex-post realized values at t+1 (rational expectations: forecast
+    errors are orthogonal to period-t information). Terminal condition:
+    tau_x_T = 0 (no distortion at end of sample).
+
+    Parameters
+    ----------
+    c, x, y : length-T arrays (detrended per-capita)
+    k : length-(T+1) capital stock from build_capital_stock
+    params : calibration parameters
+
+    Returns
+    -------
+    one_plus_taux : (1+tau_x) series, length T
+    """
+    T = len(y)
+    alpha = params.alpha
+    delta = params.delta
+    beta = params.beta
+    a = params.a
+    b = params.b
+    ng = (1 + params.n) * (1 + params.gamma)
+
+    k_t = k[:T]   # beginning-of-period capital, length T
+    q = 1.0 + a * (x / k_t - b)   # Tobin's q
+
+    one_plus_taux = np.ones(T)  # terminal: tau_x_T = 0
+
+    for t in range(T - 2, -1, -1):
+        rhs = (
+            alpha * y[t + 1] / k[t + 1]
+            + (1 - delta) * one_plus_taux[t + 1] * q[t + 1]
+        )
+        one_plus_taux[t] = beta / ng * (c[t] / c[t + 1]) * rhs / q[t]
+
+    return one_plus_taux
+
+
+def extract_all_wedges_direct(
+    df: pd.DataFrame,
+    params: CalibrationParams,
+) -> tuple[np.ndarray, pd.DataFrame]:
+    """
+    Extract all four wedges via BCKM static inversions and backward Euler recursion.
+
+    A_t and (1-tau_l)_t from static intratemporal FOCs (no model needed).
+    g_t read directly from data.
+    (1+tau_x)_t from backward Euler recursion using realized future values.
+
+    No Kalman smoother is involved. This is the correct BCKM procedure.
+
+    Parameters
+    ----------
+    df : DataFrame with columns y, c, x, g, l (detrended, from pipeline)
+    params : calibration parameters
+
+    Returns
+    -------
+    states : T x 5 array [k_hat, A_hat, taul_hat, taux_hat, g_hat]
+             all in log-deviation from sample mean
+    wedge_levels : DataFrame with columns A, one_minus_tau_l, one_plus_tau_x, g, k
+    """
+    y = df["y"].values
+    c = df["c"].values
+    x = df["x"].values
+    l = df["l"].values
+    g = df["g"].values
+    T = len(y)
+
+    alpha = params.alpha
+    delta = params.delta
+    n = params.n
+    gamma = params.gamma
+
+    # Capital stock via perpetual inventory
+    yk_ss = ((1 + n) * (1 + gamma) / params.beta - (1 - delta)) / alpha
+    k0 = y[0] / yk_ss
+    k = build_capital_stock(x, k0, delta, n, gamma)  # length T+1
+
+    # Static extractions
+    A = efficiency_wedge(y, k, l, alpha)
+    one_minus_taul = labor_wedge(y, c, l, alpha, params.psi)
+    g_wedge = government_wedge(g)
+
+    # Investment wedge from backward Euler recursion
+    one_plus_taux = extract_investment_wedge(c, x, k, y, params)
+
+    def to_hat(series: np.ndarray) -> np.ndarray:
+        log_s = np.log(np.maximum(series, 1e-12))
+        return log_s - np.mean(log_s)
+
+    k_hat = to_hat(k[:T])
+    A_hat = to_hat(A)
+    taul_hat = to_hat(one_minus_taul)
+    taux_hat = to_hat(one_plus_taux)
+    g_hat = to_hat(g_wedge)
+
+    states = np.column_stack([k_hat, A_hat, taul_hat, taux_hat, g_hat])
+
+    wedge_levels = pd.DataFrame(
+        {
+            "A": A,
+            "one_minus_tau_l": one_minus_taul,
+            "one_plus_tau_x": one_plus_taux,
+            "g": g_wedge,
+            "k": k[:T],
+        },
+        index=df.index,
+    )
+
+    return states, wedge_levels
 
 
 def extract_all_wedges_from_fit(
