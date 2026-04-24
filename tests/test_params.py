@@ -7,22 +7,23 @@ from bca_core.params import CalibrationParams
 
 def test_default_values():
     p = CalibrationParams()
-    assert p.alpha == pytest.approx(1 / 3)
-    assert p.psi == 2.5
-    assert p.delta_annual == 0.05
-    assert p.rho_annual == 0.025
+    assert p.alpha == pytest.approx(0.35)
+    assert p.psi == pytest.approx(2.24)
+    assert p.delta_annual == pytest.approx(0.0464)
+    assert p.rho_annual == pytest.approx(0.02860)
 
 
 def test_quarterly_depreciation():
     p = CalibrationParams()
-    # delta_q = 1 - (1 - 0.05)^0.25
-    expected = 1 - 0.95**0.25
+    # delta_q = 1 - (1 - 0.0464)^0.25  (BCKM 2016)
+    expected = 1 - (1 - 0.0464) ** 0.25
     assert p.delta == pytest.approx(expected, rel=1e-10)
 
 
 def test_quarterly_discount():
     p = CalibrationParams()
-    expected = 1 / 1.025**0.25
+    # beta_annual = 0.9722 → rho_annual = 0.02860 → beta_quarterly = 1/(1.02860)^0.25
+    expected = 1 / (1 + 0.02860) ** 0.25
     assert p.beta == pytest.approx(expected, rel=1e-10)
 
 

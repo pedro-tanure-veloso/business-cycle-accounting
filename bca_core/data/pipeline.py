@@ -4,6 +4,9 @@ End-to-end US data pipeline: fetch -> adjust -> detrend -> return.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -26,9 +29,25 @@ def build_us_dataset(
     params: CalibrationParams | None = None,
     detrend_method: str = "linear",
     labor_target_mean: float = 0.25,
+    data_path: str | Path | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """
     Build the adjusted US dataset for BCA.
+
+    If data_path is given and the file exists, load the processed dataset from
+    disk (no FRED API call required).  If it does not exist, run the full
+    pipeline and save the result so subsequent calls can use it.
+
+    The saved file is a parquet for the DataFrame plus a JSON sidecar
+    (<data_path>.meta.json) for the scalar metadata.
+
+    Parameters
+    ----------
+    data_path : path to a .parquet file, e.g. "data/us_1980_2014.parquet"
+        When provided:
+          - If the file exists → load and return immediately (no API needed).
+          - If the file does not exist → fetch, process, save, then return.
+        When None → always fetch from FRED (original behaviour).
 
     Returns
     -------
@@ -36,50 +55,50 @@ def build_us_dataset(
         Columns: y, c, x, g, l (all real per-capita, detrended)
         Index: DatetimeIndex (quarterly)
     metadata : dict
-        trend_info, n_annual, gamma_annual, raw data references
+        n_annual, gamma_annual (scalars); raw_real_pc omitted when loaded
+        from cache.
     """
+    if data_path is not None:
+        data_path = Path(data_path)
+        meta_path = data_path.with_suffix("").with_suffix(".meta.json")
+
+        if data_path.exists() and meta_path.exists():
+            df = pd.read_parquet(data_path)
+            with open(meta_path) as f:
+                metadata = json.load(f)
+            return df, metadata
+
+    # ── Full pipeline (requires FRED API) ────────────────────────────────
     if params is None:
         params = CalibrationParams()
 
-    # Step 1: Fetch raw data (with a buffer for trend estimation)
     fetcher = FredDataFetcher(api_key=fred_api_key)
 
-    # Fetch a wider window for initial conditions / burn-in
     fetch_start = "1947-01-01"
     fetch_end = "2024-12-31"
     raw = fetcher.fetch_raw(start=fetch_start, end=fetch_end)
 
-    # Step 2: Compute government wedge (before adjustments)
     raw["g_raw"] = compute_government_wedge(raw)
-
-    # Step 3: Durables reclassification
     adj = reclassify_durables(raw)
-
-    # Step 4: Sales tax subtraction
     adj = subtract_sales_tax(adj)
 
-    # Step 5: Real per-capita conversion
     series_to_deflate = ["y_adj", "c_adj", "x_adj", "g_raw"]
     adj = to_real_per_capita(adj, series_to_deflate)
 
-    # Step 6: Labor input
     labor = compute_labor_input(adj, target_mean=labor_target_mean)
     adj["l"] = labor
 
-    # Rename for clarity
     adj["y_real_pc"] = adj["y_adj"]
     adj["c_real_pc"] = adj["c_adj"]
     adj["x_real_pc"] = adj["x_adj"]
     adj["g_real_pc"] = adj["g_raw"]
 
-    # Step 7: Trim to sample period
     start_dt = pd.Timestamp(pd.Period(start, freq="Q").start_time)
     end_dt = pd.Timestamp(pd.Period(end, freq="Q").start_time)
 
     sample = adj.loc[start_dt:end_dt].copy()
     sample = sample.dropna(subset=["y_real_pc", "c_real_pc", "x_real_pc", "l"])
 
-    # Step 8: Estimate population and technology growth rates
     pop = sample["working_age_pop"].dropna()
     if len(pop) > 4:
         t = np.arange(len(pop))
@@ -90,23 +109,17 @@ def build_us_dataset(
         n_annual = 0.01
         n_quarterly = (1 + n_annual) ** 0.25 - 1
 
-    # Step 9: Detrend using a COMMON trend from output
-    # All level variables (y, c, x, g) must be divided by the same trend
-    # so the resource constraint y = c + x + g is preserved.
-    metadata = {"trends": {}}
+    metadata: dict = {}
 
-    # Estimate the common trend from output
     _, y_trend = remove_trend(sample["y_real_pc"], method=detrend_method)
     gamma_quarterly = y_trend["slope"]
     gamma_annual = (1 + gamma_quarterly) ** 4 - 1
 
-    metadata["trends"]["y"] = y_trend
     metadata["n_annual"] = n_annual
     metadata["n_quarterly"] = n_quarterly
     metadata["gamma_annual"] = gamma_annual
     metadata["gamma_quarterly"] = gamma_quarterly
 
-    # Apply the OUTPUT trend to ALL level variables
     T = len(sample)
     t = np.arange(T)
     log_trend = y_trend["intercept"] + y_trend["slope"] * t
@@ -117,21 +130,24 @@ def build_us_dataset(
     x_dt = sample["x_real_pc"].values / trend_level
     g_dt = sample["g_real_pc"].values / trend_level
 
-    # Step 10: Build final DataFrame
     result = pd.DataFrame(
-        {
-            "y": y_dt,
-            "c": c_dt,
-            "x": x_dt,
-            "g": g_dt,
-            "l": sample["l"].values,
-        },
+        {"y": y_dt, "c": c_dt, "x": x_dt, "g": g_dt, "l": sample["l"].values},
         index=sample.index,
     )
 
-    # Store raw (non-detrended) series for reference
     metadata["raw_real_pc"] = sample[
         ["y_real_pc", "c_real_pc", "x_real_pc", "g_real_pc", "l"]
     ].copy()
+
+    # ── Save to disk if a path was requested ─────────────────────────────
+    if data_path is not None:
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        result.to_parquet(data_path)
+        scalar_meta = {
+            k: v for k, v in metadata.items()
+            if isinstance(v, (int, float, str))
+        }
+        with open(meta_path, "w") as f:
+            json.dump(scalar_meta, f, indent=2)
 
     return result, metadata

@@ -13,10 +13,10 @@ class CalibrationParams:
     converted to quarterly via properties.
     """
 
-    alpha: float = 1 / 3           # capital share
-    psi: float = 2.5               # leisure weight in utility
-    delta_annual: float = 0.05     # annual depreciation rate
-    rho_annual: float = 0.025      # annual rate of time preference
+    alpha: float = 0.35             # capital share (BCKM 2016 θ=0.35)
+    psi: float = 2.24              # leisure weight in utility (BCKM 2016 ψ=2.24)
+    delta_annual: float = 0.0464   # annual depreciation rate (BCKM 2016 δ=0.0464)
+    rho_annual: float = 0.02860    # annual rate of time preference (BCKM β_annual=0.9722 → ρ=1/0.9722−1)
     n_annual: float = 0.0          # annual population growth (estimated from data)
     gamma_annual: float = 0.0      # annual technology growth (estimated from data)
     adj_cost_elasticity: float = 0.25  # target elasticity of q w.r.t. x/k (BGG 1999)

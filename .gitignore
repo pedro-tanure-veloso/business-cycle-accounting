@@ -1,0 +1,18 @@
+# Matlab reference files — never commit
+BCKM/
+
+# Build artifacts
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# OS
+.DS_Store
+
+# Data cache
+~/.bca_cache/
+
+# Jupyter
+.ipynb_checkpoints/

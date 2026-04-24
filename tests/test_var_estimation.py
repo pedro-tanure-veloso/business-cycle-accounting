@@ -96,7 +96,14 @@ class TestBCAStateSpace:
 class TestPrepareObservables:
 
     def test_at_steady_state(self):
-        """At SS values, all hats should be zero."""
+        """
+        At SS values, l_hat = 0 (normalized by l_ss).
+
+        y_hat, x_hat, g_hat are log(y_dt) and log(ratio/SS_ratio) respectively.
+        When all series equal SS levels, x_hat = g_hat = log(y_ss) and y_hat = log(y_ss)
+        because x_hat = log(x_ss) - log(x_ss/y_ss) = log(y_ss), etc.
+        The constant offset log(y_ss) is absorbed by P_0/Sbar in the filter.
+        """
         import pandas as pd
         ss = PrototypeModel().steady_state()
         df = pd.DataFrame({
@@ -108,4 +115,10 @@ class TestPrepareObservables:
         })
         obs = prepare_observables(df, ss)
         assert obs.shape == (10, 4)
-        np.testing.assert_allclose(obs, 0.0, atol=1e-14)
+        log_y_ss = np.log(ss["y"])
+        # l_hat = 0 (labor is directly normalized by l_ss)
+        np.testing.assert_allclose(obs[:, 1], 0.0, atol=1e-14)
+        # y, x, g hats all equal log(y_ss) — consistent constant offset absorbed by P_0
+        np.testing.assert_allclose(obs[:, 0], log_y_ss, atol=1e-14)
+        np.testing.assert_allclose(obs[:, 2], log_y_ss, atol=1e-14)
+        np.testing.assert_allclose(obs[:, 3], log_y_ss, atol=1e-14)

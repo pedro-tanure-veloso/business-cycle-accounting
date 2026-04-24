@@ -135,16 +135,18 @@ def run_counterfactual(
     active_wedges = cf_policies.get("active_wedges", [0, 1, 2, 3])
 
     # Unconditional mean of the VAR: (I - P)^{-1} P_0
-    # With zero-mean centered wedges this is ~0, but compute exactly when available.
+    # For near-unit-root or non-stationary P, (I-P) is near-singular and
+    # the unconditional mean is ill-defined. Fall back to zero (SS) in that case.
     P_0 = cf_policies.get("P_0", np.zeros(4))
     P_var_mat = cf_policies.get("P_var", None)
-    if P_var_mat is not None:
+    unconditional_mean = np.zeros(4)
+    if P_var_mat is not None and np.any(P_0 != 0):
         try:
-            unconditional_mean = np.linalg.solve(np.eye(4) - P_var_mat, P_0)
+            IminusP = np.eye(4) - P_var_mat
+            if np.linalg.cond(IminusP) < 1e6:
+                unconditional_mean = np.linalg.solve(IminusP, P_0)
         except np.linalg.LinAlgError:
-            unconditional_mean = np.zeros(4)
-    else:
-        unconditional_mean = np.zeros(4)
+            pass
 
     # Hold inactive wedges at their unconditional mean
     for j in range(4):

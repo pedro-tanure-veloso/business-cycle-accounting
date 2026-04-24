@@ -20,26 +20,35 @@ def prepare_observables(
     ss: dict,
 ) -> np.ndarray:
     """
-    Convert detrended data to log-deviations from sample means.
+    Convert detrended data to log-deviations from model steady state.
 
-    Uses data sample means rather than model SS values for centering,
-    ensuring zero-mean observables as the state-space model expects.
-    The linear policy functions remain valid since they are derived
-    as perturbations around a steady state.
+    Follows BCKM (2016): normalize each observable by the model SS ratio
+    (in the same detrended units where y_dt ~ 1), rather than subtracting
+    sample means. This allows P_0 to absorb any small discrepancy between
+    the model SS and the data mean — which is how BCKM gets P_0 ≠ 0.
+
+    - y: log(y_dt); already ~0 mean from OLS trend removal
+    - l: log(l / l_ss) where l_ss is the model SS labor
+    - x: log(x_dt / (x_ss/y_ss)); model's investment-output ratio as normalizer
+    - g: log(g_dt / (g_ss/y_ss)); model's government-output ratio as normalizer
 
     Parameters
     ----------
-    df : DataFrame with columns y, c, x, g, l (from pipeline)
-    ss : steady-state dict (unused, kept for API compatibility)
+    df : DataFrame with columns y, c, x, g, l (from pipeline, detrended by y trend)
+    ss : steady-state dict from proto.steady_state()
 
     Returns
     -------
     T x 4 array: [y_hat, l_hat, x_hat, g_hat]
     """
-    y_hat = np.log(df["y"].values) - np.mean(np.log(df["y"].values))
-    l_hat = np.log(df["l"].values) - np.mean(np.log(df["l"].values))
-    x_hat = np.log(df["x"].values) - np.mean(np.log(df["x"].values))
-    g_hat = np.log(df["g"].values) - np.mean(np.log(df["g"].values))
+    x_ss_norm = ss["x"] / ss["y"]   # model's investment-output ratio
+    g_ss_norm = ss["g"] / ss["y"]   # model's government-output ratio
+    l_ss = ss["l"]                   # model's steady-state labor
+
+    y_hat = np.log(df["y"].values)
+    l_hat = np.log(df["l"].values) - np.log(l_ss)
+    x_hat = np.log(df["x"].values) - np.log(x_ss_norm)
+    g_hat = np.log(df["g"].values) - np.log(g_ss_norm)
 
     return np.column_stack([y_hat, l_hat, x_hat, g_hat])
 
@@ -266,6 +275,310 @@ def estimate_var_ols(
         )
 
     return {"P_0": P_0, "P": P_var, "Q": Q, "V": V}
+
+
+def estimate_var_mle(
+    obs_hat: np.ndarray,
+    proto: "PrototypeModel",
+    n_restarts: int = 5,
+    verbose: bool = True,
+    P_ols: np.ndarray | None = None,
+    Q_ols: np.ndarray | None = None,
+    P_0_ols: np.ndarray | None = None,
+    **kwargs,
+) -> dict:
+    """
+    Estimate VAR(1) by Kalman-filter MLE, following BCKM (2016) mleqadj.m.
+
+    The latent state [k_hat, A_hat, taul_hat, taux_hat, g_hat] is inferred
+    jointly with the VAR parameters by maximising the Kalman-filter
+    log-likelihood of observables [y_hat, l_hat, x_hat, g_hat].
+
+    Initialized from BCKM (2016) Table 77 US MLE estimates.
+
+    Parameters
+    ----------
+    obs_hat   : T x 4 array  [y_hat, l_hat, x_hat, g_hat]  (demeaned)
+    proto     : PrototypeModel
+    n_restarts: optimizer restarts (first from BCKM init, rest perturbed)
+    verbose   : print per-restart log-likelihoods
+
+    Returns
+    -------
+    dict: P_0 (4,), P (4x4), Q (4x4 chol), V (4x4 cov),
+          smoothed_states (T x 5), log_likelihood
+    """
+    from scipy.optimize import minimize as _minimize
+
+    T, n_obs = obs_hat.shape
+    N_P = 30  # 4 (P_0) + 16 (P) + 10 (Q lower-tri)
+
+    # ── Pre-compute model primitives ─────────────────────────────────────
+    ss = proto.steady_state()
+    A_mod, B_mod, C_mod, static, D_mod = proto.log_linearize(ss)
+    sol = proto.solve()
+    pk_base = sol.klein.P[0, 0]
+    fc_base = sol.klein.F[0, 0]
+
+    # ── Decision rules given P_var ───────────────────────────────────────
+    def _policies(P_var):
+        C_eff = C_mod - D_mod @ P_var
+        a00 = A_mod[0, 0] + A_mod[0, 1] * fc_base
+        a10 = A_mod[1, 0] + A_mod[1, 1] * fc_base
+        M01 = A_mod[0, 1] * P_var.T - B_mod[0, 1] * np.eye(4)
+        M11 = A_mod[1, 1] * P_var.T - B_mod[1, 1] * np.eye(4)
+        LHS = M11 - (a10 / a00) * M01
+        RHS = C_eff[1] - (a10 / a00) * C_eff[0]
+        phi_c = np.linalg.solve(LHS, RHS)
+        phi_k = (C_eff[0] - M01 @ phi_c) / a00
+
+        P_k_v = np.concatenate([[pk_base], phi_k])
+
+        def _build(coeffs):
+            return np.concatenate([
+                [coeffs[0] + coeffs[1] * fc_base],
+                coeffs[1] * phi_c + coeffs[2:],
+            ])
+
+        return P_k_v, _build(static["y"]), _build(static["l"]), _build(static["x"])
+
+    # ── Build Kalman state-space matrices ────────────────────────────────
+    def _build_ss(P_var, Q_mat):
+        P_k_v, P_y, P_l, P_x = _policies(P_var)
+
+        F = np.zeros((5, 5))          # transition
+        F[0, :] = P_k_v               # capital eq
+        F[1:, 1:] = P_var             # VAR for wedges
+
+        H = np.zeros((4, 5))          # observation
+        H[0] = P_y
+        H[1] = P_l
+        H[2] = P_x
+        H[3, 4] = 1.0                 # g directly observed
+
+        Q_proc = np.zeros((5, 5))     # process noise (wedges only)
+        Q_proc[1:, 1:] = Q_mat
+
+        return F, H, Q_proc
+
+    # ── Forward Kalman filter (loglik only, fast) ────────────────────────
+    _R_OBS = 1e-8 * np.eye(n_obs)
+    _CONST = n_obs * np.log(2.0 * np.pi)
+
+    def _kf_ll(F, H, Q_proc, P_0_vec, Sigma0=None):
+        intercept = np.r_[0.0, P_0_vec]  # capital has no intercept
+        x = np.zeros(5)
+        Sigma = Sigma0 if Sigma0 is not None else np.eye(5) * 1e4
+        ll = 0.0
+        for t in range(T):
+            xp = F @ x + intercept
+            Sp = F @ Sigma @ F.T + Q_proc
+            innov = obs_hat[t] - H @ xp
+            S = H @ Sp @ H.T + _R_OBS
+            sign, logdet = np.linalg.slogdet(S)
+            if sign <= 0:
+                return -1e20
+            ll += -0.5 * (_CONST + logdet + innov @ np.linalg.solve(S, innov))
+            K = np.linalg.solve(S.T, H @ Sp.T).T
+            x = xp + K @ innov
+            Sigma = (np.eye(5) - K @ H) @ Sp
+        return ll
+
+    # ── Forward Kalman filter (full, stores arrays for RTS smoother) ─────
+    def _kf_full(F, H, Q_proc, P_0_vec, Sigma0=None):
+        intercept = np.r_[0.0, P_0_vec]
+        x_filt = np.zeros((T, 5))
+        P_filt = np.zeros((T, 5, 5))
+        x_pred = np.zeros((T, 5))
+        P_pred = np.zeros((T, 5, 5))
+        x = np.zeros(5)
+        Sigma = Sigma0 if Sigma0 is not None else np.eye(5) * 1e4
+        ll = 0.0
+        for t in range(T):
+            xp = F @ x + intercept
+            Sp = F @ Sigma @ F.T + Q_proc
+            x_pred[t], P_pred[t] = xp, Sp
+            innov = obs_hat[t] - H @ xp
+            S = H @ Sp @ H.T + _R_OBS
+            sign, logdet = np.linalg.slogdet(S)
+            if sign > 0:
+                ll += -0.5 * (_CONST + logdet + innov @ np.linalg.solve(S, innov))
+            K = np.linalg.solve(S.T, H @ Sp.T).T
+            x = xp + K @ innov
+            Sigma = (np.eye(5) - K @ H) @ Sp
+            x_filt[t], P_filt[t] = x, Sigma
+        return x_filt, P_filt, x_pred, P_pred, ll
+
+    # ── RTS backward smoother ────────────────────────────────────────────
+    def _rts(x_filt, P_filt, x_pred, P_pred, F):
+        x_s = x_filt.copy()
+        P_s = P_filt.copy()
+        for t in range(T - 2, -1, -1):
+            G = np.linalg.solve(P_pred[t + 1].T, F @ P_filt[t].T).T
+            x_s[t] += G @ (x_s[t + 1] - x_pred[t + 1])
+            P_s[t] += G @ (P_s[t + 1] - P_pred[t + 1]) @ G.T
+        return x_s
+
+    # ── Parameter pack / unpack: theta = [Sbar(4), P_vec(16), Q_lower_tri(10)] ─
+    # Sbar is the unconditional mean of log wedges (BCKM parametrization).
+    # P_0 = (I - P) @ Sbar is derived inside — never stored directly in theta.
+    # This gives a better-conditioned landscape near the unit root: changes in
+    # Sbar map linearly to changes in P_0, avoiding the (I-P)^{-1} blow-up.
+    def _unpack(theta):
+        Sbar = theta[:4]
+        P_var = theta[4:20].reshape(4, 4)
+        P_0 = (np.eye(4) - P_var) @ Sbar   # BCKM: P_0 = (I - P) * Sbar
+        Q_chol = np.zeros((4, 4))
+        idx = 20
+        for i in range(4):
+            for j in range(i + 1):
+                Q_chol[i, j] = theta[idx]
+                idx += 1
+        return P_0, P_var, Q_chol
+
+    def _pack(Sbar, P_var, Q_chol):
+        theta = np.empty(N_P)
+        theta[:4] = Sbar
+        theta[4:20] = P_var.ravel()
+        idx = 20
+        for i in range(4):
+            for j in range(i + 1):
+                theta[idx] = Q_chol[i, j]
+                idx += 1
+        return theta
+
+    # ── DARE steady-state covariance (much tighter than stationary cov) ──
+    # For near-unit-root VAR, the stationary process covariance ≫ DARE,
+    # because the DARE accounts for how much uncertainty is removed each
+    # period by the (near-perfect) observations.  Using DARE prevents the
+    # filter from assigning GR investment dynamics to capital rather than
+    # the investment wedge.
+    def _dare_cov(F, H, Q_proc):
+        from scipy.linalg import solve_discrete_are
+        try:
+            Q_reg = Q_proc + 1e-12 * np.eye(5)
+            return solve_discrete_are(F, H.T, Q_reg, _R_OBS)
+        except Exception:
+            pass
+        from scipy.linalg import solve_discrete_lyapunov
+        try:
+            return solve_discrete_lyapunov(F, Q_proc)
+        except Exception:
+            return np.eye(5) * 1e4
+
+    # ── Starting point: BCKM Table 8/9/10 US MLE estimates ─────────────
+    # Wedge order: [A/z, tau_l, tau_x, g]  (matches our state ordering)
+    _P_bckm = np.array([
+        [ 0.9887,  0.0307, -0.0089, -0.0407],
+        [-0.0012,  1.0011, -0.0275,  0.0175],
+        [-0.0045,  0.0449,  0.9675, -0.0426],
+        [ 0.0063,  0.0017,  0.0016,  0.9945],
+    ])
+    # P_0 from BCKM Table 9; convert to Sbar = inv(I - P) @ P_0
+    _P_0_bckm = np.array([0.0140, 0.0008, 0.0129, -0.0137])
+    _Sbar_bckm = np.linalg.solve(np.eye(4) - _P_bckm, _P_0_bckm)
+    # Q_chol from mleqadj x0c (adja=12.88, nearest to our a=12.5)
+    _Q_bckm = np.array([
+        [ 0.0240,  0.0000,  0.0000,  0.0000],
+        [-0.0099,  0.0274,  0.0000,  0.0000],
+        [-0.0169, -0.0656,  0.1208,  0.0000],
+        [ 0.0000,  0.0000,  0.0000,  0.1003],
+    ])
+    x0_bckm = _pack(_Sbar_bckm, _P_bckm, _Q_bckm)
+
+    # ── Fixed Sigma0 from BCKM parameters (computed once for speed) ──────
+    # BCKM's P has tau_l diagonal = 1.0011 (slightly non-stationary).
+    # Clip diagonal to 0.995 only for DARE computation to get a valid covariance.
+    # The actual optimization is unconstrained beyond spectral-radius penalty.
+    _P_bckm_stable = _P_bckm.copy()
+    np.fill_diagonal(_P_bckm_stable,
+                     np.clip(np.diag(_P_bckm_stable), -0.995, 0.995))
+    try:
+        _F0, _H0, _Q0 = _build_ss(_P_bckm_stable, _Q_bckm @ _Q_bckm.T)
+        _Sigma0_fixed = _dare_cov(_F0, _H0, _Q0)
+    except Exception:
+        _Sigma0_fixed = np.eye(5) * 0.1
+
+    # Patch _neg_ll to use the fixed Sigma0 (replaces the per-call DARE)
+    # BCKM Table 8: tau_l diagonal = 1.0011; all other diagonals are ≤ 0.9945.
+    # Targeted bounds: only tau_l gets the relaxed 1.005 threshold.
+    # A, tau_x, g keep the old 0.995 bound to prevent spurious local optima.
+    # Spectral-radius penalty at 1.005 catches overall non-stationarity.
+    _DIAG_BOUNDS = np.array([0.995, 1.005, 0.995, 0.995])  # [A, tau_l, tau_x, g]
+
+    def _neg_ll_fast(theta):
+        P_0, P_var, Q_chol = _unpack(theta)
+        eig_max = np.max(np.abs(np.linalg.eigvals(P_var)))
+        penalty = 5e5 * max(eig_max - 1.005, 0.0) ** 2
+        diag_excess = np.maximum(np.abs(np.diag(P_var)) - _DIAG_BOUNDS, 0.0)
+        penalty += 5e5 * np.sum(diag_excess ** 2)
+        try:
+            F, H, Q_proc = _build_ss(P_var, Q_chol @ Q_chol.T)
+        except np.linalg.LinAlgError:
+            return 1e20
+        ll = _kf_ll(F, H, Q_proc, P_0, _Sigma0_fixed)
+        return (-ll if np.isfinite(ll) else 1e20) + penalty
+
+    rng = np.random.default_rng(42)
+    starts = [x0_bckm]
+    # Warm start from OLS result if provided (often has correct wedge signs)
+    if P_ols is not None:
+        Q_warm = Q_ols if Q_ols is not None else _Q_bckm
+        P_0_warm = P_0_ols if P_0_ols is not None else _P_0_bckm
+        # Convert OLS P_0 to Sbar for the new parametrization
+        try:
+            Sbar_warm = np.linalg.solve(np.eye(4) - P_ols, P_0_warm)
+        except np.linalg.LinAlgError:
+            Sbar_warm = _Sbar_bckm
+        starts.append(_pack(Sbar_warm, P_ols, Q_warm))
+    n_pert = n_restarts - 1 - (1 if P_ols is not None else 0)
+    for _ in range(max(n_pert, 0)):
+        Sbar_pert = _Sbar_bckm + rng.normal(0.0, 0.005, 4)
+        P_pert = _P_bckm + rng.normal(0.0, 0.01, (4, 4))
+        # Clip diagonal to [−1.0, 1.0] to keep starts inside the penalty region
+        np.fill_diagonal(P_pert, np.clip(np.diag(P_pert), -1.0, 1.0))
+        starts.append(_pack(Sbar_pert, P_pert, _Q_bckm))
+
+    # ── Optimise (L-BFGS-B with BCKM-style perturbation restarts) ───────
+    best_val, best_theta = np.inf, x0_bckm.copy()
+    for i, x0 in enumerate(starts):
+        if verbose:
+            print(f"  MLE restart {i + 1}/{len(starts)} ...", end=" ", flush=True)
+        res = _minimize(_neg_ll_fast, x0, method="L-BFGS-B",
+                        options={"maxiter": 500, "ftol": 1e-13, "gtol": 1e-7})
+        # BCKM-style: perturb and re-optimise — only if primary found finite region
+        if res.fun < 1e10:
+            x0b = res.x * (0.99 + 0.02 * rng.random(N_P))
+            res2 = _minimize(_neg_ll_fast, x0b, method="L-BFGS-B",
+                             options={"maxiter": 500, "ftol": 1e-13})
+            best_r = res if res.fun <= res2.fun else res2
+        else:
+            rng.random(N_P)  # consume the rng draw to keep sequence consistent
+            best_r = res
+        if verbose:
+            print(f"ll = {-best_r.fun:.4f}")
+        if best_r.fun < best_val:
+            best_val, best_theta = best_r.fun, best_r.x.copy()
+
+    # ── Final smoother pass ───────────────────────────────────────────────
+    P_0, P_var, Q_chol = _unpack(best_theta)
+    Sbar = best_theta[:4]                          # unconditional mean of log wedges
+    F_f, H_f, Q_proc_f = _build_ss(P_var, Q_chol @ Q_chol.T)
+    Sigma0_f = _dare_cov(F_f, H_f, Q_proc_f)
+    x_filt, P_filt, x_pred, P_pred, final_ll = _kf_full(
+        F_f, H_f, Q_proc_f, P_0, Sigma0_f
+    )
+    smoothed = _rts(x_filt, P_filt, x_pred, P_pred, F_f)
+
+    return {
+        "P_0": P_0,
+        "Sbar": Sbar,
+        "P": P_var,
+        "Q": Q_chol,
+        "V": Q_chol @ Q_chol.T,
+        "smoothed_states": smoothed,
+        "log_likelihood": final_ll,
+    }
 
 
 def estimate_var(
