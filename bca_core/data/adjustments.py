@@ -141,12 +141,20 @@ def compute_government_wedge(df: pd.DataFrame) -> pd.Series:
     """
     Government wedge = government consumption + net exports.
     (Closed-economy equivalence per CKM 2005.)
-    """
-    g_col = "gov_expenditure"
-    nx_col = "net_exports"
 
-    g = df[g_col] if g_col in df.columns else 0
-    nx = df[nx_col] if nx_col in df.columns else 0
+    BCKM (mleqadj.m, datamine.m) uses gov *consumption* only — gross
+    government investment is moved into X. Prefer `gov_consumption`
+    (FRED A955RC1Q027SBEA) when available; fall back to `gov_expenditure`
+    (FRED GCE, which lumps consumption + investment) otherwise.
+    """
+    nx = df["net_exports"] if "net_exports" in df.columns else 0
+
+    if "gov_consumption" in df.columns:
+        g = df["gov_consumption"]
+    elif "gov_expenditure" in df.columns:
+        g = df["gov_expenditure"]
+    else:
+        g = 0
 
     return g + nx
 

@@ -85,9 +85,20 @@ def build_us_dataset(
     fetch_end = "2024-12-31"
     raw = fetcher.fetch_raw(start=fetch_start, end=fetch_end)
 
+    # Split government expenditure (GCE) into consumption + gross investment.
+    # BCKM (mleqadj.m): G = gov_consumption + net_exports;
+    #                   X = GPDI + durables + gov_investment.
+    if "gov_consumption" in raw.columns and "gov_expenditure" in raw.columns:
+        raw["gov_investment"] = raw["gov_expenditure"] - raw["gov_consumption"]
+    else:
+        raw["gov_investment"] = 0.0
+
     raw["g_raw"] = compute_government_wedge(raw)
     adj = reclassify_durables(raw)
     adj = subtract_sales_tax(adj)
+
+    # Add gross government investment to X (still in nominal billions; deflated below).
+    adj["x_adj"] = adj["x_adj"] + adj["gov_investment"]
 
     series_to_deflate = ["y_adj", "c_adj", "x_adj", "g_raw"]
     adj = to_real_per_capita(adj, series_to_deflate)

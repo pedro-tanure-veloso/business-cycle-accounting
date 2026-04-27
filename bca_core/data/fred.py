@@ -16,7 +16,8 @@ FRED_SERIES = {
     "pce": "PCE",                       # personal consumption expenditure
     "pce_durables": "PCDG",             # PCE durables
     "gpdi": "GPDI",                     # gross private domestic investment
-    "gov_expenditure": "GCE",           # government consumption & investment
+    "gov_expenditure": "GCE",           # government consumption & investment combined
+    "gov_consumption": "A955RC1Q027SBEA",  # government consumption only (no investment)
     "net_exports": "NETEXP",            # net exports
     # Price level
     "gdp_deflator": "GDPDEF",          # GDP implicit price deflator (index, 2017=100)

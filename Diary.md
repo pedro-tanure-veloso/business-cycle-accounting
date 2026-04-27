@@ -167,3 +167,71 @@ Nothing hard-blocked. Step 2's only subtlety is making sure `params.b = γ + δ 
 ### Exact next step
 
 Start with Step 1 (sample lock + calibrated γ), then run the existing pipeline once to capture a clean pre-GI baseline before touching `adjustments.py`.
+
+---
+
+## Session: 2026-04-27 (continued)
+
+### Step 1 — done
+
+Sample locked to 1980Q1–2014Q4 (T=140). Detrending uses calibrated γ=1.9%/yr via a new `fixed_slope` argument in `remove_trend` and a `gamma_annual` argument plumbed through `build_us_dataset`. `mean(y_hat) = 0.0000`. 52/52 tests pass.
+
+Result snapshot vs the 2026-04-23 baseline:
+- P diagonal [.995, .993, .987, .995] vs target [.989, 1.001, .967, .995] — `g` matches exactly, `τ_x` got closer.
+- φ_L^Y 0.16 → 0.42 (target 0.46).
+- LL 1846 → 1805.
+
+Commit `d45ae1f`. Cache: `data/us_1980_2014.parquet`.
+
+### Step 2 — done structurally, broke counterfactuals
+
+Fetched FRED `A955RC1Q027SBEA` (gov consumption only). Derived `gov_investment = GCE − gov_consumption`. Pipeline now:
+- `G = gov_consumption + NETEXP` (was `GCE + NETEXP`)
+- `X = GPDI + durables + gov_investment` (was `GPDI + durables`)
+
+Result snapshot:
+- `g_share` 0.166 → 0.124 (BCKM US value).
+- φ_L^Y 0.16 → **0.44** (target 0.46) — strong identification gain on labor wedge.
+- φ_L^L 0.42 → **0.62** (target 0.70).
+- φ_G^Y 0.75 → 0.50 (still high but moving the right way).
+- LL 1805 → **1595** (−210).
+- `mean(x_hat) = +0.138` (was −0.02).
+- Investment-only CF gives x = +1.35 at peak-to-trough (data is −0.29) — broken.
+
+### Diagnosis — exposed a pre-existing model-data SS gap bug
+
+Model x/y at SS = 0.2545 (pinned by α=0.35, β, δ=0.0464, γ=0.019, n=0.0098 via `b = γ+δ+n+γn`, independent of g_share). After GI is correctly placed in X, **data x/y ≈ 0.29** — a 14% gap.
+
+In `bca_core/var_estimation.py:18` (`prepare_observables`), `x_hat = log(df["x"]) − log(x_ss/y_ss)`. When data x/y ≠ model x/y, this gives `mean(x_hat) ≠ 0`. The optimizer absorbs this constant by pushing `Sbar[τ_x]` to a large negative value (−1.98). The `Sbar` reparametrization makes this likelihood-equivalent to setting `P_0` directly, so MLE doesn't care.
+
+But the smoothed state path inherits the level shift (`mean(taux_hat) = −0.30`), and the counterfactual function uses smoothed states *as-is* and applies the model decision rules. The huge negative τ_x level in the "investment-alone" CF reads as a permanent investment subsidy — hence x = +1.35.
+
+**BCKM handles this differently.** From `mleqadj.m`: `phi0 = Y0 − C·X0(1:5)` where `Y0 = [log(ys); log(xs); log(ls); log(gs)]`. `phi0` is appended as a 6th column of `C`, giving `Y(t) = C·X(t) + phi0`. **The observation equation absorbs the model-data SS gap, leaving state mean-zero.** Our pipeline instead puts the gap into the state via `Sbar`. Mathematically equivalent for likelihood; not equivalent for counterfactuals.
+
+### Where this leaves us
+
+- **Step 1 is good and stays.**
+- **Step 2 data-side change is correct and stays** — data x/y reflecting GI is what BCKM actually does. Reverting would be a step backward.
+- **The counterfactual breakage is a pre-existing bug now visible.** Two ways to fix:
+
+**Option A — `phi0` observation offset (faithful to BCKM, ~1 day).**
+- Modify `prepare_observables` to keep observables in log-level form (only subtracting growth trend), not normalizing by model SS ratios.
+- Add a 5th state element (constant 1) and extend `H` so that `Y(t) = H·[state; 1] = H_state·state + phi0`.
+- `phi0` initialized once from model SS values; held fixed in optimization.
+- `Sbar` then represents true wedge level deviations from SS, and counterfactuals work cleanly.
+
+**Option B — demean smoothed states before counterfactuals (quick fix, ~1 hr).**
+- Subtract `Sbar` from each smoothed wedge path before passing to `run_counterfactual`.
+- Conceptually: "wedge X alone" means X follows its data deviations from mean; others held at SS.
+- Less faithful to BCKM (their `phi0` and our `Sbar` are not the same beast structurally), and changes the meaning of CF level outputs, but should fix the +1.35 overshoot.
+
+Option A is the right long-term answer; Option B is a triage that gets the existing CF API working again.
+
+### Open questions
+
+1. Does Option B preserve the φ-statistic interpretation? (φ-stats are variance ratios, not levels — should be fine.)
+2. Does the previously-queued steady-state Kalman gain rewrite (Diary 2026-04-23 "exact next step") interact with `phi0` work? Probably orthogonal — that's about the filter recursion, not the observation equation.
+
+### Next exact step
+
+Discuss A vs B with user before implementing either. Step 2 commit captures the current state with an honest readout of what works and what doesn't.
