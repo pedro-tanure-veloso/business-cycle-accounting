@@ -204,6 +204,7 @@ def remove_trend(
     series: pd.Series,
     method: str = "linear",
     fixed_slope: float | None = None,
+    base_idx: int | None = None,
 ) -> tuple[pd.Series, dict]:
     """
     Remove trend from log of a series.
@@ -211,10 +212,17 @@ def remove_trend(
     Parameters
     ----------
     series : the data series (in levels)
-    method : "linear" for OLS linear trend, "hp" for Hodrick-Prescott (lambda=1600)
+    method : "linear" (OLS), "hp" (Hodrick-Prescott λ=1600), or "calgz"
+        (BCKM `calgz.m`/`maketrend.m` style — γ chosen so mean(detrended
+        log) = 0 with the trend anchored to make detrended log = 0 at
+        ``base_idx``). "calgz" requires ``base_idx`` to be set.
     fixed_slope : if given, use this slope (per-period) instead of estimating
         by OLS. The intercept is then set to mean(log_s − slope·t) so that the
         detrended series still has unit mean. Only applies when method="linear".
+    base_idx : 0-indexed position of the base period within ``series``.
+        Required for ``method="calgz"``. The fitted trend passes through
+        ``log(series[base_idx])`` exactly, and the slope is the unique
+        value that makes ``mean(log(detrended)) = 0`` simultaneously.
 
     Returns
     -------
@@ -236,6 +244,32 @@ def remove_trend(
         trend = intercept + slope * t
         detrended_log = log_s - trend
         trend_info = {"slope": slope, "intercept": intercept, "method": "linear"}
+    elif method == "calgz":
+        # BCKM `calgz.m` / `maketrend.m`: solve for γ_q such that
+        #   mean over t of [log(s(t)) − log(s(by)) − γ_q·(t − by)] = 0
+        # which is closed-form (no fsolve needed):
+        #   γ_q = (mean(log_s) − log_s[by]) / (mean(t) − by)
+        # The intercept is then pinned by log(detrended[by]) = 0.
+        if base_idx is None:
+            raise ValueError("method='calgz' requires base_idx to be set.")
+        if not (0 <= base_idx < T):
+            raise ValueError(
+                f"base_idx={base_idx} out of range for series length {T}."
+            )
+        denom = float(np.mean(t)) - float(base_idx)
+        if abs(denom) < 1e-12:
+            raise ValueError(
+                "calgz: base_idx coincides with the sample-mean t — slope is "
+                "undetermined. Choose a base period away from the midpoint."
+            )
+        slope = float((np.mean(log_s) - log_s[base_idx]) / denom)
+        intercept = float(log_s[base_idx] - slope * base_idx)
+        trend = intercept + slope * t
+        detrended_log = log_s - trend
+        trend_info = {
+            "slope": slope, "intercept": intercept, "method": "calgz",
+            "base_idx": base_idx,
+        }
     elif method == "hp":
         cycle, trend_vals = hpfilter(log_s, lamb=1600)
         detrended_log = cycle

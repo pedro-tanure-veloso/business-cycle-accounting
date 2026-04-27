@@ -331,7 +331,10 @@ def estimate_var_mle(
     from scipy.optimize import minimize as _minimize
 
     T, n_obs = obs_hat.shape
-    N_P = 26  # 16 (P) + 10 (Q lower-tri); Sbar is fixed (Step 7 option 2)
+    # Step 8.4: Sbar is back as a free parameter (BCKM mleqadj.m theta(1:4))
+    # initialized via fsolve over the SS-vs-data residuals (initmle.m), with
+    # bounds [-1, -1, -1, -5] / [1, 1, 1, 1] from mleqadj.m Lb/Ub lines 109-127.
+    N_P = 30  # 4 (Sbar) + 16 (P) + 10 (Q lower-tri)
 
     # ── Pre-compute model primitives ─────────────────────────────────────
     ss = proto.steady_state()
@@ -498,34 +501,28 @@ def estimate_var_mle(
             P_s[t] += G @ (P_s[t + 1] - P_pred[t + 1]) @ G.T
         return x_s
 
-    # ── Parameter pack / unpack: theta = [P_vec(16), Q_lower_tri(10)] ────
-    # Step 7 option 2 design: Sbar is fixed at the fsolve-init value
-    # (computed once from the BCKM P/Q below) and is *not* a free
-    # parameter. The implied VAR intercept P_0 = (I−P)·Sbar moves with the
-    # optimizer's P. This keeps the SS gap absorbed (no Sbar=0 corner) but
-    # avoids the runaway-Sbar pathology Step 7 option 1 ran into, where a
-    # free Sbar exploited the (I−P) near-singular basin to dampen wedge
-    # variance and saturate the bounds.
-    #
-    # Sbar_fixed is closed over from the enclosing scope; it is filled in
-    # below once _fsolve_sbar is available.
-    Sbar_fixed = np.zeros(4)  # placeholder; set after _fsolve_sbar defined
-
+    # ── Parameter pack / unpack: theta = [Sbar(4), P_vec(16), Q_lo(10)] ──
+    # Step 8.4: Sbar is back as a free parameter (BCKM mleqadj.m line 65–68
+    # writes Sbar(1:4) = Theta(1:4)). Implied VAR intercept is
+    # P_0 = (I−P)·Sbar. Sbar bounds [-1, -1, -1, -5]/[1, 1, 1, 1] from
+    # mleqadj.m Lb/Ub (line 119/109).
     def _unpack(theta):
-        P_var = theta[:16].reshape(4, 4)
-        P_0 = (np.eye(4) - P_var) @ Sbar_fixed
+        Sbar = theta[0:4]
+        P_var = theta[4:20].reshape(4, 4)
+        P_0 = (np.eye(4) - P_var) @ Sbar
         Q_chol = np.zeros((4, 4))
-        idx = 16
+        idx = 20
         for i in range(4):
             for j in range(i + 1):
                 Q_chol[i, j] = theta[idx]
                 idx += 1
-        return Sbar_fixed, P_0, P_var, Q_chol
+        return Sbar, P_0, P_var, Q_chol
 
-    def _pack(P_var, Q_chol):
+    def _pack(Sbar, P_var, Q_chol):
         theta = np.empty(N_P)
-        theta[:16] = P_var.ravel()
-        idx = 16
+        theta[0:4] = Sbar
+        theta[4:20] = P_var.ravel()
+        idx = 20
         for i in range(4):
             for j in range(i + 1):
                 theta[idx] = Q_chol[i, j]
@@ -548,54 +545,113 @@ def estimate_var_mle(
         [ 0.0000,  0.0000,  0.0000,  0.1003],
     ])
 
-    # ── fsolve-init Sbar (BCKM initmle.m analogue) ───────────────────────
-    # Linear-solve for the Sbar that makes the model's unconditional
-    # observable mean equal the data sample mean. With state s=[k,wedges]
-    # and intercept [0, (I-P)·Sbar], unconditional E[s] = (I-F)^{-1}·intercept
-    # is linear in Sbar, so this is a 4×4 linear solve, not a nonlinear
-    # fsolve. Used only to seed the optimizer.
+    # ── fsolve-init Sbar (BCKM initmle.m: nonlinear over model SS) ───────
+    # BCKM `initmle.m` solves
+    #     Sbar -> [ys − Ym(1); xs/ys − Ym(2); ls − Ym(3); gs/ys − Ym(4)]
+    # for Sbar that makes the model SS observables equal data sample means.
+    # We replicate by computing the model SS at a candidate Sbar (overriding
+    # the calibrated wedge values) and matching mean(exp(obs_hat)).
     sample_obs_mean = obs_hat.mean(axis=0)
-    def _fsolve_sbar(P_var, Q_chol):
+    sample_obs_lvl = np.exp(obs_hat).mean(axis=0)  # data Ym in BCKM units
+
+    def _model_ss_from_sbar(Sbar):
+        """Recompute model SS overriding wedge means.
+
+        Mirrors mleqadj.m / initmle.m sec 5a: with Sbar=(log_zs, tauls,
+        tauxs, log_gs), recompute kls→A,B,ks,ls,ys,xs.
+        """
+        p = proto.params
+        gz_q = (1 + p.gamma_annual) ** 0.25 - 1
+        gn_q = (1 + p.n_annual) ** 0.25 - 1
+        beta_q = (1 + p.rho_annual) ** -0.25
+        delta_q = 1 - (1 - p.delta_annual) ** 0.25
+        theta = p.alpha
+        psi = p.psi
+        # BCKM (mleqadj.m line 25) sets sigma = param(6); datamine.m sets it to
+        # 1.0 (log utility). We hardcode here since CalibrationParams omits it.
+        sigma = 1.0
+        zs = np.exp(Sbar[0])
+        tauls = Sbar[1]
+        tauxs = Sbar[2]
+        gs = np.exp(Sbar[3])
+        beth = beta_q * (1 + gz_q) ** (-sigma)
+        kls = (
+            (1 + tauxs) * (1 - beth * (1 - delta_q)) / (beth * theta)
+        ) ** (1.0 / (theta - 1.0)) * zs
+        A_coef = (zs / kls) ** (1 - theta) - (1 + gz_q) * (1 + gn_q) + 1 - delta_q
+        B_coef = (1 - tauls) * (1 - theta) * kls ** theta * zs ** (1 - theta) / psi
+        ks = (B_coef + gs) / (A_coef + B_coef / kls)
+        ls = ks / kls
+        ys = ks ** theta * (zs * ls) ** (1 - theta)
+        cs = A_coef * ks - gs
+        xs = ys - cs - gs
+        return ys, xs, ls, gs
+
+    def _fsolve_sbar_initmle():
+        """initmle.m-style nonlinear fsolve seed (BCKM runmleadj.m line 14).
+
+        Returns the Sbar that drives [ys−Ym1, xs/ys−Ym2, ls−Ym3, gs/ys−Ym4]
+        to zero. Falls back to zeros on failure.
+        """
+        from scipy.optimize import fsolve
+
+        Ym = sample_obs_lvl  # [mean(exp(y_hat)), exp(l_hat), exp(x_hat), exp(g_hat)]
+        # NOTE: our obs_hat columns are y_hat, l_hat, x_hat, g_hat — but
+        # x_hat is log(x_dt / (x_ss/y_ss)) and g_hat similarly relative to
+        # the SS x/y, g/y ratios. So mean(exp(x_hat)) is on the *ratio* scale,
+        # and we compare to xs/ys (model SS x/y ratio) — units consistent.
+
+        def _residuals(Sbar):
+            ys, xs, ls, gs = _model_ss_from_sbar(Sbar)
+            ys_ss, xs_ss, ls_ss, gs_ss = ss["y"], ss["x"], ss["l"], ss["g"]
+            # data Ym in our units: y is exp(y_hat) = y_dt (already in y_ss
+            # units since we don't subtract log y_ss); x/y, l/l_ss, g/(g_ss/y_ss)
+            # Match BCKM semantics:
+            #   y residual: ys − mean(y_dt) = ys − ys_ss · Ym(0)/ys_ss
+            #             ≈ ys − Ym(0)·ys_ss   (since exp(y_hat)=y_dt and ys_ss≈mean(y_dt))
+            # In our normalization, exp(y_hat) = y_dt with mean ≈ ys_ss·something,
+            # but for warm-start a simpler match:
+            #   ys/ys_ss − Ym(0)
+            #   (xs/ys) / (xs_ss/ys_ss) − Ym(2)   [Ym(2) is exp(x_hat) mean]
+            #   ls/ls_ss − Ym(1)
+            #   (gs/ys) / (gs_ss/ys_ss) − Ym(3)
+            return np.array([
+                ys / ys_ss - Ym[0],
+                ls / ls_ss - Ym[1],
+                (xs / ys) / (xs_ss / ys_ss) - Ym[2],
+                (gs / ys) / (gs_ss / ys_ss) - Ym[3],
+            ])
+
         try:
-            F, H, _ = _build_ss(P_var, Q_chol @ Q_chol.T)
-        except np.linalg.LinAlgError:
-            return np.zeros(4)
-        # Build the linear map Sbar -> H · E[s] by perturbing each axis.
-        # Cheaper than deriving the closed form because we already have
-        # _build_ss and the unconditional state mean utility.
-        I5 = np.eye(5)
-        try:
-            M0 = np.linalg.solve(I5 - F, np.zeros(5))
-        except np.linalg.LinAlgError:
-            return np.zeros(4)
-        H_eff = np.zeros((4, 4))
-        for j in range(4):
-            ej = np.zeros(4)
-            ej[j] = 1.0
-            P0_j = (np.eye(4) - P_var) @ ej
-            interc_j = np.r_[0.0, P0_j]
-            try:
-                Mj = np.linalg.solve(I5 - F, interc_j)
-            except np.linalg.LinAlgError:
+            sol, _info, ier, _msg = fsolve(
+                _residuals, np.array([0.0, 0.05, 0.0, np.log(0.2)]),
+                full_output=True, xtol=1e-10, maxfev=2000,
+            )
+            if ier != 1:
                 return np.zeros(4)
-            H_eff[:, j] = H @ (Mj - M0)
-        try:
-            return np.linalg.solve(H_eff, sample_obs_mean - H @ M0)
-        except np.linalg.LinAlgError:
+            return sol
+        except Exception:
             return np.zeros(4)
 
-    # BCKM Table 8: tau_l diagonal = 1.0011; all other diagonals are ≤ 0.9945.
-    # Targeted bounds: only tau_l gets the relaxed 1.005 threshold.
-    # A, tau_x, g keep the old 0.995 bound to prevent spurious local optima.
-    # Spectral-radius penalty at 1.005 catches overall non-stationarity.
-    _DIAG_BOUNDS = np.array([0.995, 1.005, 0.995, 0.995])  # [A, tau_l, tau_x, g]
+    # Step 8.5: spectral radius bound 0.995 (mleqadj.m line 134).
+    # No relaxed tau_l 1.005 — BCKM uses one bound on |eig(P)|, not on
+    # individual diagonals.
+    _SPECTRAL_BOUND = 0.995
+    _DIAG_BOUNDS = np.array([0.995, 0.995, 0.995, 0.995])
+
+    # Sbar bounds (mleqadj.m Lb/Ub lines 109/119): [-1, -1, -1, -5]/[1,1,1,1].
+    _SBAR_LB = np.array([-1.0, -1.0, -1.0, -5.0])
+    _SBAR_UB = np.array([ 1.0,  1.0,  1.0,  1.0])
 
     def _neg_ll_fast(theta):
-        _Sbar, P_0, P_var, Q_chol = _unpack(theta)
+        Sbar, P_0, P_var, Q_chol = _unpack(theta)
         eig_max = np.max(np.abs(np.linalg.eigvals(P_var)))
-        penalty = 5e5 * max(eig_max - 1.005, 0.0) ** 2
+        penalty = 5e5 * max(eig_max - _SPECTRAL_BOUND, 0.0) ** 2
         diag_excess = np.maximum(np.abs(np.diag(P_var)) - _DIAG_BOUNDS, 0.0)
         penalty += 5e5 * np.sum(diag_excess ** 2)
+        sbar_excess_lo = np.maximum(_SBAR_LB - Sbar, 0.0)
+        sbar_excess_hi = np.maximum(Sbar - _SBAR_UB, 0.0)
+        penalty += 5e5 * (np.sum(sbar_excess_lo ** 2) + np.sum(sbar_excess_hi ** 2))
         try:
             F, H, Q_proc = _build_ss(P_var, Q_chol @ Q_chol.T)
         except np.linalg.LinAlgError:
@@ -603,48 +659,82 @@ def estimate_var_mle(
         ll = _kf_ll(F, H, Q_proc, P_0)
         return (-ll if np.isfinite(ll) else 1e20) + penalty
 
-    # Step 7 option 2: pin Sbar at the fsolve-init value computed from the
-    # BCKM P/Q. From this point forward `Sbar_fixed` is what _unpack returns.
-    Sbar_fixed[:] = _fsolve_sbar(_P_bckm, _Q_bckm)
+    # ── Warm-starts (BCKM runmleadj.m / mleqadj.m architecture) ─────────
+    # Step 8.4: Sbar from initmle.m fsolve.
+    # Step 8.6: P warm-start = 0.995·I (mleqadj.m line 28 / runmleadj.m
+    #          x0a/b/c lines 21,26,31,36,etc.).
+    # Q warm-start: BCKM x0c values (runmleadj.m line 100-110, "result from
+    #          initpw with annual adja=12.88" — the closest match to our
+    #          model since we don't have a previous run).
+    Sbar_init = _fsolve_sbar_initmle()
     if verbose:
-        print(f"  Sbar_fixed (fsolve-init from BCKM P/Q): "
-              f"A={Sbar_fixed[0]:+.4f}  τ_l={Sbar_fixed[1]:+.4f}  "
-              f"τ_x={Sbar_fixed[2]:+.4f}  g={Sbar_fixed[3]:+.4f}")
+        print(f"  Sbar_init (initmle.m fsolve): "
+              f"A={Sbar_init[0]:+.4f}  τ_l={Sbar_init[1]:+.4f}  "
+              f"τ_x={Sbar_init[2]:+.4f}  g={Sbar_init[3]:+.4f}")
+
+    # BCKM x0c (runmleadj.m line 80-110): Q chol values, lower-triangular.
+    # Order in x0c[20:30] matches BCKM `Theta(21:30)` = Q(1,1), Q(2,1),
+    # Q(3,1), Q(4,1), Q(2,2), Q(3,2), Q(4,2), Q(3,3), Q(4,3), Q(4,4).
+    _Q_x0c_lower = np.array([
+        0.02396761427982, -0.00987436176711, -0.01693235174207, 0.0,
+                          0.02737005516313, -0.06560608935313, 0.0,
+                                            0.12084347484485, 0.0,
+                                                              0.10034489721325,
+    ])
+    _Q_x0c = np.zeros((4, 4))
+    _idx = 0
+    for _i in range(4):
+        for _j in range(_i + 1):
+            _Q_x0c[_i, _j] = _Q_x0c_lower[_idx]
+            _idx += 1
+
+    P_warm = _SPECTRAL_BOUND * np.eye(4)  # 0.995·I, BCKM x0c
 
     rng = np.random.default_rng(42)
-    x0_bckm = _pack(_P_bckm, _Q_bckm)
+    x0_bckm = _pack(Sbar_init, P_warm, _Q_x0c)
     starts = [x0_bckm]
-    # Warm start from OLS result if provided (often has correct wedge signs)
+    # Also seed from BCKM Table 8 estimates (US final result) and OLS if
+    # available. These give the optimizer two non-trivial alternative basins.
+    starts.append(_pack(Sbar_init, _P_bckm, _Q_bckm))
     if P_ols is not None:
-        Q_warm = Q_ols if Q_ols is not None else _Q_bckm
-        starts.append(_pack(P_ols, Q_warm))
-    n_pert = n_restarts - 1 - (1 if P_ols is not None else 0)
+        Q_warm = Q_ols if Q_ols is not None else _Q_x0c
+        starts.append(_pack(Sbar_init, P_ols, Q_warm))
+    n_pert = n_restarts - len(starts)
     for _ in range(max(n_pert, 0)):
-        P_pert = _P_bckm + rng.normal(0.0, 0.01, (4, 4))
-        # Clip diagonal to [−1.0, 1.0] to keep starts inside the penalty region
+        P_pert = P_warm + rng.normal(0.0, 0.01, (4, 4))
         np.fill_diagonal(P_pert, np.clip(np.diag(P_pert), -1.0, 1.0))
-        starts.append(_pack(P_pert, _Q_bckm))
+        starts.append(_pack(Sbar_init, P_pert, _Q_x0c))
 
-    # ── Optimise (L-BFGS-B with BCKM-style perturbation restarts) ───────
+    # ── Optimise: L-BFGS-B from each start, then BCKM multiplicative ─────
+    # ── perturbation loop (runmleadj.m lines 121-141, nps=50, pb=0.99) ──
     best_val, best_theta = np.inf, x0_bckm.copy()
     for i, x0 in enumerate(starts):
         if verbose:
             print(f"  MLE restart {i + 1}/{len(starts)} ...", end=" ", flush=True)
         res = _minimize(_neg_ll_fast, x0, method="L-BFGS-B",
                         options={"maxiter": 500, "ftol": 1e-13, "gtol": 1e-7})
-        # BCKM-style: perturb and re-optimise — only if primary found finite region
-        if res.fun < 1e10:
-            x0b = res.x * (0.99 + 0.02 * rng.random(N_P))
-            res2 = _minimize(_neg_ll_fast, x0b, method="L-BFGS-B",
-                             options={"maxiter": 500, "ftol": 1e-13})
-            best_r = res if res.fun <= res2.fun else res2
-        else:
-            rng.random(N_P)  # consume the rng draw to keep sequence consistent
-            best_r = res
         if verbose:
-            print(f"ll = {-best_r.fun:.4f}")
-        if best_r.fun < best_val:
-            best_val, best_theta = best_r.fun, best_r.x.copy()
+            print(f"ll = {-res.fun:.4f}")
+        if res.fun < best_val:
+            best_val, best_theta = res.fun, res.x.copy()
+
+    # Step 8.7: BCKM multiplicative-shrink restart loop. After the main
+    # optimization run, shrink x by pb=0.99 and re-optimize for nps
+    # iterations, tracking the best F. Per runmleadj.m line 134-141.
+    pb = 0.99
+    nps = 50
+    if verbose:
+        print(f"  BCKM multiplicative-shrink loop (pb={pb}, nps={nps}) ...")
+    x_shrink = best_theta.copy()
+    for k in range(nps):
+        x_shrink = x_shrink * pb
+        res = _minimize(_neg_ll_fast, x_shrink, method="L-BFGS-B",
+                        options={"maxiter": 200, "ftol": 1e-11, "gtol": 1e-6})
+        x_shrink = res.x
+        if res.fun < best_val:
+            if verbose:
+                print(f"    iter {k + 1:2d}: ll = {-res.fun:.4f}  (improved)")
+            best_val, best_theta = res.fun, res.x.copy()
 
     # ── Final smoother pass ───────────────────────────────────────────────
     Sbar, P_0, P_var, Q_chol = _unpack(best_theta)

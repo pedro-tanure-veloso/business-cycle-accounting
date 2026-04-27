@@ -766,3 +766,112 @@ statistic.
 Step 8.2: revert sample to 1980Q1–2015Q1 in
 `scripts/run_var_counterfactuals.py` and update the cache filename.
 
+---
+
+## Session: 2026-04-27 — Step 8.2–8.7 implemented (BCKM-faithful estimator)
+
+### What was completed
+
+All seven Step 8 sub-steps are in code. 8.1 was committed earlier (59f5bd2);
+8.2–8.7 are in this commit:
+
+- **8.2** — `scripts/run_var_counterfactuals.py`: sample reverted to
+  `start="1980Q1", end="2014Q4"` (T=140), per BCKM `datamine.m` line 65
+  (`t = 1980.25:0.25:2015`, `eobs=140`). Step 6's 1948+ extension reverted.
+
+- **8.3** — `bca_core/data/adjustments.py` + `pipeline.py`: added
+  `method="calgz"` branch in `remove_trend`. Closed-form slope
+  `γ_q = (mean(log_s) − log_s[bdate]) / (mean(t) − bdate_idx)` (mirrors
+  `maketrend.m`/`calgz.m` — but BCKM uses `fsolve`; we use the closed-form
+  it solves for, mathematically equivalent). The fitted trend simultaneously
+  satisfies `mean(detrended log) = 0` and `log(detrended[bdate]) = 0`.
+  `pipeline.py` plumbs `base_year_quarter="2008Q1"` → `base_idx` via
+  `sample.index.get_loc`. New metadata fields: `detrend_method`, `base_idx`,
+  `base_year_quarter`.
+
+- **8.4** — `bca_core/var_estimation.py`: Sbar back as a free parameter.
+  `N_P = 30` (4 Sbar + 16 P + 10 Q lower-tri). `_unpack`/`_pack` take
+  `theta = [Sbar(4), P(16), Q_lo(10)]` and emit `P_0 = (I−P)·Sbar`.
+  Added `_model_ss_from_sbar()` mirroring `mleqadj.m` sec 5a (sigma=1
+  hardcoded; CalibrationParams omits it). Added `_fsolve_sbar_initmle()`
+  using `scipy.optimize.fsolve` over residuals
+  `[ys/ys_ss − Ym(0); ls/ls_ss − Ym(1); (xs/ys)/(xs_ss/ys_ss) − Ym(2);
+  (gs/ys)/(gs_ss/ys_ss) − Ym(3)]`. Falls back to zeros on non-convergence
+  (which is what happened in the run below — initial guess didn't pull
+  fsolve into a valid basin; needs follow-up).
+
+- **8.5** — Spectral-radius bound tightened from 1.005 → 0.995
+  (mleqadj.m line 134). Per-diagonal bound also 0.995 (no τ_l relax).
+  Plus added Sbar bounds penalty `[-1,-1,-1,-5]/[1,1,1,1]`
+  (mleqadj.m Lb/Ub).
+
+- **8.6** — Initial `P_warm = 0.995·I` (mleqadj.m line 28 / runmleadj.m
+  x0a/b/c). Q warm-start from BCKM `x0c` lower-triangular values
+  (runmleadj.m lines 100-110, "result from initpw with annual adja=12.88").
+
+- **8.7** — Added BCKM multiplicative-shrink loop after main optimizer:
+  `pb=0.99`, `nps=50`. Each iteration scales `theta = pb · theta` then
+  re-runs L-BFGS-B; keeps best. Per runmleadj.m lines 121-141.
+
+### Result on stale-cache run (linear γ, NOT calgz — calgz needs FRED refetch)
+
+The on-disk cache `data/us_1980_2014.parquet` predates Step 8.3 — it was
+generated with `linear, gamma_annual=0.019`. `pipeline.py` short-circuits
+to load it without re-detrending, so this run uses linear-γ data. Calgz
+will require a FRED refetch via `--save-data`.
+
+```
+T = 140, g_share = 0.166
+
+Sbar_init (initmle.m fsolve): [0,0,0,0]   # ier != 1, fell back to zeros
+ll: 1814 → 1834 (multiplicative-shrink loop took +20)
+
+Sbar (final):  [-0.010, -0.146, -0.045,  0.178]
+P_0 (= (I−P)·Sbar):  [-0.006,  0.013, -0.005, -0.005]
+P_0 BCKM target:     [ 0.014,  0.001,  0.013, -0.014]
+
+P diagonal: [0.905, 0.990, 0.932, 0.984]
+            (BCKM:  0.989, 1.001, 0.968, 0.995)
+Max |eigval|: 0.9953  (right at bound — was 1.008 in Step 7)
+
+GR-window f-stats (BCKM Table 11):
+              y       l       x
+efficiency  0.05    0.02    0.03   (target fY[A]=0.16)
+labor       0.48    0.70    0.29   (target fY[τ_l]=0.46 ✓)
+investment  0.11    0.19    0.42   (target fY[τ_x]=0.32)  -- was 0.37 ✓ pre-step
+government  0.36    0.09    0.26
+```
+
+`fY[τ_l]` matched almost exactly (0.48 vs 0.46). `fY[A]` and `fY[τ_x]`
+are below target — this is the regression caused by Sbar warm-start
+falling back to zeros (mean wedge offset wasn't captured in initial
+guess, so the wedge VAR has to absorb the offset elsewhere). Pre-Step 8
+the f[τ_x]=0.37 was nearly on target; now it's 0.42 in the x-row but
+0.11 in the y-row. The fsolve seeding logic needs a better initial guess.
+
+### Tests
+
+`pytest tests/ -v` — 52/52 passing. No regressions from the var_estimation
+restructure.
+
+### What still doesn't match BCKM
+
+1. **Sbar fsolve fails** (returns [0,0,0,0]). The residuals' Jacobian at
+   Sbar=[0, 0.05, 0, log(0.2)] may be ill-conditioned, or the units of
+   `Ym` (`mean(exp(obs_hat))` — ratios) don't match my model SS units
+   exactly. BCKM's `initmle.m` uses absolute levels, not ratios.
+2. **Calgz cache not yet validated.** The current run used a linear-γ
+   cache. A FRED refetch is needed to confirm calgz changes f-stats
+   in the right direction.
+3. **fY[A] still under target** (0.05 vs 0.16). Likely tied to (1).
+
+### Next
+
+Two items, in order:
+1. Refetch from FRED with calgz (`--save-data data/us_1980_2014_calgz.parquet`)
+   and re-run. This validates Step 8.3 end-to-end.
+2. Debug the Sbar fsolve. Likely fix: change `Ym` from
+   `mean(exp(obs_hat))` (ratios) to absolute model-units, matching
+   BCKM `initmle.m` semantics directly. Or add an iterative seed
+   schedule for fsolve.
+

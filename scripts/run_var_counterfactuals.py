@@ -10,10 +10,10 @@ Estimation follows BCKM (2016) mleqadj.m:
 
 Usage:
     # First run — fetch from FRED and save processed data:
-    FRED_API_KEY=... python scripts/run_var_counterfactuals.py --save-data data/us_1948_2014.parquet
+    FRED_API_KEY=... python scripts/run_var_counterfactuals.py --save-data data/us_1980_2014.parquet
 
     # Subsequent runs — use saved data, no API key needed:
-    python scripts/run_var_counterfactuals.py --data data/us_1948_2014.parquet
+    python scripts/run_var_counterfactuals.py --data data/us_1980_2014.parquet
 """
 
 from __future__ import annotations
@@ -107,11 +107,17 @@ def main(
         print(f"Fetching from FRED and saving to {save_data_path} ...")
     else:
         print("Building US dataset (fetching from FRED)...")
+    # BCKM `datamine.m`: t = (1980.25:0.25:2015), iobs=1, eobs=140 — sample
+    # is 1980Q1 through 2014Q4 (T=140). Step 6 extension to 1948 was based
+    # on a different (older) usdata.m vintage and is reverted in Step 8.2.
+    # Detrending uses calgz-style γ (Step 8.3) anchored at the BCKM base
+    # date 2008Q1 (`bdate=2008.25` in datamine.m).
     df, meta = build_us_dataset(
-        start="1948Q1",
+        start="1980Q1",
         end="2014Q4",
         data_path=cache,
-        gamma_annual=_BCKM_GAMMA,
+        detrend_method="calgz",
+        base_year_quarter="2008Q1",
     )
     T = len(df)
     print(f"  T = {T}")

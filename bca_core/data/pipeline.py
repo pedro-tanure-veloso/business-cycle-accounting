@@ -31,6 +31,7 @@ def build_us_dataset(
     labor_target_mean: float = 0.25,
     data_path: str | Path | None = None,
     gamma_annual: float | None = None,
+    base_year_quarter: str | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """
     Build the adjusted US dataset for BCA.
@@ -49,12 +50,17 @@ def build_us_dataset(
           - If the file exists → load and return immediately (no API needed).
           - If the file does not exist → fetch, process, save, then return.
         When None → always fetch from FRED (original behaviour).
-    gamma_annual : if given, detrend log(y) using this calibrated growth rate
-        rather than OLS-estimating it from the sample. BCKM uses
-        gz = 1.018^(1/4)−1 (i.e. 1.8%/yr) for the US in datamine.m;
-        passing 0.019 (1.9%/yr) matches BCKM Table 77. The intercept is
-        re-fit so that the detrended series still has unit mean. When None
-        (default), the slope is estimated by OLS as before.
+    detrend_method : "linear" (OLS / fixed-slope), "hp", or "calgz"
+        (BCKM `maketrend.m`/`calgz.m` style — slope chosen so detrended
+        log mean is 0 with trend pinned at ``base_year_quarter``).
+    gamma_annual : if given (and method="linear"), detrend log(y) using this
+        calibrated growth rate rather than OLS-estimating it. BCKM Table 77
+        uses 1.9%/yr; ignored under method="calgz" since γ is data-fitted
+        there. When None (default), slope is OLS-estimated.
+    base_year_quarter : Pandas-parseable quarter string, e.g. "2008Q1".
+        Required for ``detrend_method="calgz"``. Anchors the trend so
+        ``log(detrended_y[base_year_quarter]) = 0``. Matches BCKM
+        ``datamine.m`` `bdate=2008.25`.
 
     Returns
     -------
@@ -133,10 +139,28 @@ def build_us_dataset(
     if gamma_annual is not None:
         fixed_slope_q = (1 + gamma_annual) ** 0.25 - 1
 
+    base_idx: int | None = None
+    if detrend_method == "calgz":
+        if base_year_quarter is None:
+            raise ValueError(
+                "detrend_method='calgz' requires base_year_quarter "
+                "(e.g. '2008Q1' to match BCKM datamine.m bdate=2008.25)."
+            )
+        base_dt = pd.Timestamp(pd.Period(base_year_quarter, freq="Q").start_time)
+        # locate base date in `sample.index` (post-dropna)
+        try:
+            base_idx = int(sample.index.get_loc(base_dt))
+        except KeyError as e:
+            raise ValueError(
+                f"base_year_quarter={base_year_quarter} ({base_dt}) not in "
+                f"sample index range {sample.index[0]}..{sample.index[-1]}"
+            ) from e
+
     _, y_trend = remove_trend(
         sample["y_real_pc"],
         method=detrend_method,
         fixed_slope=fixed_slope_q,
+        base_idx=base_idx,
     )
     gamma_quarterly = y_trend["slope"]
     gamma_annual_used = (1 + gamma_quarterly) ** 4 - 1
@@ -145,7 +169,13 @@ def build_us_dataset(
     metadata["n_quarterly"] = n_quarterly
     metadata["gamma_annual"] = gamma_annual_used
     metadata["gamma_quarterly"] = gamma_quarterly
-    metadata["gamma_calibrated"] = gamma_annual is not None
+    metadata["gamma_calibrated"] = (
+        gamma_annual is not None and detrend_method != "calgz"
+    )
+    metadata["detrend_method"] = detrend_method
+    if base_idx is not None:
+        metadata["base_idx"] = base_idx
+        metadata["base_year_quarter"] = base_year_quarter
 
     T = len(sample)
     t = np.arange(T)
