@@ -1,0 +1,47 @@
+\documentclass[10pt,a4paper,notitlepage]{article} 
+\usepackage[utf8]{inputenc} 
+\usepackage{amsmath} 
+\usepackage{pdflscape} 
+\usepackage{amsfonts} 
+\usepackage{amssymb} 
+\usepackage{graphicx} 
+\usepackage[left=1cm,right=1cm,top=1cm,bottom=1.2cm]{geometry} 
+\usepackage[english]{babel} 
+\usepackage[colorinlistoftodos]{todonotes} 
+\usepackage{enumerate} 
+\usepackage{epstopdf} 
+\usepackage{tabularx} 
+\usepackage{array} 
+\usepackage{hyperref} 
+\hypersetup{ 
+    colorlinks, 
+    citecolor=black, 
+    filecolor=black, 
+    linkcolor=black, 
+    urlcolor=black 
+} 
+\usepackage{color} 
+\begin{document} 
+\tableofcontents 
+\newpage 
+\input{data_and_sources} 
+\section{Parametrization and calibration} 
+\begin{table}[h!] 
+\centering 
+\caption{Parameters held fix across countries} 
+\centering 
+\begin{tabular}{ccccc} 
+$\beta$ & $\delta$ & $\psi$ & $\sigma$ & $\theta$ \\ 
+\hline 
+$0.975 & 0.05 & 2.5 & 1 & 0.33$ \\ 
+\end{tabular} 
+\end{table} 
+where $\beta$ is the (annualized) and $\delta$ the (annualized) depreciation rate of capital. \\ 
+Other parameters are specific to each country and shown in the table below: 
+\begin{table}[h!] 
+\centering 
+\caption{Parameters that are specific to each country} 
+\centering 
+\begin{tabular}{ccccc} 
+Country & $\gamma_n$ & \gamma & $a$ \\ 
+\hline 
