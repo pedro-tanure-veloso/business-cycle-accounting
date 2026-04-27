@@ -106,3 +106,64 @@ K = Sigma_inf @ H.T @ np.linalg.inv(H @ Sigma_inf @ H.T + R_obs)
 The key point: run DARE once per objective evaluation (not inside the T-step loop), use the resulting K as the fixed gain for all T steps. This is O(n³) once per objective call vs. O(T·n³) for the time-varying filter — same cost asymptotically but eliminates the Σ₀ sensitivity entirely.
 
 Reference: `BCA/BCKM/Multicountry - End/USAN2/kfilter.m` lines 1–40 for the exact implementation pattern BCKM uses.
+
+---
+
+## Session: 2026-04-27
+
+### Pickup state
+
+Re-read `BCA_info.md` (especially Section 4 on data construction and Section 7 on the US MLE target tables) and traced the data pipeline end-to-end. No code changes this session — this entry is a scoping note.
+
+### Findings (data side, vs BCA_info Section 4 / BCKM Matlab)
+
+Already implemented correctly:
+- Durables PIM stock + 4% service flow added to both C and Y (`bca_core/data/adjustments.py:14`).
+- Sales tax subtracted from Y and C (`bca_core/data/adjustments.py:58`).
+- Per-capita / GDP-deflator conversion.
+
+Missing or wrong:
+- **GI is in G, not in X.** `compute_government_wedge` (`adjustments.py:140`) sets `g = GCE + NETEXP`, but FRED `GCE` lumps gov consumption and gov investment. Matlab definition: `G = rGC + rEX − rIM` and `X = rCD + rGPDI + rGI − …`. Need to fetch a gov-consumption-only series (e.g. NIPA `A955RC1Q027SBEA`) or compute `gov_investment = GCE − gov_consumption`, subtract from G, add to X. This is the leading suspect for φ_G dominating at ~81% in the last run.
+- **Durables expenditure (`rDCD`) not added to Y.** Matlab is `Y = rGDP − rSTX + 0.04·rKCD + rDCD`; current `adjustments.py:52` adds the service flow but not durables expenditure itself.
+- **Sales tax not applied to X.** Matlab subtracts a `(rCD/rCNDS)·rSTX` term from X to remove the tax embedded in durables consumption that is being moved to investment. Current code does not.
+- **Detrending uses OLS-estimated γ.** `pipeline.py:114` fits a linear trend to `log(y)` and uses that slope as γ for detrending. BCKM uses calibrated `gz = 1.018^(1/4) − 1` (`datamine.m`). The `params.gamma_annual` set in `run_var_counterfactuals.py:120` is only used by the model SS, not by the detrender — so we currently have *two* growth rates floating around: estimated for detrending, calibrated for the model.
+- **Sample period.** `run_var_counterfactuals.py:110` uses `start="1969Q1"` (effective T=152 from 1976Q1 due to OECD pop series start). BCKM Section 7 target is **1980Q1–2014Q4** (T=140). The extension makes apples-to-apples comparison against Tables 8–11 harder.
+
+### Architectural finding — Phase 4 blocker was overstated
+
+The previous diary entry said GI reclassification was blocked because "BCKM re-solves the model SS at each iterate (using Sbar/phi0)." Re-tracing the code, this is wrong.
+
+`var_estimation.py:317` calls `proto.steady_state()` once on entry to `estimate_var_mle` and then uses the resulting `ss` and `log_linearize(ss)` output throughout the optimization. The MLE loop only varies `P_var` and `Q_chol`. As long as `params.g_share` is set from corrected data in `main()` *before* constructing `params` (which it is — `run_var_counterfactuals.py:116`), the SS rebuilds cleanly and downstream nothing else depends on per-iterate SS.
+
+BCKM's `phi0` (in `mleqadj.m`) is a constant offset added to the observation matrix to absorb the gap between model SS and data mean. It is computed *once* from the SS, not at each iterate. The Phase 4 attempts likely failed for a different reason (probably mismatch between corrected data ratios and the SS that was rebuilt from them, e.g. the model's `b = γ + δ + n` not being adjusted), not because of architectural impossibility.
+
+**Implication:** The GI split is mechanical, not architectural — same difficulty class as Phases 1–3.
+
+### Next steps (in priority order)
+
+**Step 1 — Sample alignment + calibrated γ** *(15 min, low risk)*
+- Change `start="1969Q1"` → `start="1980Q1"` in `scripts/run_var_counterfactuals.py:110`.
+- Plumb a `gamma_annual` argument through `build_us_dataset` → `pipeline.py` so detrending uses the calibrated value (1.9%/yr) rather than OLS slope on log(y).
+- Goal: clean baseline whose results map onto Tables 8–11.
+
+**Step 2 — GI split** *(half day, biggest expected impact on φ_G)*
+- Add a FRED series for gov investment in `bca_core/data/fred.py`. Candidates: `A782RC1Q027SBEA` (gov gross investment), or derive `gov_investment = GCE − A955RC1Q027SBEA` (gov consumption).
+- In `compute_government_wedge`, replace `GCE + NETEXP` with `gov_consumption + NETEXP`.
+- In `reclassify_durables` (or a new step), add `gov_investment` to `x_adj` alongside `gpdi + pce_durables`.
+- `g_share_data` in `main()` will auto-recompute to BCKM-like ~0.10 (down from 0.166).
+- Confirm SS rebuilds correctly at the new g_share; re-run tests; re-run pipeline; report φ-stats.
+
+**Step 3 — NIPA fidelity tweaks** *(small, do while in `adjustments.py`)*
+- Add `rDCD` (durables expenditure) to `y_adj` in addition to the service flow.
+- Apply sales tax to X via the `(rCD/rCNDS)·rSTX` term.
+
+**Step 4 — Steady-state Kalman gain** *(previously queued; still relevant)*
+- The `_kf_ll` constant-gain rewrite from the 2026-04-23 entry — closes the 144-unit LL gap. Independent of Steps 1–3; can be done before, after, or in parallel.
+
+### What is blocked and why
+
+Nothing hard-blocked. Step 2's only subtlety is making sure `params.b = γ + δ + n` and the resulting model `x/y` ratio stays consistent with the corrected data `x/y` after GI is added — a sanity check, not a blocker.
+
+### Exact next step
+
+Start with Step 1 (sample lock + calibrated γ), then run the existing pipeline once to capture a clean pre-GI baseline before touching `adjustments.py`.
