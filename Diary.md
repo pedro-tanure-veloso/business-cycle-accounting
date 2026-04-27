@@ -326,3 +326,63 @@ x -0.2898     +0.020  -0.187     -0.945      +0.159
 1. Option A vs B → **Option A chosen and works.** B was a triage; A is the right architecture.
 2. Whether forcing Sbar=0 hurts LL substantially → **No.** ~7-unit drop. Confirms Sbar was identifying noise, not real structure.
 3. DARE Sigma0 issue from 2026-04-23 → **Still open.** Now the dominant remaining issue (CF magnitudes).
+
+---
+
+## Session 2026-04-27 — Step 4: steady-state Kalman (DARE per call)
+
+### What landed
+
+Replaced the time-varying transient Kalman recursion (with frozen `_Sigma0_fixed` from BCKM Table 77 params) with a steady-state filter where `solve_discrete_are` is called **once per objective evaluation**. New helper `_steady_state_kalman(F, H, Q_proc)` returns the constant gain K, innovation cov S, and Σ_pred / Σ_filt; both `_kf_ll` and `_kf_full` use those constants for all t. Removed dead code: `_dare_cov`, `_Sigma0_fixed` precomputation, `_P_bckm_stable`, the old `Sigma0` argument.
+
+scipy `solve_discrete_are` uses LQR convention `X = AᵀXA − …`, so we pass `A=Fᵀ, B=Hᵀ` to recover the Kalman predicted-cov form.
+
+CLAUDE.md amended in the same change: the old "Solve DARE inside the optimization loop" prohibition has been replaced with positive guidance that the steady-state Kalman is now the canonical setup. The 5×5 DARE is cheap (~ms) and per-call evaluation eliminates the optimized-vs-final LL gap.
+
+### Result
+
+```
+LL (best restart): 1779.78
+Final smoother LL: 1779.78           (gap closed — was 144 units in Step 3)
+
+P diag: [0.971, 0.998, 0.960, 0.995]
+Max |eig|: 0.992                     (stationary ✓)
+
+Smoothed wedge means: ≈ 0 in all 4 channels ✓
+taux_hat std: 0.0271                 (was 0.0355 in Step 3 — tighter)
+
+GR investment wedge Δ(1+τ_x): +0.070 (worsened ✓ — right sign)
+
+φ-stats:
+  y: A=0.29  τ_l=0.23  τ_x=0.30  g=0.18
+  l: A=0.15  τ_l=0.58  τ_x=0.18  g=0.09
+  x: A=0.19  τ_l=0.36  τ_x=0.21  g=0.24
+
+Peak-to-trough (2007Q4 → 2009Q2):
+   actual  efficiency  labor  investment  government
+y -0.0722     -0.003  -0.058     -0.104      +0.039
+l -0.0814     +0.012  -0.087     -0.146      +0.057
+x -0.2898     +0.039  -0.166     -0.676      +0.138
+```
+
+### What this changes vs Step 3
+
+- Investment-only x peak-to-trough: **−0.945 → −0.676** (closer to data −0.29; still ~2.3× off, vs ~3.3× before).
+- Output and labor CF magnitudes also shrunk and got closer to data.
+- Optimized vs final-smoother LL: **gap closed** by construction (same DARE constants, no transient). MLE objective is now self-consistent with the smoother.
+- All 52 tests pass.
+
+### What still doesn't match BCKM
+
+1. **CF magnitudes still overshoot data** by ~2× on investment. Most likely culprit now: data-side investment definition. BCKM includes consumer durables in Y and applies a sales-tax adjustment on X (`(rCD/rCNDS)·rSTX`) — that pulls down x's variance and brings investment-wedge magnitudes toward data. This is the queued Step 5.
+2. **φ_y[τ_L] = 0.23 vs BCKM target 0.46.** Labor wedge still underweighted on output.
+3. **P_0 = 0 vs BCKM Table 9 [0.014, 0.001, 0.013, −0.014].** Still forced to zero by `Sbar=0`. Carried.
+
+### Where this leaves us
+
+Steps 1–4 land together and give a clean BCKM mleqadj.m architecture: phi0 in obs equation, Sbar=0, steady-state Kalman with DARE-per-call, RTS smoother on the same constants. The only remaining structural item is the data-side Step 5 (durables + sales tax).
+
+### Next
+
+- **Step 5: Add `rDCD` (consumer durables) to Y; apply sales-tax wedge `(rCD/rCNDS)·rSTX` to X.** ~1 hr. Last data-side adjustment before re-running the full Table 8/9/10/11 comparison.
+- Optional **Sbar L2 prior** if Step 5 still leaves P_0 = 0 mismatched against Table 9.

@@ -48,7 +48,7 @@ Once these are matched, the model is trusted as correctly implemented and can be
 
 **Estimation**: Kalman-filter MLE (`mleqadj.m` logic), 30-parameter theta = [P₀(4), P(16), Q_lower_tri(10)].
 
-**Kalman initialization**: Use DARE (not Lyapunov, not diffuse) with BCKM Table 77 parameters as prior; freeze during optimization for speed, recompute at final parameters for smoother.
+**Kalman initialization / steady-state filter**: Use the DARE-derived steady-state covariance, evaluated at the *current* VAR parameters on every objective call (steady-state Kalman, BCKM `mleqadj.m` style). On a 5×5 system the per-call DARE is cheap (~ms) and eliminates the optimized-vs-final-smoother LL mismatch that arises when Σ₀ is frozen at BCKM Table 77 params while the optimizer drifts. The `_steady_state_kalman` helper returns a constant gain K, innovation cov S, and Σ_filt; the RTS smoother uses the same constants. Frozen-Σ₀ is no longer used.
 
 **Stationarity constraints**: Spectral radius penalty + per-wedge diagonal bounds `[0.995, 1.005, 0.995, 0.995]` for [A, τ_l, τ_x, g]. The τ_l bound is relaxed to 1.005 because BCKM's estimated τ_l diagonal is ≈ 1.001.
 
@@ -71,7 +71,7 @@ Once these are matched, the model is trusted as correctly implemented and can be
 - Use OLS VAR as the final estimator (warm-start only)
 - Use Lyapunov or diffuse covariance for Kalman initialization
 - Use spectral-radius penalty without per-diagonal penalty
-- Solve DARE inside the optimization loop (only at final parameters)
+- Run a *transient* time-varying Kalman recursion with a frozen Σ₀ during optimization — that produces a 100+-unit LL gap vs the final smoother and biases counterfactuals. Use the steady-state Kalman with DARE-per-call instead.
 - Use `std > 0.01` for random BCKM perturbations, or leave diagonal unclipped
 - Skip the BCKM Table 77 warm-start
 - Normalize observables by sample means (use model SS instead)

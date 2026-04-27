@@ -375,52 +375,94 @@ def estimate_var_mle(
 
         return F, H, Q_proc
 
-    # ── Forward Kalman filter (loglik only, fast) ────────────────────────
+    # ── Steady-state Kalman (DARE per call, BCKM mleqadj.m architecture) ─
     _R_OBS = 1e-8 * np.eye(n_obs)
     _CONST = n_obs * np.log(2.0 * np.pi)
 
-    def _kf_ll(F, H, Q_proc, P_0_vec, Sigma0=None):
-        intercept = np.r_[0.0, P_0_vec]  # capital has no intercept
+    def _steady_state_kalman(F, H, Q_proc):
+        """
+        DARE-based steady-state Kalman gain and innovation covariance.
+
+        Solves the predicted-covariance Riccati equation
+            Σ = F Σ F^T - F Σ H^T (H Σ H^T + R)^{-1} H Σ F^T + Q
+        and returns (K, S, Σ_pred, Σ_filt) — all constant across time.
+        scipy's solve_discrete_are uses the LQR convention
+            X = A^T X A - (A^T X B)(B^T X B + R)^{-1}(B^T X A) + Q,
+        so we pass A=F^T, B=H^T to recover the Kalman form.
+
+        Returns None if the DARE has no positive-definite solution at
+        these params (e.g., non-stationary VAR or singular innovation cov).
+        """
+        from scipy.linalg import solve_discrete_are
+        try:
+            Sigma_pred = solve_discrete_are(
+                F.T, H.T, Q_proc + 1e-12 * np.eye(5), _R_OBS
+            )
+        except Exception:
+            return None
+        S = H @ Sigma_pred @ H.T + _R_OBS
+        try:
+            S_inv_HSig = np.linalg.solve(S, H @ Sigma_pred)  # S^{-1} H Σ
+        except np.linalg.LinAlgError:
+            return None
+        K = S_inv_HSig.T  # Σ H^T S^{-1}
+        Sigma_filt = (np.eye(5) - K @ H) @ Sigma_pred
+        return K, S, Sigma_pred, Sigma_filt
+
+    def _kf_ll(F, H, Q_proc, P_0_vec):
+        """
+        Steady-state Kalman log-likelihood.
+
+        Constant DARE-derived gain K from the very first step — eliminates
+        the optimized-vs-final LL gap caused by Σ_0 mismatch between a
+        transient time-varying recursion and the smoother's DARE.
+        """
+        sk = _steady_state_kalman(F, H, Q_proc)
+        if sk is None:
+            return -1e20
+        K, S, _, _ = sk
+        sign, logdet = np.linalg.slogdet(S)
+        if sign <= 0:
+            return -1e20
+        intercept = np.r_[0.0, P_0_vec]
         x = np.zeros(5)
-        Sigma = Sigma0 if Sigma0 is not None else np.eye(5) * 1e4
-        ll = 0.0
+        quad = 0.0
         for t in range(T):
             xp = F @ x + intercept
-            Sp = F @ Sigma @ F.T + Q_proc
             innov = obs_hat[t] - H @ xp
-            S = H @ Sp @ H.T + _R_OBS
-            sign, logdet = np.linalg.slogdet(S)
-            if sign <= 0:
-                return -1e20
-            ll += -0.5 * (_CONST + logdet + innov @ np.linalg.solve(S, innov))
-            K = np.linalg.solve(S.T, H @ Sp.T).T
+            quad += innov @ np.linalg.solve(S, innov)
             x = xp + K @ innov
-            Sigma = (np.eye(5) - K @ H) @ Sp
-        return ll
+        return -0.5 * (T * (_CONST + logdet) + quad)
 
     # ── Forward Kalman filter (full, stores arrays for RTS smoother) ─────
-    def _kf_full(F, H, Q_proc, P_0_vec, Sigma0=None):
+    def _kf_full(F, H, Q_proc, P_0_vec):
+        """
+        Steady-state filter that also stores x_filt, x_pred and the
+        constant Σ_filt, Σ_pred so the RTS smoother runs unchanged.
+        """
+        sk = _steady_state_kalman(F, H, Q_proc)
+        if sk is None:
+            T_arr = np.full((T, 5), np.nan)
+            return T_arr, np.full((T, 5, 5), np.nan), T_arr, np.full((T, 5, 5), np.nan), -1e20
+        K, S, Sigma_pred, Sigma_filt = sk
+        sign, logdet = np.linalg.slogdet(S)
         intercept = np.r_[0.0, P_0_vec]
         x_filt = np.zeros((T, 5))
-        P_filt = np.zeros((T, 5, 5))
         x_pred = np.zeros((T, 5))
-        P_pred = np.zeros((T, 5, 5))
+        # Σ arrays are constant in time but stored per-step so the
+        # caller's RTS code (indexed by t) keeps working unchanged.
+        P_filt = np.broadcast_to(Sigma_filt, (T, 5, 5)).copy()
+        P_pred = np.broadcast_to(Sigma_pred, (T, 5, 5)).copy()
         x = np.zeros(5)
-        Sigma = Sigma0 if Sigma0 is not None else np.eye(5) * 1e4
-        ll = 0.0
+        quad = 0.0
         for t in range(T):
             xp = F @ x + intercept
-            Sp = F @ Sigma @ F.T + Q_proc
-            x_pred[t], P_pred[t] = xp, Sp
+            x_pred[t] = xp
             innov = obs_hat[t] - H @ xp
-            S = H @ Sp @ H.T + _R_OBS
-            sign, logdet = np.linalg.slogdet(S)
-            if sign > 0:
-                ll += -0.5 * (_CONST + logdet + innov @ np.linalg.solve(S, innov))
-            K = np.linalg.solve(S.T, H @ Sp.T).T
+            quad += innov @ np.linalg.solve(S, innov)
             x = xp + K @ innov
-            Sigma = (np.eye(5) - K @ H) @ Sp
-            x_filt[t], P_filt[t] = x, Sigma
+            x_filt[t] = x
+        ll = -0.5 * (T * (_CONST + logdet) + quad) if sign > 0 else -1e20
         return x_filt, P_filt, x_pred, P_pred, ll
 
     # ── RTS backward smoother ────────────────────────────────────────────
@@ -465,25 +507,6 @@ def estimate_var_mle(
                 idx += 1
         return theta
 
-    # ── DARE steady-state covariance (much tighter than stationary cov) ──
-    # For near-unit-root VAR, the stationary process covariance ≫ DARE,
-    # because the DARE accounts for how much uncertainty is removed each
-    # period by the (near-perfect) observations.  Using DARE prevents the
-    # filter from assigning GR investment dynamics to capital rather than
-    # the investment wedge.
-    def _dare_cov(F, H, Q_proc):
-        from scipy.linalg import solve_discrete_are
-        try:
-            Q_reg = Q_proc + 1e-12 * np.eye(5)
-            return solve_discrete_are(F, H.T, Q_reg, _R_OBS)
-        except Exception:
-            pass
-        from scipy.linalg import solve_discrete_lyapunov
-        try:
-            return solve_discrete_lyapunov(F, Q_proc)
-        except Exception:
-            return np.eye(5) * 1e4
-
     # ── Starting point: BCKM Table 8/9/10 US MLE estimates ─────────────
     # Wedge order: [A/z, tau_l, tau_x, g]  (matches our state ordering)
     _P_bckm = np.array([
@@ -505,20 +528,6 @@ def estimate_var_mle(
     ])
     x0_bckm = _pack(_Sbar_bckm, _P_bckm, _Q_bckm)
 
-    # ── Fixed Sigma0 from BCKM parameters (computed once for speed) ──────
-    # BCKM's P has tau_l diagonal = 1.0011 (slightly non-stationary).
-    # Clip diagonal to 0.995 only for DARE computation to get a valid covariance.
-    # The actual optimization is unconstrained beyond spectral-radius penalty.
-    _P_bckm_stable = _P_bckm.copy()
-    np.fill_diagonal(_P_bckm_stable,
-                     np.clip(np.diag(_P_bckm_stable), -0.995, 0.995))
-    try:
-        _F0, _H0, _Q0 = _build_ss(_P_bckm_stable, _Q_bckm @ _Q_bckm.T)
-        _Sigma0_fixed = _dare_cov(_F0, _H0, _Q0)
-    except Exception:
-        _Sigma0_fixed = np.eye(5) * 0.1
-
-    # Patch _neg_ll to use the fixed Sigma0 (replaces the per-call DARE)
     # BCKM Table 8: tau_l diagonal = 1.0011; all other diagonals are ≤ 0.9945.
     # Targeted bounds: only tau_l gets the relaxed 1.005 threshold.
     # A, tau_x, g keep the old 0.995 bound to prevent spurious local optima.
@@ -535,7 +544,7 @@ def estimate_var_mle(
             F, H, Q_proc = _build_ss(P_var, Q_chol @ Q_chol.T)
         except np.linalg.LinAlgError:
             return 1e20
-        ll = _kf_ll(F, H, Q_proc, P_0, _Sigma0_fixed)
+        ll = _kf_ll(F, H, Q_proc, P_0)
         return (-ll if np.isfinite(ll) else 1e20) + penalty
 
     rng = np.random.default_rng(42)
@@ -583,9 +592,8 @@ def estimate_var_mle(
     P_0, P_var, Q_chol = _unpack(best_theta)
     Sbar = np.zeros(4)                             # fixed at 0 in this build
     F_f, H_f, Q_proc_f = _build_ss(P_var, Q_chol @ Q_chol.T)
-    Sigma0_f = _dare_cov(F_f, H_f, Q_proc_f)
     x_filt, P_filt, x_pred, P_pred, final_ll = _kf_full(
-        F_f, H_f, Q_proc_f, P_0, Sigma0_f
+        F_f, H_f, Q_proc_f, P_0
     )
     smoothed = _rts(x_filt, P_filt, x_pred, P_pred, F_f)
 
