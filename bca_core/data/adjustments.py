@@ -154,6 +154,7 @@ def compute_government_wedge(df: pd.DataFrame) -> pd.Series:
 def remove_trend(
     series: pd.Series,
     method: str = "linear",
+    fixed_slope: float | None = None,
 ) -> tuple[pd.Series, dict]:
     """
     Remove trend from log of a series.
@@ -162,6 +163,9 @@ def remove_trend(
     ----------
     series : the data series (in levels)
     method : "linear" for OLS linear trend, "hp" for Hodrick-Prescott (lambda=1600)
+    fixed_slope : if given, use this slope (per-period) instead of estimating
+        by OLS. The intercept is then set to mean(log_s − slope·t) so that the
+        detrended series still has unit mean. Only applies when method="linear".
 
     Returns
     -------
@@ -173,9 +177,13 @@ def remove_trend(
     t = np.arange(T)
 
     if method == "linear":
-        # OLS: log(y) = a + b*t + residual
-        coeffs = np.polyfit(t, log_s, 1)
-        slope, intercept = coeffs[0], coeffs[1]
+        if fixed_slope is not None:
+            slope = float(fixed_slope)
+            intercept = float(np.mean(log_s - slope * t))
+        else:
+            # OLS: log(y) = a + b*t + residual
+            coeffs = np.polyfit(t, log_s, 1)
+            slope, intercept = coeffs[0], coeffs[1]
         trend = intercept + slope * t
         detrended_log = log_s - trend
         trend_info = {"slope": slope, "intercept": intercept, "method": "linear"}

@@ -30,6 +30,7 @@ def build_us_dataset(
     detrend_method: str = "linear",
     labor_target_mean: float = 0.25,
     data_path: str | Path | None = None,
+    gamma_annual: float | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """
     Build the adjusted US dataset for BCA.
@@ -48,6 +49,12 @@ def build_us_dataset(
           - If the file exists → load and return immediately (no API needed).
           - If the file does not exist → fetch, process, save, then return.
         When None → always fetch from FRED (original behaviour).
+    gamma_annual : if given, detrend log(y) using this calibrated growth rate
+        rather than OLS-estimating it from the sample. BCKM uses
+        gz = 1.018^(1/4)−1 (i.e. 1.8%/yr) for the US in datamine.m;
+        passing 0.019 (1.9%/yr) matches BCKM Table 77. The intercept is
+        re-fit so that the detrended series still has unit mean. When None
+        (default), the slope is estimated by OLS as before.
 
     Returns
     -------
@@ -111,14 +118,23 @@ def build_us_dataset(
 
     metadata: dict = {}
 
-    _, y_trend = remove_trend(sample["y_real_pc"], method=detrend_method)
+    fixed_slope_q: float | None = None
+    if gamma_annual is not None:
+        fixed_slope_q = (1 + gamma_annual) ** 0.25 - 1
+
+    _, y_trend = remove_trend(
+        sample["y_real_pc"],
+        method=detrend_method,
+        fixed_slope=fixed_slope_q,
+    )
     gamma_quarterly = y_trend["slope"]
-    gamma_annual = (1 + gamma_quarterly) ** 4 - 1
+    gamma_annual_used = (1 + gamma_quarterly) ** 4 - 1
 
     metadata["n_annual"] = n_annual
     metadata["n_quarterly"] = n_quarterly
-    metadata["gamma_annual"] = gamma_annual
+    metadata["gamma_annual"] = gamma_annual_used
     metadata["gamma_quarterly"] = gamma_quarterly
+    metadata["gamma_calibrated"] = gamma_annual is not None
 
     T = len(sample)
     t = np.arange(T)

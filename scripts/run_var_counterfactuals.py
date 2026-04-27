@@ -10,10 +10,10 @@ Estimation follows BCKM (2016) mleqadj.m:
 
 Usage:
     # First run — fetch from FRED and save processed data:
-    FRED_API_KEY=... python scripts/run_var_counterfactuals.py --save-data data/us_1969_2014.parquet
+    FRED_API_KEY=... python scripts/run_var_counterfactuals.py --save-data data/us_1980_2014.parquet
 
     # Subsequent runs — use saved data, no API key needed:
-    python scripts/run_var_counterfactuals.py --data data/us_1969_2014.parquet
+    python scripts/run_var_counterfactuals.py --data data/us_1980_2014.parquet
 """
 
 from __future__ import annotations
@@ -107,9 +107,16 @@ def main(
         print(f"Fetching from FRED and saving to {save_data_path} ...")
     else:
         print("Building US dataset (fetching from FRED)...")
-    df, meta = build_us_dataset(start="1969Q1", end="2014Q4", data_path=cache)
+    df, meta = build_us_dataset(
+        start="1980Q1",
+        end="2014Q4",
+        data_path=cache,
+        gamma_annual=_BCKM_GAMMA,
+    )
     T = len(df)
     print(f"  T = {T}")
+    print(f"  Detrend γ (annual): {meta['gamma_annual']:.4f}  "
+          f"({'calibrated' if meta.get('gamma_calibrated') else 'OLS-estimated'})")
 
     # ── 3. Calibrate g_share and model SS from data ──────────────────────
     # g_share = mean(g_dt)/mean(y_dt) so that model g_ss/y_ss matches data
