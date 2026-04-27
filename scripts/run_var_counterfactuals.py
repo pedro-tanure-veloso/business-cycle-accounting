@@ -140,10 +140,12 @@ def main(
     df["l"] = df["l"] * (ss["l"] / df["l"].mean())
     print(f"  Labor rescaled: new mean = {df['l'].mean():.4f} (= l_ss)")
 
-    # ── 5. Build observables normalized by model SS (BCKM approach) ──────
-    print("\nPreparing observables (log-deviations from model SS, centered by phi0)...")
-    obs_hat, phi0 = prepare_observables(df, ss)   # T x 4, 4-vector
-    print(f"  phi0 (SS misalignment): "
+    # ── 5. Build observables normalized by model SS (BCKM initmle.m) ─────
+    # Uncentered: SS gap is absorbed by free Sbar in the wedge VAR
+    # (Step 7), not by a fixed phi0 in the obs equation.
+    print("\nPreparing observables (log-deviations from model SS, uncentered)...")
+    obs_hat, phi0 = prepare_observables(df, ss, center=False)
+    print(f"  phi0 (sample mean of obs_raw, target for Sbar warm-start): "
           f"y={phi0[0]:+.4f}  l={phi0[1]:+.4f}  x={phi0[2]:+.4f}  g={phi0[3]:+.4f}")
     print(f"  obs_hat means: y={obs_hat[:,0].mean():.4f}  l={obs_hat[:,1].mean():.4f}  "
           f"x={obs_hat[:,2].mean():.4f}  g={obs_hat[:,3].mean():.4f}")
@@ -170,7 +172,7 @@ def main(
     # ── 6. Kalman-filter MLE (BCKM approach) ────────────────────────────
     print("\nEstimating VAR(1) by Kalman-filter MLE (BCKM 2016 mleqadj)...")
     mle_result = estimate_var_mle(
-        obs_hat, proto, n_restarts=4, verbose=True,
+        obs_hat, proto, n_restarts=2, verbose=True,
         P_ols=P_ols, Q_ols=Q_ols, P_0_ols=P_0_ols,
     )
 

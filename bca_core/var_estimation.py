@@ -18,9 +18,10 @@ from .model import PrototypeModel
 def prepare_observables(
     df: pd.DataFrame,
     ss: dict,
+    center: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Build BCKM-style observables: centered log-deviations from model SS.
+    Build BCKM-style observables: log-deviations from model SS.
 
     Raw step (deviation from model SS via ratio normalization):
         y_raw = log(y_dt)
@@ -28,28 +29,33 @@ def prepare_observables(
         x_raw = log(x_dt / (x_ss/y_ss))
         g_raw = log(g_dt / (g_ss/y_ss))
 
-    Centering step (BCKM phi0 in the observation equation):
-        phi0 = mean(obs_raw, axis=0)
-        obs  = obs_raw - phi0
+    Two architectures supported:
 
-    phi0 captures any model-vs-data SS misalignment that the ratio
-    normalization does not fully remove — most importantly, when the
-    data investment-to-output ratio differs from the model's (e.g.,
-    after the GI split, data x/y ≈ 0.29 vs model x/y ≈ 0.255). With
-    that offset absorbed into phi0, the latent state operates in true
-    deviations from the model SS and Sbar represents only the wedge-VAR
-    intercept — so counterfactuals (which run inactive wedges at the
-    VAR unconditional mean) no longer pick up the SS gap.
+    - ``center=True`` (legacy, BCKM ``mleqadj.m``-style ``phi0`` design):
+      ``phi0 = mean(obs_raw)`` and ``obs = obs_raw − phi0``. The wedge
+      VAR is constrained to ``Sbar = 0`` and the SS-misalignment offset
+      lives in ``phi0``. Used by the older Step 3–6 pipeline.
+
+    - ``center=False`` (Step 7, BCKM ``initmle.m``-style design):
+      ``obs = obs_raw`` (uncentered). ``phi0`` is still returned so
+      callers can warm-start ``Sbar`` from it (linear solve), but it is
+      no longer subtracted from the observables. The SS gap is then
+      absorbed by a free ``Sbar`` in the wedge VAR rather than by a
+      fixed obs intercept.
 
     Parameters
     ----------
     df : DataFrame with columns y, c, x, g, l (detrended pipeline output).
     ss : steady-state dict from proto.steady_state().
+    center : if True (default), subtract the sample mean (legacy
+        ``mleqadj.m`` design). If False, leave the obs uncentered so
+        that a free ``Sbar`` can absorb the offset (``initmle.m``
+        design).
 
     Returns
     -------
-    obs : T x 4 array, mean ≈ 0 by construction.
-    phi0 : 4-vector, the SS-misalignment offset (subtracted from obs_raw).
+    obs : T x 4 array.  Mean ≈ 0 if ``center=True``, else mean = phi0.
+    phi0 : 4-vector, the sample mean of obs_raw.
     """
     x_ss_norm = ss["x"] / ss["y"]
     g_ss_norm = ss["g"] / ss["y"]
@@ -62,7 +68,7 @@ def prepare_observables(
 
     obs_raw = np.column_stack([y_hat, l_hat, x_hat, g_hat])
     phi0 = obs_raw.mean(axis=0)
-    obs = obs_raw - phi0
+    obs = obs_raw - phi0 if center else obs_raw
 
     return obs, phi0
 
@@ -325,7 +331,7 @@ def estimate_var_mle(
     from scipy.optimize import minimize as _minimize
 
     T, n_obs = obs_hat.shape
-    N_P = 30  # 4 (P_0) + 16 (P) + 10 (Q lower-tri)
+    N_P = 26  # 16 (P) + 10 (Q lower-tri); Sbar is fixed (Step 7 option 2)
 
     # ── Pre-compute model primitives ─────────────────────────────────────
     ss = proto.steady_state()
@@ -409,6 +415,16 @@ def estimate_var_mle(
         Sigma_filt = (np.eye(5) - K @ H) @ Sigma_pred
         return K, S, Sigma_pred, Sigma_filt
 
+    def _unconditional_state_mean(F, intercept):
+        """E[s] = (I − F)^{-1} · intercept, the steady state of the
+        augmented [k, A, τ_l, τ_x, g] system. Returns None if (I−F) is
+        near-singular (non-stationary parameters)."""
+        I5 = np.eye(5)
+        try:
+            return np.linalg.solve(I5 - F, intercept)
+        except np.linalg.LinAlgError:
+            return None
+
     def _kf_ll(F, H, Q_proc, P_0_vec):
         """
         Steady-state Kalman log-likelihood.
@@ -425,7 +441,10 @@ def estimate_var_mle(
         if sign <= 0:
             return -1e20
         intercept = np.r_[0.0, P_0_vec]
-        x = np.zeros(5)
+        x0 = _unconditional_state_mean(F, intercept)
+        if x0 is None:
+            return -1e20
+        x = x0
         quad = 0.0
         for t in range(T):
             xp = F @ x + intercept
@@ -453,7 +472,11 @@ def estimate_var_mle(
         # caller's RTS code (indexed by t) keeps working unchanged.
         P_filt = np.broadcast_to(Sigma_filt, (T, 5, 5)).copy()
         P_pred = np.broadcast_to(Sigma_pred, (T, 5, 5)).copy()
-        x = np.zeros(5)
+        x0 = _unconditional_state_mean(F, intercept)
+        if x0 is None:
+            T_arr = np.full((T, 5), np.nan)
+            return T_arr, P_filt, T_arr, P_pred, -1e20
+        x = x0
         quad = 0.0
         for t in range(T):
             xp = F @ x + intercept
@@ -475,32 +498,34 @@ def estimate_var_mle(
             P_s[t] += G @ (P_s[t + 1] - P_pred[t + 1]) @ G.T
         return x_s
 
-    # ── Parameter pack / unpack: theta = [Sbar(4), P_vec(16), Q_lower_tri(10)] ─
-    # BCKM mleqadj.m design: phi0 in the obs equation (prepare_observables)
-    # carries the model-vs-data SS gap. The wedge VAR has no separate intercept
-    # — Sbar is fixed at 0 and P_0 = (I-P)·0 = 0. The first 4 elements of theta
-    # are kept for backwards compatibility but are inert during optimization
-    # (gradient w.r.t. them is exactly zero, so L-BFGS-B leaves them alone).
-    # Forcing Sbar = 0 prevents the optimizer from finding spurious basins
-    # where (I-P) near-singularity lets a huge Sbar coexist with tiny P_0,
-    # producing smoothed states that drift away from the model SS.
+    # ── Parameter pack / unpack: theta = [P_vec(16), Q_lower_tri(10)] ────
+    # Step 7 option 2 design: Sbar is fixed at the fsolve-init value
+    # (computed once from the BCKM P/Q below) and is *not* a free
+    # parameter. The implied VAR intercept P_0 = (I−P)·Sbar moves with the
+    # optimizer's P. This keeps the SS gap absorbed (no Sbar=0 corner) but
+    # avoids the runaway-Sbar pathology Step 7 option 1 ran into, where a
+    # free Sbar exploited the (I−P) near-singular basin to dampen wedge
+    # variance and saturate the bounds.
+    #
+    # Sbar_fixed is closed over from the enclosing scope; it is filled in
+    # below once _fsolve_sbar is available.
+    Sbar_fixed = np.zeros(4)  # placeholder; set after _fsolve_sbar defined
+
     def _unpack(theta):
-        Sbar = np.zeros(4)                  # FIXED: no free VAR intercept
-        P_var = theta[4:20].reshape(4, 4)
-        P_0 = (np.eye(4) - P_var) @ Sbar    # = 0 by construction
+        P_var = theta[:16].reshape(4, 4)
+        P_0 = (np.eye(4) - P_var) @ Sbar_fixed
         Q_chol = np.zeros((4, 4))
-        idx = 20
+        idx = 16
         for i in range(4):
             for j in range(i + 1):
                 Q_chol[i, j] = theta[idx]
                 idx += 1
-        return P_0, P_var, Q_chol
+        return Sbar_fixed, P_0, P_var, Q_chol
 
-    def _pack(Sbar, P_var, Q_chol):
+    def _pack(P_var, Q_chol):
         theta = np.empty(N_P)
-        theta[:4] = Sbar                    # ignored by _unpack; kept for shape parity
-        theta[4:20] = P_var.ravel()
-        idx = 20
+        theta[:16] = P_var.ravel()
+        idx = 16
         for i in range(4):
             for j in range(i + 1):
                 theta[idx] = Q_chol[i, j]
@@ -515,10 +540,6 @@ def estimate_var_mle(
         [-0.0045,  0.0449,  0.9675, -0.0426],
         [ 0.0063,  0.0017,  0.0016,  0.9945],
     ])
-    # Sbar fixed at 0 (see _unpack note). _P_0_bckm kept here only for
-    # documentation of the BCKM target; not used to seed the optimizer.
-    _P_0_bckm = np.array([0.0140, 0.0008, 0.0129, -0.0137])
-    _Sbar_bckm = np.zeros(4)
     # Q_chol from mleqadj x0c (adja=12.88, nearest to our a=12.5)
     _Q_bckm = np.array([
         [ 0.0240,  0.0000,  0.0000,  0.0000],
@@ -526,7 +547,42 @@ def estimate_var_mle(
         [-0.0169, -0.0656,  0.1208,  0.0000],
         [ 0.0000,  0.0000,  0.0000,  0.1003],
     ])
-    x0_bckm = _pack(_Sbar_bckm, _P_bckm, _Q_bckm)
+
+    # ── fsolve-init Sbar (BCKM initmle.m analogue) ───────────────────────
+    # Linear-solve for the Sbar that makes the model's unconditional
+    # observable mean equal the data sample mean. With state s=[k,wedges]
+    # and intercept [0, (I-P)·Sbar], unconditional E[s] = (I-F)^{-1}·intercept
+    # is linear in Sbar, so this is a 4×4 linear solve, not a nonlinear
+    # fsolve. Used only to seed the optimizer.
+    sample_obs_mean = obs_hat.mean(axis=0)
+    def _fsolve_sbar(P_var, Q_chol):
+        try:
+            F, H, _ = _build_ss(P_var, Q_chol @ Q_chol.T)
+        except np.linalg.LinAlgError:
+            return np.zeros(4)
+        # Build the linear map Sbar -> H · E[s] by perturbing each axis.
+        # Cheaper than deriving the closed form because we already have
+        # _build_ss and the unconditional state mean utility.
+        I5 = np.eye(5)
+        try:
+            M0 = np.linalg.solve(I5 - F, np.zeros(5))
+        except np.linalg.LinAlgError:
+            return np.zeros(4)
+        H_eff = np.zeros((4, 4))
+        for j in range(4):
+            ej = np.zeros(4)
+            ej[j] = 1.0
+            P0_j = (np.eye(4) - P_var) @ ej
+            interc_j = np.r_[0.0, P0_j]
+            try:
+                Mj = np.linalg.solve(I5 - F, interc_j)
+            except np.linalg.LinAlgError:
+                return np.zeros(4)
+            H_eff[:, j] = H @ (Mj - M0)
+        try:
+            return np.linalg.solve(H_eff, sample_obs_mean - H @ M0)
+        except np.linalg.LinAlgError:
+            return np.zeros(4)
 
     # BCKM Table 8: tau_l diagonal = 1.0011; all other diagonals are ≤ 0.9945.
     # Targeted bounds: only tau_l gets the relaxed 1.005 threshold.
@@ -535,7 +591,7 @@ def estimate_var_mle(
     _DIAG_BOUNDS = np.array([0.995, 1.005, 0.995, 0.995])  # [A, tau_l, tau_x, g]
 
     def _neg_ll_fast(theta):
-        P_0, P_var, Q_chol = _unpack(theta)
+        _Sbar, P_0, P_var, Q_chol = _unpack(theta)
         eig_max = np.max(np.abs(np.linalg.eigvals(P_var)))
         penalty = 5e5 * max(eig_max - 1.005, 0.0) ** 2
         diag_excess = np.maximum(np.abs(np.diag(P_var)) - _DIAG_BOUNDS, 0.0)
@@ -547,25 +603,27 @@ def estimate_var_mle(
         ll = _kf_ll(F, H, Q_proc, P_0)
         return (-ll if np.isfinite(ll) else 1e20) + penalty
 
+    # Step 7 option 2: pin Sbar at the fsolve-init value computed from the
+    # BCKM P/Q. From this point forward `Sbar_fixed` is what _unpack returns.
+    Sbar_fixed[:] = _fsolve_sbar(_P_bckm, _Q_bckm)
+    if verbose:
+        print(f"  Sbar_fixed (fsolve-init from BCKM P/Q): "
+              f"A={Sbar_fixed[0]:+.4f}  τ_l={Sbar_fixed[1]:+.4f}  "
+              f"τ_x={Sbar_fixed[2]:+.4f}  g={Sbar_fixed[3]:+.4f}")
+
     rng = np.random.default_rng(42)
+    x0_bckm = _pack(_P_bckm, _Q_bckm)
     starts = [x0_bckm]
     # Warm start from OLS result if provided (often has correct wedge signs)
     if P_ols is not None:
         Q_warm = Q_ols if Q_ols is not None else _Q_bckm
-        P_0_warm = P_0_ols if P_0_ols is not None else _P_0_bckm
-        # Convert OLS P_0 to Sbar for the new parametrization
-        try:
-            Sbar_warm = np.linalg.solve(np.eye(4) - P_ols, P_0_warm)
-        except np.linalg.LinAlgError:
-            Sbar_warm = _Sbar_bckm
-        starts.append(_pack(Sbar_warm, P_ols, Q_warm))
+        starts.append(_pack(P_ols, Q_warm))
     n_pert = n_restarts - 1 - (1 if P_ols is not None else 0)
     for _ in range(max(n_pert, 0)):
-        Sbar_pert = _Sbar_bckm + rng.normal(0.0, 0.005, 4)
         P_pert = _P_bckm + rng.normal(0.0, 0.01, (4, 4))
         # Clip diagonal to [−1.0, 1.0] to keep starts inside the penalty region
         np.fill_diagonal(P_pert, np.clip(np.diag(P_pert), -1.0, 1.0))
-        starts.append(_pack(Sbar_pert, P_pert, _Q_bckm))
+        starts.append(_pack(P_pert, _Q_bckm))
 
     # ── Optimise (L-BFGS-B with BCKM-style perturbation restarts) ───────
     best_val, best_theta = np.inf, x0_bckm.copy()
@@ -589,8 +647,7 @@ def estimate_var_mle(
             best_val, best_theta = best_r.fun, best_r.x.copy()
 
     # ── Final smoother pass ───────────────────────────────────────────────
-    P_0, P_var, Q_chol = _unpack(best_theta)
-    Sbar = np.zeros(4)                             # fixed at 0 in this build
+    Sbar, P_0, P_var, Q_chol = _unpack(best_theta)
     F_f, H_f, Q_proc_f = _build_ss(P_var, Q_chol @ Q_chol.T)
     x_filt, P_filt, x_pred, P_pred, final_ll = _kf_full(
         F_f, H_f, Q_proc_f, P_0

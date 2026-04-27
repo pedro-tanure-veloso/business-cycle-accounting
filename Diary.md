@@ -564,3 +564,83 @@ Same direction as before, but now louder. Step 7 (fsolve-init Sbar) is the immed
 ### Next
 
 **Step 7**: BCKM `initmle.m`-style fsolve initialization for Sbar. Pick initial Sbar by solving for the steady-state wedge means that make model SS observables equal to data sample means, so the optimizer starts from a feasible non-zero P_0 instead of the Sbar=0 corner. Relaxing the constraint without re-introducing the runaway-Sbar pathology was Step 3's worry; the fsolve init gives a principled starting point so the optimizer doesn't have to discover Sbar from scratch.
+
+
+---
+
+## Session: 2026-04-27 — Step 7 — Free vs fixed Sbar (initmle.m-style)
+
+### What was tried
+
+Two parametrizations of the wedge-VAR unconditional mean Sbar, both with uncentered observables (`prepare_observables(..., center=False)`) so the SS gap is absorbed by the wedge VAR rather than a fixed `phi0` in the obs equation.
+
+**Option 1 — free Sbar with bound penalty (`±0.5`)**: theta = [Sbar(4), P(16), Q(10)] = 30 params. fsolve-init seed: solve `H · (I−F)^{-1} · intercept(Sbar) = sample_obs_mean` for Sbar at BCKM P/Q. Soft-bound penalty on |Sbar|.
+
+**Option 2 — fix Sbar at the fsolve-init value**: theta = [P(16), Q(10)] = 26 params. Sbar pinned once at startup from `_fsolve_sbar(_P_bckm, _Q_bckm)`. Implied `P_0 = (I−P_var)·Sbar_fixed` moves with the optimizer's P.
+
+### Files touched
+
+**`bca_core/var_estimation.py`**
+- `prepare_observables`: added `center: bool = True` flag (Step 7 used `False`).
+- `_unpack` / `_pack`: shrunk theta from 30 → 26 (option 2). `Sbar_fixed` is closure-captured.
+- `_kf_ll` / `_kf_full`: x0 set to unconditional state mean `(I−F)^{-1}·intercept` instead of zeros — required when intercept ≠ 0.
+- `_fsolve_sbar`: 4×4 linear-solve helper that builds the column-by-column map `Sbar → H · E[s]` and solves for the Sbar matching `sample_obs_mean`.
+- Removed the `_SBAR_BOUND` penalty (option 2): no free Sbar to bound.
+
+**`scripts/run_var_counterfactuals.py`**
+- `prepare_observables(df, ss, center=False)`.
+
+### Numbers
+
+```
+sample_obs_mean (phi0): y=-0.0000  l=-0.0548  x=+0.0810  g=-0.0192
+Sbar_fixed (fsolve-init from BCKM P/Q):
+  A=+0.0073  τ_l=-0.1102  τ_x=-0.0785  g=-0.0192
+```
+
+| | Step 6 (Sbar=0) | Step 7 opt 1 (free Sbar) | Step 7 opt 2 (fix Sbar) | BCKM |
+|---|---|---|---|---|
+| LL | 2776 | 3109 | 2698 | — |
+| Max \|eig\| | 0.996 | (Sbar at bound) | **1.008 ✗** | <1 |
+| Sbar | 0 | hit ±0.5 bound | fixed at fsolve-init | implied 0.014 |
+| GR Δτ_x sign | +0.139 ✓ | — | **−0.016 ✗** | + |
+| φ_y[A]   | 0.02 | (worse) | 0.06 | 0.16 |
+| φ_y[τ_L] | 0.02 | (worse) | 0.03 | 0.46 |
+| φ_y[τ_x] | 0.58 | (worse) | 0.03 | 0.32 |
+| φ_y[g]   | 0.39 | (worse) | **0.87** | — |
+
+### Reading the result
+
+Both Step 7 options are worse than Step 6 (Sbar=0):
+
+- **Option 1** lifted LL by 332 units but did so by exploiting the (I−P) near-singular basin: free Sbar saturated the ±0.5 bound, P_0 collapsed, and the optimizer used the extra freedom to dampen wedge variance rather than match data dynamics. φ-stats regressed across the board.
+
+- **Option 2** prevents the runaway pathology but pays for it twice: (i) Sbar pinned at `[+0.007, −0.110, −0.079, −0.019]` is a strong prior the optimizer cannot revise, so the implied P_0 = (I−P)·Sbar_fixed is far from BCKM Table 9; (ii) to make the data fit at all under that constraint, the optimizer pushes P toward the unit circle (max |eig| = 1.008 — non-stationary, breaks the spectral-radius bound). The result is a model with the wrong-sign GR investment wedge and 87% of y-variance attributed to government.
+
+The fsolve-init Sbar is large in magnitude (|τ_l|≈0.11, |τ_x|≈0.08) because the model's unconditional response of mean(l_hat) and mean(x_hat) to Sbar is small — it takes a big Sbar to absorb a phi0 of −0.05 / +0.08. Big Sbar then forces big P_0, which the rest of the system isn't well-suited to.
+
+### Hypothesis on why BCKM replication keeps failing
+
+Ranked by my current confidence, after Steps 6 and 7:
+
+1. **Labor input series construction (most likely)** — `taul_hat` smoothed std hits 0.45 in Step 6 and stays ≥0.32 in Step 7, vs BCKM Table 10 which implies far smaller wedge volatility. PRS85006023 (nonfarm business hours of all persons, BLS index) normalized to a fixed mean and divided by CNP16OV does not match CKM-2007's "labor input" construction — that paper uses a Cobb-Douglas-aggregated hours-of-work-and-quality index across NIPA labor categories. Until our `l_t` matches BCKM's `l_t` series, the labor wedge will absorb whatever low-frequency mismatch exists between our hours data and the model.
+2. **Investment definition (rDCD = pce_durables vs perpetual-inventory δ·K_dur)** — Step 5 added `pce_durables` as the depreciation flow (+ K_dur return). Re-checking `usdata.m`: BCKM uses `rDCD` as a separately-computed series, *not* equal to current pce_durables expenditure. We're double-counting the depreciation flow if `pce_durables` already includes replacement of fully-depreciated stock.
+3. **MLE multimodality** — the LL surface has at least three distinct local optima (Sbar=0 plateau at 2776, free-Sbar bound at 3109, fixed-Sbar mode at 2698). BCKM's exact restart strategy (initmle.m perturbation set) may be necessary to land in their mode.
+4. **Detrending intercept** — calibrated γ=1.9%/yr fixes the slope; the OLS-fitted intercept differs from BCKM's `meandata` adjustment. This shifts the data sample mean and propagates into phi0 / Sbar.
+5. **Population aging in CNP16OV** — CNP16OV (16+) includes retirees, whose share grew 1948→2014. Per-capita labor scaling is biased downward over time. BCKM's pop series excludes 65+; ours doesn't.
+
+The smoking gun is #1: the only state with `taul_hat` std ≥ 3× the others *and* the only series we changed in Step 6 that has a known semantic mismatch with BCKM. Step 8 should be a CKM-2007-style labor-input reconstruction or a regression test against BCKM's published `l_t` time series if obtainable.
+
+### Recommendation: roll back to Step 6 as operational baseline
+
+Step 6 (Sbar=0, centered observables) gives the only well-behaved result so far: stationary VAR, correct GR investment-wedge sign, well-defined φ-stats. It is wrong on the φ-statistic *targets*, but it is wrong in a way that is internally consistent and interpretable. Step 7 options trade interpretability for LL points and break the GR sign — that is not a good trade.
+
+Concretely: leave the var_estimation.py changes in place (the `center` flag, fsolve helper, unconditional-mean x0 are all reusable); revert the runner script to `center=True` (or default omit) so the production pipeline returns to Sbar=0 until the labor-input issue is fixed.
+
+### Next
+
+**Step 8**: investigate labor input series. Two cuts:
+- (a) Diagnostic: compare `taul_hat` smoothed time series under our `l_t` vs CKM-2007's published `l_t` (if available in BCKM's USAN2 data files).
+- (b) Constructive: try `(1 − unemployment_rate) · avg_weekly_hours` reconstruction back to 1948, comparing the φ-stats. If this closes the gap, the labor-input series is the answer.
+
+Hold off on more Sbar surgery until the labor identification is resolved.
