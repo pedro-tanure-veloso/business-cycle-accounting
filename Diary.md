@@ -644,3 +644,125 @@ Concretely: leave the var_estimation.py changes in place (the `center` flag, fso
 - (b) Constructive: try `(1 − unemployment_rate) · avg_weekly_hours` reconstruction back to 1948, comparing the φ-stats. If this closes the gap, the labor-input series is the answer.
 
 Hold off on more Sbar surgery until the labor identification is resolved.
+
+
+---
+
+## Session: 2026-04-27 — Step 8 — Read the actual BCKM Matlab and re-plan
+
+### Context
+
+User added the BCKM Matlab reference files to `matlab_reference/` (driver `datamine.m`,
+estimator `mleqadj.m`, runner `runmleadj.m`, init helper `initmle.m`, trend
+helper `maketrend.m`, calgz residual `calgz.m`, Kalman helper `kfilter.m`,
+counterfactual driver `runall.m`, f-stats `fstats3.m`, US data fetcher
+`usdata.m`). We had been working from `BCA_info.md` plus an older vintage of
+`usdata.m`; reading the production Matlab end-to-end revealed nine concrete
+mismatches with our pipeline.
+
+### Discrepancies (production Matlab vs current pipeline)
+
+1. **Sample period.** `datamine.m` runs MLE on `t = 1980.25 : 0.25 : 2015`
+   (T=140, 1980Q1–2015Q1). Our Step 6 extension to 1948Q1–2014Q4 was based on a
+   misreading of an older `usdata.m` vintage. The production sample is the
+   shorter one. **Step 6 must be reverted.**
+2. **Growth rate γ.** `maketrend.m` calls `gzt = fsolve(@calgz, 0)` to pick γ
+   so that `mean(detrended log y_pc) = 0` over the MLE window. Our Step 1 used
+   the calibrated 1.9% from BCKM Table 77; the production code uses a *data-
+   estimated* γ.
+3. **Trend normalization.** `maketrend.m` divides each series by
+   `ypc(by) · (1+gzt)^by` where `by = base date index` — a base-year level
+   pin. Our `remove_trend` only subtracts the trend slope and does not pin a
+   base year.
+4. **Sbar parametrization.** `mleqadj.m` `ind = [0,0,0,0,0,0,0, 1,1,1,1, ...]`
+   has Sbar(1..4) as estimated parameters (theta(1..4)) — Sbar IS a free
+   parameter. Our Step 7 option 2 (fix Sbar) was the wrong direction. The
+   correct setup is option 1 (free Sbar) + a sensible fsolve-based init.
+5. **fsolve-init for Sbar.** `initmle.m` uses fsolve over level/ratio
+   residuals (model SS observables vs data sample means), not a one-shot
+   linear solve. Our Step 7 fsolve-init was a 4×4 linear solve at BCKM P/Q —
+   too crude.
+6. **Spectral radius bound.** `mleqadj.m` line 134: `penalty = 500000 *
+   max(|eig|−.995, 0)^2` — the threshold is **0.995**, not 1.005 as in our
+   `bca_core/var_estimation.py`. Our CLAUDE.md note that "BCKM's τ_l diagonal
+   is ~1.001" rationalized the 1.005 bound, but `datamine.m` runs *with* the
+   0.995 spectral bound and still produces τ_l diag ≈ 1.001 in Table 8 — the
+   bound is on the *spectral radius*, not on individual diagonals.
+7. **Initial P.** `mleqadj.m` line 28 sets `P = 0.995*eye(4)`. Our restarts
+   use BCKM Table 77 P (which has off-diagonals); the production warm-start
+   is a diagonal 0.995·I.
+8. **Restart perturbation.** `runmleadj.m` does `nps=50` restarts with
+   *multiplicative* perturbation `x_new = x*pb, pb=0.99` — geometric shrink,
+   not random Gaussian. Our `n_restarts=4` with Gaussian perturbation is a
+   different exploration strategy.
+9. **F-statistics window and definition.** `fstats3.m` lines 1–40 use the
+   Great Recession window `i1=2008.25, i2=2011.75` with `ilog=0` (levels) and
+   `ifilt=0` (no HP), and the formula `f(1,i) = 1/sum((dly−dlyc(:,i)).^2)`,
+   then normalizes `f` to sum to 1. Our `phi_statistics` was computing
+   full-sample inverse-SSR with no window. **This is the single most
+   important discrepancy** — we have been comparing the wrong statistic to
+   BCKM Table 11.
+
+### Step 8 plan
+
+1. **8.1 — Rewrite f-stats as GR-window inverse-MSE.** Add a `window`
+   argument to `phi_statistics`; in the runner script, compute the canonical
+   BCKM stat over 2008Q1–2011Q4 and print both that *and* the full-sample
+   diagnostic side-by-side.
+2. **8.2 — Revert sample to 1980Q1–2015Q1** (T=140) per `datamine.m`.
+3. **8.3 — `calgz`-style fsolve for γ + base-year normalization** per
+   `maketrend.m`.
+4. **8.4 — fsolve-init Sbar over level/ratio residuals**, free Sbar in theta
+   per `initmle.m` + `mleqadj.m`.
+5. **8.5 — Tighten spectral-radius bound 1.005 → 0.995** per `mleqadj.m`
+   line 134.
+6. **8.6 — Initial P = 0.995·I** per `mleqadj.m` line 28.
+7. **8.7 — Multiplicative perturbation x*pb, pb=0.99, nps=50** per
+   `runmleadj.m`.
+
+### Step 8.1 — landed
+
+`bca_core/counterfactuals.py` `phi_statistics` now takes
+`window: tuple[int, int] | None = None`; when set, slices both data and
+counterfactual paths to that window before computing inverse-SSR. Default
+behaviour (window=None) is unchanged for back-compat.
+
+`scripts/run_var_counterfactuals.py` finds the GR window indices via
+`find_date_index(df.index, 2008, 1)` and `find_date_index(df.index, 2011, 4)`
+and prints the canonical BCKM Table 11 stat first, then the full-sample
+diagnostic with a clear label that it is NOT the BCKM target.
+
+`tests/` — 52/52 passing.
+
+### Result on broken Step 7-option-2 config (cached parquet)
+
+Pipeline run did not include the broken Step 7 fixes (Sbar still pinned, max
+|eig|=1.008, GR investment sign wrong), but the f-stat block did execute:
+
+```
+F-statistics (BCKM Table 11, GR window 2008Q1–2011Q4):
+                  y       l       x
+efficiency    0.04    0.13    0.05      (BCKM target fY[A]=0.16)
+labor         0.03    0.16    0.03      (BCKM target fY[τ_l]=0.46)
+investment    0.37    0.10    0.43      (BCKM target fY[τ_x]=0.32 ✓ near match)
+government    0.57    0.61    0.50
+```
+
+Even with the broken Step 7 config, the GR-window stat moves the investment
+column close to BCKM's 0.32 — a strong sign that switching to the canonical
+BCKM stat will close some of the gap independent of the other Step 8 items.
+Re-evaluation against a clean Step 8.2+ baseline is required for a real
+comparison, but the qualitative validation is encouraging.
+
+### What still doesn't match BCKM (carried)
+
+Same items as Step 7, plus the seven Step 8 items above. Step 8.1 is the
+cheapest of the seven — and the one that most directly affects whether we
+can claim BCKM Table 11 replication, since we had been comparing the wrong
+statistic.
+
+### Next
+
+Step 8.2: revert sample to 1980Q1–2015Q1 in
+`scripts/run_var_counterfactuals.py` and update the cache filename.
+

@@ -222,8 +222,20 @@ def main(
     print("\nRunning counterfactual simulations...")
     cfs = run_all_counterfactuals(smoothed, proto, P_var, P_0=P_0)
 
-    # ── 10. Phi-statistics ────────────────────────────────────────────────
-    print("\nPhi-statistics (variance decomposition):")
+    # ── 10. F-statistics (BCKM Table 11, fstats3.m) ──────────────────────
+    # Canonical BCKM stat: GR-window (2008Q1-2011Q4) inverse-SSR, normalized.
+    # Different from the full-sample variance decomposition we used to print.
+    gr_start = find_date_index(df.index, 2008, 1)
+    gr_end   = find_date_index(df.index, 2011, 4)
+    if gr_start is not None and gr_end is not None:
+        print(f"\nF-statistics (BCKM Table 11, GR window "
+              f"{df.index[gr_start]}–{df.index[gr_end]}):")
+        f_gr = phi_statistics(data_hat, cfs, window=(gr_start, gr_end))
+        print(f_gr.to_string(float_format="{:.4f}".format))
+        print("  BCKM Table 11 targets: fY[A]=0.16  fY[τ_l]=0.46  fY[τ_x]=0.32")
+
+    print("\nPhi-statistics (full-sample variance decomposition; "
+          "diagnostic, NOT BCKM Table 11):")
     phi = phi_statistics(data_hat, cfs)
     print(phi.to_string(float_format="{:.4f}".format))
 

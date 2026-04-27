@@ -200,30 +200,42 @@ def run_all_counterfactuals(
 def phi_statistics(
     data_hat: dict,
     counterfactuals: dict,
+    window: tuple[int, int] | None = None,
 ) -> pd.DataFrame:
     """
-    Compute phi-statistics per BCKM.
+    Compute the BCKM Table 11 f-statistic.
 
-    phi_i(v) = (1/SSR_i) / sum_j(1/SSR_j)
-    where SSR_i = sum_t (v_data_t - v_cf_i_t)^2
+    f_i(v) = (1/SSR_i) / sum_j(1/SSR_j)
+    where SSR_i = sum_t (v_data_t - v_cf_i_t)^2 over the chosen window.
+
+    Per BCKM ``fstats3.m``, the canonical window is the Great Recession
+    slice 2008Q1–2011Q4 (16 quarters). The full-sample variant (window=None)
+    is a different statistic — useful for smoke-testing wedge identification
+    but NOT the quantity reported in BCKM Table 11.
 
     Parameters
     ----------
-    data_hat : dict with 'y', 'l', 'x' arrays (actual data in hat form)
-    counterfactuals : dict from run_all_counterfactuals
+    data_hat : dict with 'y', 'l', 'x' arrays (actual data in hat form).
+    counterfactuals : dict from run_all_counterfactuals.
+    window : (start_idx, end_idx) inclusive slice. None → full sample.
 
     Returns
     -------
-    DataFrame: rows = wedges, columns = variables {y, l, x}
+    DataFrame: rows = wedges, columns = variables {y, l, x}.
     """
     wedge_names = list(counterfactuals.keys())
     variables = ["y", "l", "x"]
+    if window is None:
+        sl = slice(None)
+    else:
+        i1, i2 = window
+        sl = slice(i1, i2 + 1)
 
     phi = {}
     for var in variables:
         inv_ssr = {}
         for name in wedge_names:
-            residual = data_hat[var] - counterfactuals[name][var]
+            residual = data_hat[var][sl] - counterfactuals[name][var][sl]
             ssr = np.sum(residual ** 2)
             inv_ssr[name] = 1.0 / ssr if ssr > 1e-16 else 1e16
 
