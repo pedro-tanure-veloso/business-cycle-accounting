@@ -18,39 +18,53 @@ from .model import PrototypeModel
 def prepare_observables(
     df: pd.DataFrame,
     ss: dict,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Convert detrended data to log-deviations from model steady state.
+    Build BCKM-style observables: centered log-deviations from model SS.
 
-    Follows BCKM (2016): normalize each observable by the model SS ratio
-    (in the same detrended units where y_dt ~ 1), rather than subtracting
-    sample means. This allows P_0 to absorb any small discrepancy between
-    the model SS and the data mean — which is how BCKM gets P_0 ≠ 0.
+    Raw step (deviation from model SS via ratio normalization):
+        y_raw = log(y_dt)
+        l_raw = log(l / l_ss)
+        x_raw = log(x_dt / (x_ss/y_ss))
+        g_raw = log(g_dt / (g_ss/y_ss))
 
-    - y: log(y_dt); already ~0 mean from OLS trend removal
-    - l: log(l / l_ss) where l_ss is the model SS labor
-    - x: log(x_dt / (x_ss/y_ss)); model's investment-output ratio as normalizer
-    - g: log(g_dt / (g_ss/y_ss)); model's government-output ratio as normalizer
+    Centering step (BCKM phi0 in the observation equation):
+        phi0 = mean(obs_raw, axis=0)
+        obs  = obs_raw - phi0
+
+    phi0 captures any model-vs-data SS misalignment that the ratio
+    normalization does not fully remove — most importantly, when the
+    data investment-to-output ratio differs from the model's (e.g.,
+    after the GI split, data x/y ≈ 0.29 vs model x/y ≈ 0.255). With
+    that offset absorbed into phi0, the latent state operates in true
+    deviations from the model SS and Sbar represents only the wedge-VAR
+    intercept — so counterfactuals (which run inactive wedges at the
+    VAR unconditional mean) no longer pick up the SS gap.
 
     Parameters
     ----------
-    df : DataFrame with columns y, c, x, g, l (from pipeline, detrended by y trend)
-    ss : steady-state dict from proto.steady_state()
+    df : DataFrame with columns y, c, x, g, l (detrended pipeline output).
+    ss : steady-state dict from proto.steady_state().
 
     Returns
     -------
-    T x 4 array: [y_hat, l_hat, x_hat, g_hat]
+    obs : T x 4 array, mean ≈ 0 by construction.
+    phi0 : 4-vector, the SS-misalignment offset (subtracted from obs_raw).
     """
-    x_ss_norm = ss["x"] / ss["y"]   # model's investment-output ratio
-    g_ss_norm = ss["g"] / ss["y"]   # model's government-output ratio
-    l_ss = ss["l"]                   # model's steady-state labor
+    x_ss_norm = ss["x"] / ss["y"]
+    g_ss_norm = ss["g"] / ss["y"]
+    l_ss = ss["l"]
 
     y_hat = np.log(df["y"].values)
     l_hat = np.log(df["l"].values) - np.log(l_ss)
     x_hat = np.log(df["x"].values) - np.log(x_ss_norm)
     g_hat = np.log(df["g"].values) - np.log(g_ss_norm)
 
-    return np.column_stack([y_hat, l_hat, x_hat, g_hat])
+    obs_raw = np.column_stack([y_hat, l_hat, x_hat, g_hat])
+    phi0 = obs_raw.mean(axis=0)
+    obs = obs_raw - phi0
+
+    return obs, phi0
 
 
 class BCAStateSpace(MLEModel):
@@ -420,14 +434,18 @@ def estimate_var_mle(
         return x_s
 
     # ── Parameter pack / unpack: theta = [Sbar(4), P_vec(16), Q_lower_tri(10)] ─
-    # Sbar is the unconditional mean of log wedges (BCKM parametrization).
-    # P_0 = (I - P) @ Sbar is derived inside — never stored directly in theta.
-    # This gives a better-conditioned landscape near the unit root: changes in
-    # Sbar map linearly to changes in P_0, avoiding the (I-P)^{-1} blow-up.
+    # BCKM mleqadj.m design: phi0 in the obs equation (prepare_observables)
+    # carries the model-vs-data SS gap. The wedge VAR has no separate intercept
+    # — Sbar is fixed at 0 and P_0 = (I-P)·0 = 0. The first 4 elements of theta
+    # are kept for backwards compatibility but are inert during optimization
+    # (gradient w.r.t. them is exactly zero, so L-BFGS-B leaves them alone).
+    # Forcing Sbar = 0 prevents the optimizer from finding spurious basins
+    # where (I-P) near-singularity lets a huge Sbar coexist with tiny P_0,
+    # producing smoothed states that drift away from the model SS.
     def _unpack(theta):
-        Sbar = theta[:4]
+        Sbar = np.zeros(4)                  # FIXED: no free VAR intercept
         P_var = theta[4:20].reshape(4, 4)
-        P_0 = (np.eye(4) - P_var) @ Sbar   # BCKM: P_0 = (I - P) * Sbar
+        P_0 = (np.eye(4) - P_var) @ Sbar    # = 0 by construction
         Q_chol = np.zeros((4, 4))
         idx = 20
         for i in range(4):
@@ -438,7 +456,7 @@ def estimate_var_mle(
 
     def _pack(Sbar, P_var, Q_chol):
         theta = np.empty(N_P)
-        theta[:4] = Sbar
+        theta[:4] = Sbar                    # ignored by _unpack; kept for shape parity
         theta[4:20] = P_var.ravel()
         idx = 20
         for i in range(4):
@@ -474,9 +492,10 @@ def estimate_var_mle(
         [-0.0045,  0.0449,  0.9675, -0.0426],
         [ 0.0063,  0.0017,  0.0016,  0.9945],
     ])
-    # P_0 from BCKM Table 9; convert to Sbar = inv(I - P) @ P_0
+    # Sbar fixed at 0 (see _unpack note). _P_0_bckm kept here only for
+    # documentation of the BCKM target; not used to seed the optimizer.
     _P_0_bckm = np.array([0.0140, 0.0008, 0.0129, -0.0137])
-    _Sbar_bckm = np.linalg.solve(np.eye(4) - _P_bckm, _P_0_bckm)
+    _Sbar_bckm = np.zeros(4)
     # Q_chol from mleqadj x0c (adja=12.88, nearest to our a=12.5)
     _Q_bckm = np.array([
         [ 0.0240,  0.0000,  0.0000,  0.0000],
@@ -562,7 +581,7 @@ def estimate_var_mle(
 
     # ── Final smoother pass ───────────────────────────────────────────────
     P_0, P_var, Q_chol = _unpack(best_theta)
-    Sbar = best_theta[:4]                          # unconditional mean of log wedges
+    Sbar = np.zeros(4)                             # fixed at 0 in this build
     F_f, H_f, Q_proc_f = _build_ss(P_var, Q_chol @ Q_chol.T)
     Sigma0_f = _dare_cov(F_f, H_f, Q_proc_f)
     x_filt, P_filt, x_pred, P_pred, final_ll = _kf_full(
@@ -606,7 +625,7 @@ def estimate_var(
 
     proto = PrototypeModel(params)
     ss = proto.steady_state()
-    obs = prepare_observables(df, ss)
+    obs, phi0 = prepare_observables(df, ss)
 
     mod = BCAStateSpace(obs, proto)
 

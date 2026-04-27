@@ -97,12 +97,9 @@ class TestPrepareObservables:
 
     def test_at_steady_state(self):
         """
-        At SS values, l_hat = 0 (normalized by l_ss).
-
-        y_hat, x_hat, g_hat are log(y_dt) and log(ratio/SS_ratio) respectively.
-        When all series equal SS levels, x_hat = g_hat = log(y_ss) and y_hat = log(y_ss)
-        because x_hat = log(x_ss) - log(x_ss/y_ss) = log(y_ss), etc.
-        The constant offset log(y_ss) is absorbed by P_0/Sbar in the filter.
+        At SS values, the raw observables are constants (one per channel).
+        After phi0 centering, obs is exactly zero in every channel and phi0
+        equals the raw constants (log_y_ss for y/x/g, 0 for l).
         """
         import pandas as pd
         ss = PrototypeModel().steady_state()
@@ -113,12 +110,14 @@ class TestPrepareObservables:
             "g": [ss["g"]] * 10,
             "l": [ss["l"]] * 10,
         })
-        obs = prepare_observables(df, ss)
+        obs, phi0 = prepare_observables(df, ss)
         assert obs.shape == (10, 4)
+        assert phi0.shape == (4,)
+        # Centered obs is exactly zero (constants subtracted).
+        np.testing.assert_allclose(obs, 0.0, atol=1e-14)
+        # phi0 carries the raw SS-misalignment offsets.
         log_y_ss = np.log(ss["y"])
-        # l_hat = 0 (labor is directly normalized by l_ss)
-        np.testing.assert_allclose(obs[:, 1], 0.0, atol=1e-14)
-        # y, x, g hats all equal log(y_ss) — consistent constant offset absorbed by P_0
-        np.testing.assert_allclose(obs[:, 0], log_y_ss, atol=1e-14)
-        np.testing.assert_allclose(obs[:, 2], log_y_ss, atol=1e-14)
-        np.testing.assert_allclose(obs[:, 3], log_y_ss, atol=1e-14)
+        np.testing.assert_allclose(phi0[0], log_y_ss, atol=1e-14)
+        np.testing.assert_allclose(phi0[1], 0.0, atol=1e-14)
+        np.testing.assert_allclose(phi0[2], log_y_ss, atol=1e-14)
+        np.testing.assert_allclose(phi0[3], log_y_ss, atol=1e-14)

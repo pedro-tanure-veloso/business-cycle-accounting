@@ -141,8 +141,10 @@ def main(
     print(f"  Labor rescaled: new mean = {df['l'].mean():.4f} (= l_ss)")
 
     # ── 5. Build observables normalized by model SS (BCKM approach) ──────
-    print("\nPreparing observables (log-deviations from model SS)...")
-    obs_hat = prepare_observables(df, ss)   # T x 4
+    print("\nPreparing observables (log-deviations from model SS, centered by phi0)...")
+    obs_hat, phi0 = prepare_observables(df, ss)   # T x 4, 4-vector
+    print(f"  phi0 (SS misalignment): "
+          f"y={phi0[0]:+.4f}  l={phi0[1]:+.4f}  x={phi0[2]:+.4f}  g={phi0[3]:+.4f}")
     print(f"  obs_hat means: y={obs_hat[:,0].mean():.4f}  l={obs_hat[:,1].mean():.4f}  "
           f"x={obs_hat[:,2].mean():.4f}  g={obs_hat[:,3].mean():.4f}")
 

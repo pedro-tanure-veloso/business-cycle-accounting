@@ -235,3 +235,94 @@ Option A is the right long-term answer; Option B is a triage that gets the exist
 ### Next exact step
 
 Discuss A vs B with user before implementing either. Step 2 commit captures the current state with an honest readout of what works and what doesn't.
+
+---
+
+## Session: 2026-04-27 (Step 3 — Option A: phi0 + Sbar=0)
+
+### What was completed
+
+**Step 3a — phi0 in `prepare_observables`** ✅
+`bca_core/var_estimation.py` `prepare_observables` now returns `(obs, phi0)`.
+`phi0 = mean(obs_raw, axis=0)` is subtracted from observables so the Kalman
+filter sees a centered signal. After Step 2's GI split, phi0 came out to
+`[0.000, -0.001, +0.138, -0.010]` — the +0.138 in x is exactly the
+data-vs-model x/y SS gap (data 0.29 vs model 0.255). Updated callers
+(`estimate_var`, run script, test) to unpack the tuple.
+
+**Step 3b — Sbar fixed at 0** ✅
+First run of phi0 alone showed phi0 was *necessary but not sufficient*:
+`mean(taux smoothed) = -0.158`, max |eig| = 1.005, investment wedge
+flipped sign during GR (improved instead of worsened). Diagnosis: near
+unit root, `(I-P)` is near-singular, so a huge Sbar coexists with a tiny
+`P_0 = (I-P)·Sbar` and is likelihood-equivalent. The optimizer kept finding
+the same big-Sbar basin (-2 region) and accumulated drift over T=140
+periods showed up as wrong-sign smoothed wedges.
+
+Fix: in `_unpack`, force `Sbar = np.zeros(4)` regardless of theta[:4]
+content, so `P_0 = (I-P)·0 = 0`. The first 4 theta entries are now inert
+(L-BFGS leaves them alone since gradient is zero). This matches BCKM's
+mleqadj.m design end-to-end: phi0 in the obs equation carries the SS gap,
+the wedge VAR has no separate intercept.
+
+### Pipeline result after Step 3a + 3b
+
+```
+T = 140
+phi0 (SS misalignment): [0.000, -0.001, +0.138, -0.010]
+obs_hat means: ~0 in all 4 channels
+
+Sbar: [0, 0, 0, 0]            (forced)
+P_0:  [0, 0, 0, 0]            (target: [0.014, 0.001, 0.013, -0.014])
+P diag: [0.993, 1.002, 0.964, 0.984]
+Max |eig|: 0.987              (was 1.005 — stationary now ✓)
+LL: 1778.6                    (was 1786 with phi0 only; ~7-unit drop)
+
+Smoothed wedge means:
+  A=-0.006, τ_l=0.000, τ_x=-0.013, g=-0.000   (all ≈ 0 ✓)
+
+Investment wedge during GR:
+  2007Q4: -0.059, 2009Q2: +0.035, Δ = +0.094 (worsened ✓ — right sign)
+
+φ-stats:                target (BCKM Table 11)
+  y: A=0.31  τ_l=0.22  τ_x=0.29  g=0.18    fYA=0.16, fYτL=0.46, fYτx=0.32
+  l: A=0.19  τ_l=0.58  τ_x=0.13  g=0.10
+  x: A=0.29  τ_l=0.36  τ_x=0.11  g=0.24
+
+Peak-to-trough (2007Q4 → 2009Q2):
+   actual  efficiency  labor  investment  government
+y -0.0722     -0.007  -0.060     -0.146      +0.042
+l -0.0814     +0.009  -0.092     -0.203      +0.061
+x -0.2898     +0.020  -0.187     -0.945      +0.159
+```
+
+### What this changes vs Step 2 commit
+
+- `Sbar = [-2, ...]` regime → `Sbar = 0` ✓
+- Investment-only x peak-to-trough went from **+1.35 → -0.945** (sign flip from wrong to right; magnitude overshoots data of -0.29 by ~3×)
+- Investment wedge GR direction: `improved → worsened` ✓
+- φ_government on output: `0.92 → 0.18` (no longer dominating)
+- Stationary VAR ✓
+
+### What still doesn't match BCKM
+
+1. **CF magnitudes overshoot.** Investment-only x at trough is -0.945, ~3.3× data (-0.29). Likely related to:
+   - The 144-unit `optimized_LL vs final_LL` gap (still open from 2026-04-23 Diary). Different DARE Sigma0 between optimization and final smoother — Step 4 in 2026-04-23 plan: switch to steady-state Kalman gain via DARE-per-iterate.
+   - φ_y[A] = 0.31 vs target 0.16 — efficiency wedge still overweighted on output.
+2. **φ_y[τ_L] = 0.22 vs target 0.46.** Labor wedge underweighted on output (correct on labor itself though, 0.58 ≈ target 0.7).
+3. **P_0 = 0 vs target [0.014, 0.001, 0.013, -0.014].** Forced to zero by current design. To match exactly, would need to make Sbar a free parameter again *and* prevent it from running away — e.g., a tight L2 prior on Sbar centered at 0.
+
+### Where this leaves us
+
+- **Step 1 + Step 2 + Step 3 land cleanly together.** The architecture now matches BCKM mleqadj.m: phi0 in obs equation, no free VAR intercept, smoothed states truly mean-zero.
+- **Counterfactuals work directionally.** Magnitudes are off but signs and qualitative decomposition are correct.
+- **Next priorities** (in order of expected impact):
+  1. **Steady-state Kalman gain via DARE-per-iterate** (Step 4, ~half day). Closes the 144-unit LL gap, likely fixes the CF magnitude overshoot too.
+  2. **Add `rDCD` to Y, sales tax to X** (Step 3 from earlier scope, ~1 hr). Last data-side adjustment.
+  3. **Optional Sbar prior** if we still don't match BCKM Table 9 P_0 after the above.
+
+### Open questions (resolved or carried)
+
+1. Option A vs B → **Option A chosen and works.** B was a triage; A is the right architecture.
+2. Whether forcing Sbar=0 hurts LL substantially → **No.** ~7-unit drop. Confirms Sbar was identifying noise, not real structure.
+3. DARE Sigma0 issue from 2026-04-23 → **Still open.** Now the dominant remaining issue (CF magnitudes).
