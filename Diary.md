@@ -468,3 +468,99 @@ Two queued items, in order of expected impact:
 
 1. **Extend sample to 1948Q1.** Tier 1 in `DIVERGENCE_ANALYSIS.md`. Most series in the FRED fetcher already go back; the bottleneck is `LFWA64TTUSQ647S` (1969+). Need an alternate working-age population series (CNP16OV?) to extend back. Worth a quick scoping check before committing to it.
 2. **Initialize Sbar via fsolve on the data sample means** (BCKM `initmle.m`). Would relax the Sbar=0 constraint without re-introducing the runaway-Sbar pathology.
+
+
+---
+
+## Session: 2026-04-27 — Step 6 — Sample extension to 1948Q1
+
+### What was completed since the last entry
+
+Extended the BCA estimation sample from 1980Q1–2014Q4 (T=140) to 1948Q1–2014Q4 (T=268), aligning with BCKM's MLE sample. This required swapping out three FRED series whose start dates limited the previous sample, and rewiring the data adjustments accordingly.
+
+### Files touched
+
+**`bca_core/data/fred.py`** — `FRED_SERIES` dict
+- Removed `pce` (PCE total, monthly, 1959+) — total PCE now derived from components
+- Removed `avg_weekly_hours` (AWHNONAG, 1964+) — labor input now from `hours_index` directly
+- Replaced `working_age_pop` series: `LFWA64TTUSQ647S` (OECD 15–64, 1977+) → `CNP16OV` (BLS civilian non-institutional pop 16+, 1948+)
+- All 13 remaining FRED series now span 1947+, allowing the full BCKM 1948Q1+ sample
+
+**`bca_core/data/adjustments.py`**
+- `reclassify_durables`: `c_adj` formula no longer reads `df["pce"]`. C is now built from components: `c_adj = pce_nondurables + pce_services + service_flow_full` (mathematically identical to before since `pce = pce_durables + pce_nondurables + pce_services`)
+- `compute_labor_input`: prefers `hours_index` (PRS85006023, 1947+) over `employment * avg_weekly_hours` (which only goes back to 1964 due to AWHNONAG). Per-capita normalization unchanged.
+
+**`scripts/run_var_counterfactuals.py`**
+- Default `start="1980Q1"` → `start="1948Q1"`
+- Cache filename: `data/us_1980_2014.parquet` → `data/us_1948_2014.parquet`
+- `n_restarts=5` → `n_restarts=4` (see issue below)
+
+### What was kept the same
+
+- Detrend method: linear log trend at calibrated γ=1.9%/yr (BCKM Table 77)
+- BCKM data adjustments from Step 5 (durables service flow into Y/C; sales-tax wedge split across Y/C/X)
+- Steady-state Kalman with DARE-per-iterate (Step 4)
+- Sbar = 0 constraint (Step 3) — to be relaxed in Step 7
+
+### Issue encountered: hung restart
+
+The first attempt with `n_restarts=5` hung on restart 5/5 for ~70 minutes after restarts 1–4 had completed (LLs 2643, 2741, 2775, 2776). With T=268 vs T=140, each LL evaluation is ~2× slower, and `ftol=1e-13` makes the optimizer wander in flat regions when a random perturbation lands in a bad basin. Killed the process and reduced to `n_restarts=4`. The completed run finishes in ~10 min and the best LL is unchanged (best of 4 was already on the plateau at restart 3/4).
+
+Followup item: consider relaxing `ftol` to 1e-10 or capping `maxiter` more tightly for the longer sample.
+
+### Numbers (after rerun, 1948Q1–2014Q4, n_restarts=4)
+
+```
+T = 268
+g_share from data: 0.1321  (was 0.166 in 1980+ sample)
+SS: y=1.2994  l=0.3211  x/y=0.2545  g/y=0.1321
+phi0: y=-0.0000  l=-0.0548  x=+0.0810  g=-0.0192
+
+LL = 2776.227
+
+VAR diagonal:
+  A   : 0.9949
+  τ_l : 0.9989  (BCKM target ≈ 1.001 — close)
+  τ_x : 0.9748
+  g   : 0.9666
+Max |eigenvalue|: 0.9963
+
+Sbar = [0, 0, 0, 0]  (Step 3 constraint, still active)
+P_0  = [0, 0, 0, 0]  (BCKM Table 9 target [0.014, 0.001, 0.013, -0.014])
+```
+
+**φ-statistics for y (variance decomposition):**
+
+| | Step 5 (1980+) | Step 6 (1948+) | BCKM target |
+|---|---|---|---|
+| φy[A]   | 0.37 | 0.02 | 0.16 |
+| φy[τ_L] | 0.28 | 0.02 | 0.46 |
+| φy[τ_x] | 0.15 | 0.58 | 0.32 |
+| φy[g]   | —    | 0.39 | —    |
+
+**Investment wedge during GR (correct sign maintained):**
+- 2007Q4: −0.0474, 2009Q2: +0.0911, Δ=+0.139 (worsened ✓)
+
+**Peak-to-trough 2007Q4 → 2009Q2 (Investment-only CF):**
+- y: −0.192 (data: −0.087) — 2.2× overshoot (was 1.4× in Step 5)
+- x: −1.223 (data: −0.293) — 4.2× overshoot (was 3.8× in Step 5)
+
+### Reading the result
+
+Step 6 is a regression on the φ-statistics: the longer sample shifted variance away from labor and efficiency into investment and government. Several factors compound:
+
+1. **Sbar=0 still binding**, and now it has more work to do because the sample mean drift over 1948–2014 (post-WWII normalization, 1970s stagflation, secular decline in labor share) is larger than over 1980–2014. With phi0[x]=0.081 and Sbar locked at 0, the wedge means must pin themselves to model SS rather than data SS, distorting the variance allocation.
+
+2. **Smoothed `taul_hat` std = 0.447** (much larger than Step 5). Q[τ_l] = 0.0025 is 3× the next-largest shock variance. The MLE is fitting low-frequency labor variation (LFP trends, demographic shifts) as noisy persistent shocks — which fits `l` well (φ_l[τ_L] = 0.83) but doesn't translate to `y` because the labor wedge moves cancel in equilibrium.
+
+3. **Hours index vs employment×hours mismatch**: `PRS85006023` is BLS nonfarm business hours of all persons, while the prior `PAYEMS × AWHNONAG` was nonfarm payrolls × avg weekly hours. The two have different long-run normalizations; over 67 years this affects the labor-wedge identification more than it did over 35 years.
+
+4. **The longer sample contains genuine structural change** (1948 industrial economy → 2014 service economy). A single VAR(1) with constant coefficients can't capture this, and the MLE picks the mode that maximizes likelihood under that mis-specification — which is not necessarily the mode that matches BCKM Table 11.
+
+### What still doesn't match BCKM
+
+Same direction as before, but now louder. Step 7 (fsolve-init Sbar) is the immediate next move — relaxing Sbar should let phi0 mass redistribute and may pull φ_y[A]/φ_y[τ_L] back toward target. The hours-vs-employment×hours question can be revisited if Step 7 doesn't close the gap.
+
+### Next
+
+**Step 7**: BCKM `initmle.m`-style fsolve initialization for Sbar. Pick initial Sbar by solving for the steady-state wedge means that make model SS observables equal to data sample means, so the optimizer starts from a feasible non-zero P_0 instead of the Sbar=0 corner. Relaxing the constraint without re-introducing the runaway-Sbar pathology was Step 3's worry; the fsolve init gives a principled starting point so the optimizer doesn't have to discover Sbar from scratch.

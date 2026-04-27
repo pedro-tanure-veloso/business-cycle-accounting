@@ -10,10 +10,10 @@ Estimation follows BCKM (2016) mleqadj.m:
 
 Usage:
     # First run — fetch from FRED and save processed data:
-    FRED_API_KEY=... python scripts/run_var_counterfactuals.py --save-data data/us_1980_2014.parquet
+    FRED_API_KEY=... python scripts/run_var_counterfactuals.py --save-data data/us_1948_2014.parquet
 
     # Subsequent runs — use saved data, no API key needed:
-    python scripts/run_var_counterfactuals.py --data data/us_1980_2014.parquet
+    python scripts/run_var_counterfactuals.py --data data/us_1948_2014.parquet
 """
 
 from __future__ import annotations
@@ -108,7 +108,7 @@ def main(
     else:
         print("Building US dataset (fetching from FRED)...")
     df, meta = build_us_dataset(
-        start="1980Q1",
+        start="1948Q1",
         end="2014Q4",
         data_path=cache,
         gamma_annual=_BCKM_GAMMA,
@@ -170,7 +170,7 @@ def main(
     # ── 6. Kalman-filter MLE (BCKM approach) ────────────────────────────
     print("\nEstimating VAR(1) by Kalman-filter MLE (BCKM 2016 mleqadj)...")
     mle_result = estimate_var_mle(
-        obs_hat, proto, n_restarts=5, verbose=True,
+        obs_hat, proto, n_restarts=4, verbose=True,
         P_ols=P_ols, Q_ols=Q_ols, P_0_ols=P_0_ols,
     )
 

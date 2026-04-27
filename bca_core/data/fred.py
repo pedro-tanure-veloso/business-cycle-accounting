@@ -9,11 +9,19 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-# FRED series IDs for US BCA
+# FRED series IDs for US BCA.
+#
+# All series chosen to support BCKM's 1948Q1+ MLE sample. Earlier choices
+# (PCE / LFWA64TTUSQ647S / AWHNONAG) only went back to 1959 / 1977 / 1964
+# respectively and limited the sample to 1980+. Replacements:
+#   - PCE total ........ computed from PCND + PCESV + PCDG (all 1947+)
+#   - working-age pop .. CNP16OV (civilian non-institutional pop 16+,
+#                        monthly, 1948+) instead of OECD 15-64 (1977+)
+#   - labor input ...... PRS85006023 hours index directly (1947+) instead
+#                        of PAYEMS × AWHNONAG (AWHNONAG is 1964+)
 FRED_SERIES = {
     # National accounts (quarterly, SAAR, billions of nominal $)
     "gdp": "GDP",
-    "pce": "PCE",                       # personal consumption expenditure
     "pce_durables": "PCDG",             # PCE durables (rDCD / rCD)
     "pce_nondurables": "PCND",          # PCE nondurables (rCND)
     "pce_services": "PCESV",            # PCE services (rCS)
@@ -24,12 +32,11 @@ FRED_SERIES = {
     # Price level
     "gdp_deflator": "GDPDEF",          # GDP implicit price deflator (index, 2017=100)
     # Tax
-    "sales_tax_state": "ASLSTAX",       # state government sales tax revenue
+    "sales_tax_state": "ASLSTAX",       # state government sales tax revenue (annual)
     # Population & labor
-    "working_age_pop": "LFWA64TTUSQ647S",  # working-age population 15-64 (OECD)
-    "hours_index": "PRS85006023",       # nonfarm business: hours of all persons (index)
+    "working_age_pop": "CNP16OV",       # civilian non-institutional pop 16+ (1948+)
+    "hours_index": "PRS85006023",       # nonfarm business: hours of all persons (1947+)
     "employment": "PAYEMS",             # total nonfarm payrolls (thousands, monthly)
-    "avg_weekly_hours": "AWHNONAG",     # avg weekly hours, nonfarm (monthly)
 }
 
 

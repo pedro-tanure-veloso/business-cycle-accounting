@@ -60,7 +60,11 @@ def reclassify_durables(
     # canonical BCKM treatment, not a double-count).
     service_flow_full = service_flow + df["pce_durables"]
 
-    df["c_adj"] = (df["pce"] - df["pce_durables"]) + service_flow_full
+    # rCND + rCS (= total PCE - durables expenditure). We compute from the
+    # components so this works on the full 1948+ sample (FRED's PCE total
+    # series is monthly and only goes back to 1959).
+    cnds = df["pce_nondurables"] + df["pce_services"]
+    df["c_adj"] = cnds + service_flow_full
     df["x_adj"] = df["gpdi"] + df["pce_durables"]   # gov_investment added downstream
     df["y_adj"] = df["gdp"] + service_flow_full
     df["k_dur"] = k_dur[:-1]
@@ -143,16 +147,21 @@ def compute_labor_input(
     """
     Compute labor input l_t in [0, 1].
 
-    Uses total hours = employment * average weekly hours (nonfarm).
-    Normalizes so sample mean equals target_mean.
+    Prefers `hours_index` (FRED PRS85006023, nonfarm business hours of all
+    persons, 1947+) so the labor series spans BCKM's full 1948Q1+ MLE
+    sample. Falls back to `employment * avg_weekly_hours` if hours_index
+    is unavailable (the latter only goes back to 1964 because AWHNONAG
+    starts then).
+
+    Normalizes so the sample mean equals target_mean — post-hoc rescaling
+    in run_var_counterfactuals.py then re-normalizes to the model l_ss.
     """
-    if "employment" in df.columns and "avg_weekly_hours" in df.columns:
-        # Total hours = employment * avg_weekly_hours
-        hours = df["employment"] * df["avg_weekly_hours"]
-    elif "hours_index" in df.columns:
+    if "hours_index" in df.columns:
         hours = df["hours_index"].copy()
+    elif "employment" in df.columns and "avg_weekly_hours" in df.columns:
+        hours = df["employment"] * df["avg_weekly_hours"]
     else:
-        raise ValueError("Need (employment, avg_weekly_hours) or hours_index columns.")
+        raise ValueError("Need hours_index or (employment, avg_weekly_hours) columns.")
 
     hours = hours.dropna()
 
