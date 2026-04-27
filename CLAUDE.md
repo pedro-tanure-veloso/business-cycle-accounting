@@ -16,13 +16,14 @@ Once these are matched, the model is trusted as correctly implemented and can be
 ## Primary Reference Materials
 
 1. **`BCA/BCA_info.md`** — paper summary with target parameter tables (Sections 1–7); primary spec
-2. **`BCA/BCKM/Multicountry - End/USAN2/`** — original Matlab replication files from the paper; ground truth for methodology
+2. **`BCA/matlab_reference/`** — original Matlab replication files from the paper; ground truth for methodology
 3. **`BCA/bca_paper.pdf`** — full paper PDF
 
-**When implementing or changing anything, check the Matlab files first.** Key files:
+**When implementing or changing anything, check the Matlab files first.** Key files in `matlab_reference/`:
 - `mleqadj.m` — Kalman-filter MLE estimation
-- `protmod.m` / `solve*.m` — model and linearization
-- `counterfactual*.m` — wedge counterfactuals
+- `kfilter.m` — steady-state Kalman filter (DARE-based constant gain)
+- `datamine.m` — calibration parameters and data construction
+- `runall.m` / `fstats3.m` — counterfactuals and f-statistics
 
 ## BCKM Folder — Never Commit, Never Modify
 
