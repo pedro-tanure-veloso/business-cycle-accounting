@@ -14,7 +14,9 @@ FRED_SERIES = {
     # National accounts (quarterly, SAAR, billions of nominal $)
     "gdp": "GDP",
     "pce": "PCE",                       # personal consumption expenditure
-    "pce_durables": "PCDG",             # PCE durables
+    "pce_durables": "PCDG",             # PCE durables (rDCD / rCD)
+    "pce_nondurables": "PCND",          # PCE nondurables (rCND)
+    "pce_services": "PCESV",            # PCE services (rCS)
     "gpdi": "GPDI",                     # gross private domestic investment
     "gov_expenditure": "GCE",           # government consumption & investment combined
     "gov_consumption": "A955RC1Q027SBEA",  # government consumption only (no investment)

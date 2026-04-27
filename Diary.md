@@ -386,3 +386,85 @@ Steps 1–4 land together and give a clean BCKM mleqadj.m architecture: phi0 in 
 
 - **Step 5: Add `rDCD` (consumer durables) to Y; apply sales-tax wedge `(rCD/rCNDS)·rSTX` to X.** ~1 hr. Last data-side adjustment before re-running the full Table 8/9/10/11 comparison.
 - Optional **Sbar L2 prior** if Step 5 still leaves P_0 = 0 mismatched against Table 9.
+
+---
+
+## Session 2026-04-27 — Step 5: BCKM data adjustments (durables + sales-tax split)
+
+### What landed
+
+Aligned `bca_core/data/adjustments.py` to BCKM `usdata.m`:
+
+```
+Y = rGDP - rSTX + 0.04·rKCD + rDCD              (was rGDP + 0.04·rKCD - rSTX)
+C = (rCND + rCS) - share_cnd·rSTX + 0.04·rKCD + rDCD
+                                                 (was pce - rDCD + 0.04·rKCD - rSTX)
+X = rCD + rGPDI + rGI - (rCD/rCNDS)·rSTX        (was rCD + rGPDI + rGI, no tax)
+```
+
+Two changes:
+
+1. **Durables service flow now has both components.** `reclassify_durables` adds `service_flow_full = 0.04·K_dur + rDCD` to Y and C. The `rDCD` term proxies the depreciation flow `δ·K_dur` (equal in steady state). Previously only the return component was added.
+
+2. **Sales tax is split across Y, C, X.** `subtract_sales_tax` now uses `share_cnd = rCND/rCNDS` and `share_dur = rCD/rCNDS` (with `rCNDS = rCND + rCS`). Y still gets the full rSTX subtracted; C gets `share_cnd·rSTX`; X gets `share_dur·rSTX` (new — was zero). Required two new FRED series: `PCND` (rCND) and `PCESV` (rCS).
+
+Pipeline cache `data/us_1980_2014.parquet` regenerated.
+
+### Result
+
+```
+LL: 1749.16                          (Step 4: 1779.78 → drop of 30; Y is now a different series)
+g_share from data: 0.115             (was 0.124 — Y grew via service flow)
+SS: y=1.276 l=0.315 x/y=0.255 g/y=0.115
+
+phi0 (SS misalignment): y=+0.000  l=-0.001  x=+0.061  g=-0.010
+                                     (x phi0 dropped 0.138 → 0.061 — model SS x/y now closer to data ✓)
+
+P diag: [0.995, 0.998, 0.949, 0.995]
+Max |eig|: 0.994                     (stationary ✓)
+
+φ-stats:                       BCKM Table 11 target
+  y: A=0.37  τ_l=0.28  τ_x=0.15  g=0.20    fYA=0.16, fYτL=0.46, fYτx=0.32
+  l: A=0.15  τ_l=0.68  τ_x=0.08  g=0.10                       fLτL ≈ 0.70
+  x: A=0.28  τ_l=0.40  τ_x=0.06  g=0.26
+
+Peak-to-trough (2007Q4 → 2009Q2):
+   actual  efficiency  labor  investment  government
+y -0.0833     -0.014  -0.058     -0.168      +0.036
+l -0.0814     +0.014  -0.088     -0.240      +0.053
+x -0.2898     +0.030  -0.164     -1.111      +0.133
+```
+
+### What this changes vs Step 4
+
+Direction is mixed:
+
+- **φ_l[τ_L] = 0.68** (was 0.58; target 0.70). Big improvement, essentially on target.
+- **φ_y[τ_L] = 0.28** (was 0.23; target 0.46). Up but still well short.
+- **φ_y[τ_x] = 0.15** (was 0.30; target 0.32). Now *under* target — investment wedge contributes too little.
+- **φ_y[A] = 0.37** (was 0.29; target 0.16). Got further from target — efficiency wedge over-explains.
+- **phi0[x] dropped from 0.138 → 0.061.** The data x/y is now much closer to the model's 0.255 — this is the qualitative thing Step 5 was supposed to fix, and it did.
+- **Investment-only CF magnitudes got bigger** (x peak-to-trough −0.68 → −1.11), driven by Y now including durables (which fell harder than overall GDP in the GR — actual y peak-to-trough −0.072 → −0.083).
+- **Actual y peak-to-trough deepened** (−0.072 → −0.083) because Y now includes the durables service flow, and durables consumption crashed in 2008–09.
+- **LL dropped 30 units** — expected, the observable is now a different series.
+
+### Reading the result
+
+The data construction now matches BCKM's `usdata.m`. The variance decomposition moved on labor (toward the BCKM target) and on investment-on-labor (toward target). The output decomposition didn't get cleaner: efficiency over-explains output and labor still under-explains. This is the same qualitative pattern reported in `REPORT.md` ("φ_A^Y too high, φ_L^Y too low") — Step 5 didn't close it.
+
+phi0 going from 0.138 to 0.061 is the cleanest win: the steady-state misalignment between model and data on x/y, which Step 3 was originally introduced to absorb, is now small.
+
+### What still doesn't match BCKM
+
+1. **φ_y[A] too high, φ_y[τ_L] too low.** Same direction as before. Likely candidates:
+   - Sample period: BCKM uses 1948Q1–2014Q3 (Tier 1 in DIVERGENCE_ANALYSIS.md, item 1.2). Our 1980–2014 sample omits the 1970s/early-80s identification windows.
+   - Sbar / model-SS coupling: BCKM `initmle.m` uses fsolve to pick Sbar so that model SS matches data sample means *jointly* with the labor wedge SS — a smoother optimization landscape. Our Sbar=0 design forces SS misalignment into phi0 alone.
+2. **Investment-only x peak-to-trough −1.11 vs data −0.29.** ~3.8× overshoot. This is now driven by `taux_hat` std (0.043 vs 0.027 before) — the new Y picks up durables-driven cyclicality and assigns it to τ_x. Possibly improves with sample extension.
+3. **P_0 = 0 vs Table 9 target.** Carried — would need Sbar prior or BCKM's fsolve initialization.
+
+### Next
+
+Two queued items, in order of expected impact:
+
+1. **Extend sample to 1948Q1.** Tier 1 in `DIVERGENCE_ANALYSIS.md`. Most series in the FRED fetcher already go back; the bottleneck is `LFWA64TTUSQ647S` (1969+). Need an alternate working-age population series (CNP16OV?) to extend back. Worth a quick scoping check before committing to it.
+2. **Initialize Sbar via fsolve on the data sample means** (BCKM `initmle.m`). Would relax the Sbar=0 constraint without re-introducing the runaway-Sbar pathology.

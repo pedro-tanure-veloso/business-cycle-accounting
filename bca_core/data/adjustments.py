@@ -19,10 +19,17 @@ def reclassify_durables(
     """
     Reclassify consumer durables as investment (BCKM adjustment).
 
-    1. Build durables capital stock K^d by perpetual inventory.
-    2. Imputed service flow = service_flow_rate * K^d.
-    3. Move durables expenditure from consumption to investment.
-    4. Add service flow to both consumption and output.
+    BCKM (usdata.m) adjusts the NIPA series via:
+        Y = rGDP - rSTX + 0.04·rKCD + rDCD
+        C = rCND + rCS - share_cnd·rSTX + 0.04·rKCD + rDCD
+        X = rCD + rGPDI + rGI - (rCD/rCNDS)·rSTX
+    The durables service flow has two components: a return on the stock
+    (`0.04·rKCD`, computed by perpetual inventory) and a depreciation
+    flow proxied by current durables expenditure `rDCD = pce_durables`
+    (which equals depreciation·K_dur in steady state). Both go into Y
+    and C; the original durables expenditure is reclassified into X.
+
+    Sales-tax adjustment is handled separately by `subtract_sales_tax`.
     """
     df = df.copy()
 
@@ -32,7 +39,6 @@ def reclassify_durables(
     dur_exp = df["pce_durables"].values
 
     # Perpetual inventory for durables stock
-    # Initialize: K_0 = dur_exp[0] / (delta_q + avg_growth)
     if len(dur_exp) > 4:
         avg_growth = np.mean(np.diff(np.log(dur_exp[:20])))
     else:
@@ -43,13 +49,20 @@ def reclassify_durables(
     for t in range(len(dur_exp)):
         k_dur[t + 1] = (1 - delta_q) * k_dur[t] + dur_exp[t]
 
-    # Service flow (use beginning-of-period stock)
+    # Return component of the service flow (use beginning-of-period stock)
     service_flow = service_q * k_dur[:-1]
 
-    # Adjustments
-    df["c_adj"] = df["pce"] - df["pce_durables"] + service_flow
-    df["x_adj"] = df["gpdi"] + df["pce_durables"]
-    df["y_adj"] = df["gdp"] + service_flow
+    # Service flow has two parts: the return on the stock (computed above)
+    # and a depreciation flow proxied by current durables expenditure rDCD
+    # (= pce_durables; equals δ·K_dur in steady state). BCKM adds both to
+    # Y and C; durables expenditure is also reclassified into X (so it
+    # appears in C as service flow, and in X as expenditure — that is the
+    # canonical BCKM treatment, not a double-count).
+    service_flow_full = service_flow + df["pce_durables"]
+
+    df["c_adj"] = (df["pce"] - df["pce_durables"]) + service_flow_full
+    df["x_adj"] = df["gpdi"] + df["pce_durables"]   # gov_investment added downstream
+    df["y_adj"] = df["gdp"] + service_flow_full
     df["k_dur"] = k_dur[:-1]
 
     return df
@@ -57,28 +70,47 @@ def reclassify_durables(
 
 def subtract_sales_tax(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Subtract sales tax revenue from consumption and output.
-    Sales tax data may be annual — interpolate to quarterly if needed.
+    Apply BCKM (usdata.m) sales-tax adjustment, splitting rSTX across Y, C, X.
+
+    BCKM treats sales tax as falling on consumption goods (durables and
+    non-durables) but allocates the burden differently across the BCA
+    aggregates. With ``rCNDS = rCND + rCS``:
+
+        Y -= rSTX                          (full)
+        C -= (rCND/rCNDS) · rSTX           (= share_cnd · rSTX)
+        X -= (rCD /rCNDS) · rSTX
+
+    This puts the durables share of the sales tax onto investment (which
+    now contains durables expenditure) rather than onto consumption — the
+    sales-tax "wedge on X" in the Step 5 plan. C only gets taxed on the
+    non-durable share of (non-durables + services).
     """
     df = df.copy()
 
-    if "sales_tax_state" in df.columns:
-        tax = df["sales_tax_state"]
-        # ASLSTAX is annual; if quarterly data available, use directly
-        # Otherwise it will have been forward-filled by the pipeline
-        tax = tax.ffill().bfill()
+    if "sales_tax_state" not in df.columns:
+        return df
 
-        # Convert annual to quarterly flow (divide by 4 if annual SAAR)
-        # FRED ASLSTAX is already in millions at annual rate
-        # Adjust columns (already in billions SAAR for NIPA)
-        # Scale tax to match NIPA units (billions)
-        tax_billions = tax / 1000  # ASLSTAX is in millions
+    tax = df["sales_tax_state"].ffill().bfill()
+    # ASLSTAX is in millions of $ at annual rate; NIPA aggregates are in
+    # billions SAAR — divide by 1000 to align units.
+    tax_billions = tax / 1000
 
-        y_col = "y_adj" if "y_adj" in df.columns else "gdp"
-        c_col = "c_adj" if "c_adj" in df.columns else "pce"
+    if "pce_nondurables" in df.columns and "pce_services" in df.columns:
+        cnds = df["pce_nondurables"] + df["pce_services"]
+        share_cnd = df["pce_nondurables"] / cnds
+        share_dur = df["pce_durables"] / cnds  # NB: ratio, not a fraction
+    else:
+        # Backwards-compatible fallback if the new PCE breakdown is absent.
+        share_cnd = pd.Series(1.0, index=df.index)
+        share_dur = pd.Series(0.0, index=df.index)
 
-        df[y_col] = df[y_col] - tax_billions
-        df[c_col] = df[c_col] - tax_billions
+    y_col = "y_adj" if "y_adj" in df.columns else "gdp"
+    c_col = "c_adj" if "c_adj" in df.columns else "pce"
+    x_col = "x_adj" if "x_adj" in df.columns else "gpdi"
+
+    df[y_col] = df[y_col] - tax_billions
+    df[c_col] = df[c_col] - share_cnd * tax_billions
+    df[x_col] = df[x_col] - share_dur * tax_billions
 
     return df
 
