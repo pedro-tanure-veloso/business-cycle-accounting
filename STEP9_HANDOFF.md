@@ -59,30 +59,30 @@ git checkout -b step23-bootstrap-sensitivity
 
 ### Other machine: Step 1
 
-**Pre-flight check** before anything else:
+**Pre-flight check** before anything else. The repo already contains
+the BCKM Matlab files we need — they live in **`matlab_reference/`**
+(tracked in git; the larger gitignored `BCKM/` folder is the full
+replication package and is not required for Step 1):
 
 ```bash
-ls BCA/BCKM/Multicountry\ -\ End/USAN2/*.m | head -5
-ls BCA/BCKM/Multicountry\ -\ End/USAN2/data.mat 2>/dev/null \
-  || echo "data.mat not where expected, search for it:"
-find BCA/BCKM -name 'data.mat' -o -name 'worktemp.mat' 2>/dev/null
+ls matlab_reference/{runall.m,mleqadj.m,runmleadj.m,kfilter.m,fstats3.m,initmle.m,data.mat,worktemp.mat}
 ```
 
-If `BCKM/` is missing on this machine, no git operation will fix it
-(`BCKM/` is gitignored). It needs to be physically copied from wherever
-it originally came.
+All of those should resolve. If anything is missing, fall back to a
+physical copy of `BCKM/Multicountry - End/USAN2/` from wherever the
+project originated.
 
 **What to do:**
 
 1. Install Octave if not present (`brew install octave` on macOS).
-2. `cd` into the USAN2 folder (the directory containing `runall.m`,
-   `mleqadj.m`, `runmleadj.m`, `data.mat`).
+2. `cd` into `matlab_reference/`.
 3. Run BCKM's pipeline end-to-end:
    ```bash
    octave --no-gui runall.m   # or whichever script drives the full pipeline
    ```
    If `runall.m` doesn't take you all the way to f-stats, look for the
-   script that calls `mleqadj` → estimates P/Sbar/Q → calls `fstats3`.
+   script that calls `mleqadj` → estimates P/Sbar/Q → calls `fstats3`
+   (likely `runmleadj.m`).
 4. **Capture** (essential — this is the comparison data):
    - Final P matrix (4×4)
    - Final P₀ vector (4)
