@@ -13,6 +13,7 @@ from statsmodels.tsa.statespace.mlemodel import MLEModel
 
 from .params import CalibrationParams
 from .model import PrototypeModel
+from .klein import klein_solve, BlancharKahnError
 
 
 def prepare_observables(
@@ -306,6 +307,7 @@ def estimate_var_mle(
     Q_ols: np.ndarray | None = None,
     P_0_ols: np.ndarray | None = None,
     data_means: np.ndarray | None = None,
+    eval_only: tuple | None = None,
     **kwargs,
 ) -> dict:
     """
@@ -335,27 +337,90 @@ def estimate_var_mle(
     -------
     dict: P_0 (4,), P (4x4), Q (4x4 chol), V (4x4 cov),
           smoothed_states (T x 5), log_likelihood
+
+    Notes
+    -----
+    Phase F Path A (BCKM mleqadj.m architecture): the SS used for log-
+    linearization is **re-computed at every objective call** from the
+    current Sbar (BCKM coordinates: ``[log zs, tauls, tauxs, log gs]``).
+    This makes Sbar parameterize *both* the wedge process unconditional
+    mean (= 0 in our coords by construction, since the state is a log-
+    deviation from the Sbar-implied SS) *and* the linearization point.
+    The SS-vs-data offset that BCKM stores in ``phi0`` is captured here
+    by the analytical ``obs_offset(Sbar)`` added to the observation
+    equation: ``E[obs_t] = obs_offset(Sbar)``.
     """
     from scipy.optimize import minimize as _minimize
 
     T, n_obs = obs_hat.shape
-    # Step 8.4: Sbar is back as a free parameter (BCKM mleqadj.m theta(1:4))
-    # initialized via fsolve over the SS-vs-data residuals (initmle.m), with
-    # bounds [-1, -1, -1, -5] / [1, 1, 1, 1] from mleqadj.m Lb/Ub lines 109-127.
     N_P = 30  # 4 (Sbar) + 16 (P) + 10 (Q lower-tri)
 
-    # ── Pre-compute model primitives ─────────────────────────────────────
-    ss = proto.steady_state()
-    A_mod, B_mod, C_mod, static, D_mod = proto.log_linearize(ss)
-    sol = proto.solve()
-    pk_base = sol.klein.P[0, 0]
-    fc_base = sol.klein.F[0, 0]
+    # ── Calibrated SS — the reference for prepare_observables() ─────────
+    ss_calib = proto.steady_state()
 
-    # ── Decision rules given P_var ───────────────────────────────────────
-    def _policies(P_var):
+    # ── Closed-form SS in BCKM units (initmle.m sec 5a) ─────────────────
+    # Captured constants for the per-call SS re-solve.
+    p = proto.p
+    gz_q = (1 + p.gamma_annual) ** 0.25 - 1
+    gn_q = (1 + p.n_annual) ** 0.25 - 1
+    beta_q = (1 + p.rho_annual) ** -0.25
+    delta_q = 1 - (1 - p.delta_annual) ** 0.25
+    theta_p = p.alpha
+    psi = p.psi
+    sigma = 1.0  # log utility (datamine.m param(6))
+
+    def _model_ss_from_sbar(Sbar):
+        """Full SS dict at Sbar-implied wedge values, in our model coords.
+
+        Uses BCKM ``initmle.m`` formulas. Returns a dict with the keys
+        ``proto.log_linearize(ss=...)`` consumes (y, c, k, l, x, g, yk).
+        Caller is responsible for rejecting infeasible (non-finite,
+        negative consumption) outputs.
+        """
+        # The optimizer probes infeasible Sbar during line search (e.g.
+        # 1+tauxs < 0 → fractional power of negative). We swallow the
+        # numpy warnings here; _build_ss inspects the result and raises.
+        with np.errstate(all="ignore"):
+            zs = np.exp(Sbar[0])
+            tauls = Sbar[1]
+            tauxs = Sbar[2]
+            gs = np.exp(Sbar[3])
+            beth = beta_q * (1 + gz_q) ** (-sigma)
+            kls = ((1 + tauxs) * (1 - beth * (1 - delta_q))
+                   / (beth * theta_p)) ** (1.0 / (theta_p - 1.0)) * zs
+            A_coef = (zs / kls) ** (1 - theta_p) - (1 + gz_q) * (1 + gn_q) + 1 - delta_q
+            B_coef = (1 - tauls) * (1 - theta_p) * kls ** theta_p * zs ** (1 - theta_p) / psi
+            ks = (B_coef + gs) / (A_coef + B_coef / kls)
+            ls = ks / kls
+            ys = ks ** theta_p * (zs * ls) ** (1 - theta_p)
+            cs = A_coef * ks - gs
+            xs = ys - cs - gs
+        return {
+            "y": ys, "c": cs, "k": ks, "l": ls, "x": xs, "g": gs,
+            "yk": ys / ks,
+        }
+
+    # ── Build state-space matrices, re-linearizing per call (Path A) ────
+    def _build_ss(Sbar, P_var, Q_mat):
+        ss_new = _model_ss_from_sbar(Sbar)
+        # Reject degenerate SS (negative consumption etc. — happens when
+        # Sbar wanders into infeasible regions during line search).
+        if not (np.isfinite([ss_new["y"], ss_new["k"], ss_new["l"],
+                             ss_new["c"], ss_new["x"], ss_new["g"]]).all()
+                and ss_new["y"] > 0 and ss_new["k"] > 0 and ss_new["c"] > 0
+                and ss_new["x"] > 0 and ss_new["g"] > 0
+                and 0 < ss_new["l"] < 1):
+            raise np.linalg.LinAlgError("infeasible SS at Sbar")
+
+        A_mod, B_mod, C_mod, static, D_mod = proto.log_linearize(ss=ss_new)
+        sol = klein_solve(A_mod, B_mod, n_predetermined=1)
+        pk = sol.P[0, 0]
+        fc = sol.F[0, 0]
+
+        # Decision rules under VAR persistence P_var
         C_eff = C_mod - D_mod @ P_var
-        a00 = A_mod[0, 0] + A_mod[0, 1] * fc_base
-        a10 = A_mod[1, 0] + A_mod[1, 1] * fc_base
+        a00 = A_mod[0, 0] + A_mod[0, 1] * fc
+        a10 = A_mod[1, 0] + A_mod[1, 1] * fc
         M01 = A_mod[0, 1] * P_var.T - B_mod[0, 1] * np.eye(4)
         M11 = A_mod[1, 1] * P_var.T - B_mod[1, 1] * np.eye(4)
         LHS = M11 - (a10 / a00) * M01
@@ -363,34 +428,44 @@ def estimate_var_mle(
         phi_c = np.linalg.solve(LHS, RHS)
         phi_k = (C_eff[0] - M01 @ phi_c) / a00
 
-        P_k_v = np.concatenate([[pk_base], phi_k])
+        P_k_v = np.concatenate([[pk], phi_k])
 
-        def _build(coeffs):
+        def _build_pol(coeffs):
             return np.concatenate([
-                [coeffs[0] + coeffs[1] * fc_base],
+                [coeffs[0] + coeffs[1] * fc],
                 coeffs[1] * phi_c + coeffs[2:],
             ])
 
-        return P_k_v, _build(static["y"]), _build(static["l"]), _build(static["x"])
+        P_y = _build_pol(static["y"])
+        P_l = _build_pol(static["l"])
+        P_x = _build_pol(static["x"])
 
-    # ── Build Kalman state-space matrices ────────────────────────────────
-    def _build_ss(P_var, Q_mat):
-        P_k_v, P_y, P_l, P_x = _policies(P_var)
+        F = np.zeros((5, 5))
+        F[0, :] = P_k_v
+        F[1:, 1:] = P_var
 
-        F = np.zeros((5, 5))          # transition
-        F[0, :] = P_k_v               # capital eq
-        F[1:, 1:] = P_var             # VAR for wedges
-
-        H = np.zeros((4, 5))          # observation
+        H = np.zeros((4, 5))
         H[0] = P_y
         H[1] = P_l
         H[2] = P_x
-        H[3, 4] = 1.0                 # g directly observed
+        H[3, 4] = 1.0  # g directly observed
 
-        Q_proc = np.zeros((5, 5))     # process noise (wedges only)
+        Q_proc = np.zeros((5, 5))
         Q_proc[1:, 1:] = Q_mat
 
-        return F, H, Q_proc
+        # obs_offset: model-implied mean of obs_hat. The state has 0
+        # unconditional mean (deviations from new SS), so E[obs_hat] is
+        # the gap between new SS and the calibrated-SS reference used by
+        # prepare_observables(center=False). BCKM mleqadj.m line 232
+        # captures the same quantity in `phi0 = Y0 - C * X0(1:5)`.
+        obs_offset = np.array([
+            np.log(ss_new["y"]),                                    # y_hat = log(y_dt)
+            np.log(ss_new["l"] / ss_calib["l"]),                    # l_hat = log(l/l_ss_calib)
+            np.log(ss_new["x"] / (ss_calib["x"] / ss_calib["y"])),  # x_hat
+            np.log(ss_new["g"] / (ss_calib["g"] / ss_calib["y"])),  # g_hat
+        ])
+
+        return F, H, Q_proc, obs_offset, ss_new
 
     # ── Steady-state Kalman (DARE per call, BCKM mleqadj.m architecture) ─
     _R_OBS = 1e-8 * np.eye(n_obs)
@@ -426,23 +501,17 @@ def estimate_var_mle(
         Sigma_filt = (np.eye(5) - K @ H) @ Sigma_pred
         return K, S, Sigma_pred, Sigma_filt
 
-    def _unconditional_state_mean(F, intercept):
-        """E[s] = (I − F)^{-1} · intercept, the steady state of the
-        augmented [k, A, τ_l, τ_x, g] system. Returns None if (I−F) is
-        near-singular (non-stationary parameters)."""
-        I5 = np.eye(5)
-        try:
-            return np.linalg.solve(I5 - F, intercept)
-        except np.linalg.LinAlgError:
-            return None
-
-    def _kf_ll(F, H, Q_proc, P_0_vec):
+    def _kf_ll(F, H, Q_proc, obs_offset):
         """
         Steady-state Kalman log-likelihood.
 
         Constant DARE-derived gain K from the very first step — eliminates
         the optimized-vs-final LL gap caused by Σ_0 mismatch between a
         transient time-varying recursion and the smoother's DARE.
+
+        Path A: state has 0 unconditional mean (deviation from Sbar-
+        implied SS), so the only "intercept" in the system is the
+        observation offset ``obs_offset`` capturing the SS-vs-data gap.
         """
         sk = _steady_state_kalman(F, H, Q_proc)
         if sk is None:
@@ -451,21 +520,17 @@ def estimate_var_mle(
         sign, logdet = np.linalg.slogdet(S)
         if sign <= 0:
             return -1e20
-        intercept = np.r_[0.0, P_0_vec]
-        x0 = _unconditional_state_mean(F, intercept)
-        if x0 is None:
-            return -1e20
-        x = x0
+        x = np.zeros(5)
         quad = 0.0
         for t in range(T):
-            xp = F @ x + intercept
-            innov = obs_hat[t] - H @ xp
+            xp = F @ x
+            innov = obs_hat[t] - obs_offset - H @ xp
             quad += innov @ np.linalg.solve(S, innov)
             x = xp + K @ innov
         return -0.5 * (T * (_CONST + logdet) + quad)
 
     # ── Forward Kalman filter (full, stores arrays for RTS smoother) ─────
-    def _kf_full(F, H, Q_proc, P_0_vec):
+    def _kf_full(F, H, Q_proc, obs_offset):
         """
         Steady-state filter that also stores x_filt, x_pred and the
         constant Σ_filt, Σ_pred so the RTS smoother runs unchanged.
@@ -476,23 +541,16 @@ def estimate_var_mle(
             return T_arr, np.full((T, 5, 5), np.nan), T_arr, np.full((T, 5, 5), np.nan), -1e20
         K, S, Sigma_pred, Sigma_filt = sk
         sign, logdet = np.linalg.slogdet(S)
-        intercept = np.r_[0.0, P_0_vec]
         x_filt = np.zeros((T, 5))
         x_pred = np.zeros((T, 5))
-        # Σ arrays are constant in time but stored per-step so the
-        # caller's RTS code (indexed by t) keeps working unchanged.
         P_filt = np.broadcast_to(Sigma_filt, (T, 5, 5)).copy()
         P_pred = np.broadcast_to(Sigma_pred, (T, 5, 5)).copy()
-        x0 = _unconditional_state_mean(F, intercept)
-        if x0 is None:
-            T_arr = np.full((T, 5), np.nan)
-            return T_arr, P_filt, T_arr, P_pred, -1e20
-        x = x0
+        x = np.zeros(5)
         quad = 0.0
         for t in range(T):
-            xp = F @ x + intercept
+            xp = F @ x
             x_pred[t] = xp
-            innov = obs_hat[t] - H @ xp
+            innov = obs_hat[t] - obs_offset - H @ xp
             quad += innov @ np.linalg.solve(S, innov)
             x = xp + K @ innov
             x_filt[t] = x
@@ -510,21 +568,23 @@ def estimate_var_mle(
         return x_s
 
     # ── Parameter pack / unpack: theta = [Sbar(4), P_vec(16), Q_lo(10)] ──
-    # Step 8.4: Sbar is back as a free parameter (BCKM mleqadj.m line 65–68
-    # writes Sbar(1:4) = Theta(1:4)). Implied VAR intercept is
-    # P_0 = (I−P)·Sbar. Sbar bounds [-1, -1, -1, -5]/[1, 1, 1, 1] from
-    # mleqadj.m Lb/Ub (line 119/109).
+    # Path A: Sbar is in BCKM raw coordinates ``[log zs, tauls, tauxs,
+    # log gs]`` (mleqadj.m theta(1:4) convention). It parameterizes the
+    # SS at which we re-linearize each call. The wedge state is the log
+    # deviation from this SS, so its unconditional mean is 0 by
+    # construction — there is no separate VAR intercept ``P_0`` to
+    # estimate. Sbar bounds [-1,-1,-1,-5]/[1,1,1,1] from mleqadj.m
+    # Lb/Ub (lines 109/119).
     def _unpack(theta):
         Sbar = theta[0:4]
         P_var = theta[4:20].reshape(4, 4)
-        P_0 = (np.eye(4) - P_var) @ Sbar
         Q_chol = np.zeros((4, 4))
         idx = 20
         for i in range(4):
             for j in range(i + 1):
                 Q_chol[i, j] = theta[idx]
                 idx += 1
-        return Sbar, P_0, P_var, Q_chol
+        return Sbar, P_var, Q_chol
 
     def _pack(Sbar, P_var, Q_chol):
         theta = np.empty(N_P)
@@ -554,85 +614,39 @@ def estimate_var_mle(
     ])
 
     # ── fsolve-init Sbar (BCKM initmle.m: nonlinear over model SS) ───────
-    # BCKM `initmle.m` solves
-    #     Sbar -> [ys − Ym(1); xs/ys − Ym(2); ls − Ym(3); gs/ys − Ym(4)]
-    # for Sbar that makes the model SS observables equal data sample means.
-    # We replicate by computing the model SS at a candidate Sbar (overriding
-    # the calibrated wedge values) and matching mean(exp(obs_hat)).
-    sample_obs_mean = obs_hat.mean(axis=0)
-    sample_obs_lvl = np.exp(obs_hat).mean(axis=0)  # data Ym in BCKM units
-
-    def _model_ss_from_sbar(Sbar):
-        """Recompute model SS overriding wedge means.
-
-        Mirrors mleqadj.m / initmle.m sec 5a: with Sbar=(log_zs, tauls,
-        tauxs, log_gs), recompute kls→A,B,ks,ls,ys,xs.
-        """
-        p = proto.p
-        gz_q = (1 + p.gamma_annual) ** 0.25 - 1
-        gn_q = (1 + p.n_annual) ** 0.25 - 1
-        beta_q = (1 + p.rho_annual) ** -0.25
-        delta_q = 1 - (1 - p.delta_annual) ** 0.25
-        theta = p.alpha
-        psi = p.psi
-        # BCKM (mleqadj.m line 25) sets sigma = param(6); datamine.m sets it to
-        # 1.0 (log utility). We hardcode here since CalibrationParams omits it.
-        sigma = 1.0
-        zs = np.exp(Sbar[0])
-        tauls = Sbar[1]
-        tauxs = Sbar[2]
-        gs = np.exp(Sbar[3])
-        beth = beta_q * (1 + gz_q) ** (-sigma)
-        kls = (
-            (1 + tauxs) * (1 - beth * (1 - delta_q)) / (beth * theta)
-        ) ** (1.0 / (theta - 1.0)) * zs
-        A_coef = (zs / kls) ** (1 - theta) - (1 + gz_q) * (1 + gn_q) + 1 - delta_q
-        B_coef = (1 - tauls) * (1 - theta) * kls ** theta * zs ** (1 - theta) / psi
-        ks = (B_coef + gs) / (A_coef + B_coef / kls)
-        ls = ks / kls
-        ys = ks ** theta * (zs * ls) ** (1 - theta)
-        cs = A_coef * ks - gs
-        xs = ys - cs - gs
-        return ys, xs, ls, gs
+    # Returns the Sbar (BCKM coords) that drives ``initmle.m`` line 53
+    # residuals ``[ys − Ym(1); xs/ys − Ym(2); ls − Ym(3); gs/ys − Ym(4)]``
+    # to zero, where Ym is the BCKM Ym sample-mean vector
+    # ``[mean(y_dt), mean(x_dt/y_dt), mean(l_dt), mean(g_dt/y_dt)]``.
+    sample_obs_lvl = np.exp(obs_hat).mean(axis=0)
 
     def _fsolve_sbar_initmle():
-        """initmle.m-style nonlinear fsolve seed (BCKM runmleadj.m line 14).
-
-        Returns the Sbar that drives BCKM `initmle.m` line 53 residuals
-        ``[ys − Ym(1); xs/ys − Ym(2); ls − Ym(3); gs/ys − Ym(4)]`` to zero,
-        where Ym is the data sample-mean vector in BCKM units:
-        ``[mean(y_dt), mean(x_dt/y_dt), mean(l_dt), mean(g_dt/y_dt)]``.
-
-        Falls back to zeros on failure.
-        """
         from scipy.optimize import fsolve
 
         if data_means is not None:
-            # BCKM-faithful path: residuals match initmle.m line 53 exactly.
             Ym = np.asarray(data_means, dtype=float)
 
             def _residuals(Sbar):
-                ys, xs, ls, gs = _model_ss_from_sbar(Sbar)
+                ss_s = _model_ss_from_sbar(Sbar)
                 return np.array([
-                    ys - Ym[0],          # output level
-                    xs / ys - Ym[1],     # x/y ratio
-                    ls - Ym[2],          # labor level
-                    gs / ys - Ym[3],     # g/y ratio
+                    ss_s["y"] - Ym[0],
+                    ss_s["x"] / ss_s["y"] - Ym[1],
+                    ss_s["l"] - Ym[2],
+                    ss_s["g"] / ss_s["y"] - Ym[3],
                 ])
         else:
-            # Legacy ratio-only path (back-compat). Doesn't converge in
-            # practice; Sbar falls back to zeros and the caller sees a
-            # warm-start collapse.
-            Ym = sample_obs_lvl
+            # Back-compat ratio fallback (used only when the caller hasn't
+            # supplied data_means). Doesn't generally converge; Sbar then
+            # falls back to zeros.
+            ss_c = ss_calib
 
             def _residuals(Sbar):
-                ys, xs, ls, gs = _model_ss_from_sbar(Sbar)
-                ys_ss, xs_ss, ls_ss, gs_ss = ss["y"], ss["x"], ss["l"], ss["g"]
+                ss_s = _model_ss_from_sbar(Sbar)
                 return np.array([
-                    ys / ys_ss - Ym[0],
-                    ls / ls_ss - Ym[1],
-                    (xs / ys) / (xs_ss / ys_ss) - Ym[2],
-                    (gs / ys) / (gs_ss / ys_ss) - Ym[3],
+                    ss_s["y"] / ss_c["y"] - sample_obs_lvl[0],
+                    ss_s["l"] / ss_c["l"] - sample_obs_lvl[1],
+                    (ss_s["x"] / ss_s["y"]) / (ss_c["x"] / ss_c["y"]) - sample_obs_lvl[2],
+                    (ss_s["g"] / ss_s["y"]) / (ss_c["g"] / ss_c["y"]) - sample_obs_lvl[3],
                 ])
 
         try:
@@ -646,62 +660,56 @@ def estimate_var_mle(
         except Exception:
             return np.zeros(4)
 
-    # Step 8.5: spectral radius bound 0.995 (mleqadj.m line 134).
-    # No relaxed tau_l 1.005 — BCKM uses one bound on |eig(P)|, not on
-    # individual diagonals.
+    # Spectral radius bound 0.995 (mleqadj.m line 134) — only constraint
+    # BCKM imposes on P. Individual diagonals are unconstrained (BCKM Table 8
+    # has τ_l diagonal = 1.001, so per-diagonal bounds would be wrong here).
     _SPECTRAL_BOUND = 0.995
-    _DIAG_BOUNDS = np.array([0.995, 0.995, 0.995, 0.995])
 
     # Sbar bounds (mleqadj.m Lb/Ub lines 109/119): [-1, -1, -1, -5]/[1,1,1,1].
     _SBAR_LB = np.array([-1.0, -1.0, -1.0, -5.0])
     _SBAR_UB = np.array([ 1.0,  1.0,  1.0,  1.0])
 
     def _neg_ll_fast(theta):
-        Sbar, P_0, P_var, Q_chol = _unpack(theta)
+        Sbar, P_var, Q_chol = _unpack(theta)
         eig_max = np.max(np.abs(np.linalg.eigvals(P_var)))
         penalty = 5e5 * max(eig_max - _SPECTRAL_BOUND, 0.0) ** 2
-        diag_excess = np.maximum(np.abs(np.diag(P_var)) - _DIAG_BOUNDS, 0.0)
-        penalty += 5e5 * np.sum(diag_excess ** 2)
         sbar_excess_lo = np.maximum(_SBAR_LB - Sbar, 0.0)
         sbar_excess_hi = np.maximum(Sbar - _SBAR_UB, 0.0)
         penalty += 5e5 * (np.sum(sbar_excess_lo ** 2) + np.sum(sbar_excess_hi ** 2))
         try:
-            F, H, Q_proc = _build_ss(P_var, Q_chol @ Q_chol.T)
-        except np.linalg.LinAlgError:
+            F, H, Q_proc, obs_offset, _ = _build_ss(Sbar, P_var, Q_chol @ Q_chol.T)
+        except (np.linalg.LinAlgError, BlancharKahnError, ValueError, FloatingPointError):
             return 1e20
-        ll = _kf_ll(F, H, Q_proc, P_0)
+        ll = _kf_ll(F, H, Q_proc, obs_offset)
         return (-ll if np.isfinite(ll) else 1e20) + penalty
 
-    # ── Warm-starts (BCKM runmleadj.m / mleqadj.m architecture) ─────────
-    # Step 8.4 (revised): the BCKM initmle.m fsolve seed is computed in
-    # *absolute* log-level units (zs, gs, etc.). Our state-space wedges are
-    # log-DEVIATIONS from the calibrated SS, so initmle's Sbar can't be
-    # plugged in directly without coordinate translation. Empirical test
-    # (using `data/us_1980_2014_calgz.parquet` + this estimator) showed
-    # that even after shifting Sbar[3] by log(g_ss/y_ss), the LL collapses
-    # from ~914 (zeros) to ~−89 (translated initmle). We therefore use the
-    # OLS-implied Sbar as the warm-start: `Sbar_ols = (I − P_ols)⁻¹ · P_0_ols`,
-    # which lives in the same coordinate system as our state and gives a
-    # well-conditioned initial point. The BCKM-style fsolve is still
-    # *computed* (and reported) for comparison/diagnostic purposes, but is
-    # not used as the warm-start.
-    Sbar_initmle_abs = _fsolve_sbar_initmle()
-    if verbose:
-        print(f"  Sbar_initmle.m (absolute, diagnostic): "
-              f"A={Sbar_initmle_abs[0]:+.4f}  τ_l={Sbar_initmle_abs[1]:+.4f}  "
-              f"τ_x={Sbar_initmle_abs[2]:+.4f}  g={Sbar_initmle_abs[3]:+.4f}")
+    # ── Diagnostic short-circuit: evaluate LL at a fixed (Sbar, P, Q_chol)
+    # without optimisation. Used by ``scripts/eval_bckm_basin.py`` to score
+    # BCKM Table 8/10 published parameters against our converged basin.
+    if eval_only is not None:
+        Sbar_e, P_e, Qchol_e = (np.asarray(a, dtype=float) for a in eval_only)
+        F_e, H_e, Qproc_e, off_e, ss_e = _build_ss(Sbar_e, P_e, Qchol_e @ Qchol_e.T)
+        x_f, P_f, x_p, P_p, ll_e = _kf_full(F_e, H_e, Qproc_e, off_e)
+        smoothed_e = _rts(x_f, P_f, x_p, P_p, F_e)
+        return {
+            "Sbar": Sbar_e, "P": P_e, "Q": Qchol_e,
+            "V": Qchol_e @ Qchol_e.T,
+            "log_likelihood": ll_e,
+            "smoothed_states": smoothed_e,
+            "ss_new": ss_e, "obs_offset": off_e,
+            "F": F_e, "H": H_e,
+        }
 
-    if P_ols is not None and P_0_ols is not None:
-        try:
-            Sbar_init = np.linalg.solve(np.eye(4) - P_ols, P_0_ols)
-        except np.linalg.LinAlgError:
-            Sbar_init = np.zeros(4)
-    else:
-        Sbar_init = np.zeros(4)
+    # ── Warm-starts (BCKM runmleadj.m / mleqadj.m architecture) ─────────
+    # Path A: Sbar lives in BCKM raw coordinates and parameterizes the
+    # linearization SS, so the initmle.m fsolve seed plugs in directly
+    # — no coordinate translation needed (the per-call SS re-solve makes
+    # the optimizer and the Sbar fsolve consistent by construction).
+    Sbar_init = _fsolve_sbar_initmle()
     if verbose:
-        print(f"  Sbar_init (OLS-implied, used as warm-start): "
-              f"A={Sbar_init[0]:+.4f}  τ_l={Sbar_init[1]:+.4f}  "
-              f"τ_x={Sbar_init[2]:+.4f}  g={Sbar_init[3]:+.4f}")
+        print(f"  Sbar_init (initmle.m, BCKM coords): "
+              f"log_z={Sbar_init[0]:+.4f}  τ_l={Sbar_init[1]:+.4f}  "
+              f"τ_x={Sbar_init[2]:+.4f}  log_g={Sbar_init[3]:+.4f}")
 
     # BCKM x0c (runmleadj.m line 80-110): Q chol values, lower-triangular.
     # Order in x0c[20:30] matches BCKM `Theta(21:30)` = Q(1,1), Q(2,1),
@@ -768,21 +776,31 @@ def estimate_var_mle(
             best_val, best_theta = res.fun, res.x.copy()
 
     # ── Final smoother pass ───────────────────────────────────────────────
-    Sbar, P_0, P_var, Q_chol = _unpack(best_theta)
-    F_f, H_f, Q_proc_f = _build_ss(P_var, Q_chol @ Q_chol.T)
+    Sbar, P_var, Q_chol = _unpack(best_theta)
+    F_f, H_f, Q_proc_f, obs_offset_f, ss_new = _build_ss(
+        Sbar, P_var, Q_chol @ Q_chol.T
+    )
     x_filt, P_filt, x_pred, P_pred, final_ll = _kf_full(
-        F_f, H_f, Q_proc_f, P_0
+        F_f, H_f, Q_proc_f, obs_offset_f
     )
     smoothed = _rts(x_filt, P_filt, x_pred, P_pred, F_f)
 
+    # P_0 = (I − P_var) · 0 = 0 by construction. Returned for downstream
+    # compatibility (callers like run_var_counterfactuals.py print it).
+    P_0_implied = np.zeros(4)
+
     return {
-        "P_0": P_0,
+        "P_0": P_0_implied,
         "Sbar": Sbar,
         "P": P_var,
         "Q": Q_chol,
         "V": Q_chol @ Q_chol.T,
         "smoothed_states": smoothed,
         "log_likelihood": final_ll,
+        "ss_new": ss_new,
+        "obs_offset": obs_offset_f,
+        "F": F_f,
+        "H": H_f,
     }
 
 

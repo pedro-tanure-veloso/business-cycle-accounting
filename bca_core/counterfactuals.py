@@ -245,6 +245,61 @@ def phi_statistics(
     return pd.DataFrame(phi, index=wedge_names)
 
 
+def f_statistics_bckm(
+    data_hat: dict,
+    counterfactuals: dict,
+    window: tuple[int, int],
+) -> pd.DataFrame:
+    """
+    BCKM Table 11 f-statistic, exact port of ``fstats3.m``.
+
+    Both data and each counterfactual path are first re-based so the GR-window
+    start ``Y0 = window[0]`` equals 1, then converted from log-deviations to
+    levels via ``exp(·)`` (``ilog=0`` in fstats3.m). SSR is computed in
+    levels over ``[Y0, window[1]]`` inclusive::
+
+        level_data[t] = exp(data_hat[t] - data_hat[Y0])
+        level_cf_j[t] = exp(cf_j_hat[t] - cf_j_hat[Y0])
+        SSR_j         = sum_t (level_data[t] - level_cf_j[t])^2
+        f_j           = (1/SSR_j) / sum_k (1/SSR_k)
+
+    Differs from ``phi_statistics`` in two ways:
+    (i) levels rather than log-deviations; (ii) Y0-rebasing removes the
+    constant offset between actual and counterfactual at the window start
+    (in BCKM, inactive wedges are pinned at their initial value via
+    ``fixexpadj`` so the counterfactual coincides with data at Y0; we
+    achieve the same with explicit subtraction).
+
+    Parameters
+    ----------
+    data_hat : dict with 'y', 'l', 'x' arrays in log-deviation form.
+    counterfactuals : dict from ``run_all_counterfactuals``.
+    window : (i1, i2) inclusive index range, e.g. 2008Q1–2011Q4.
+
+    Returns
+    -------
+    DataFrame: rows = wedges, columns = variables {y, l, x}.
+    """
+    i1, i2 = window
+    sl = slice(i1, i2 + 1)
+    wedge_names = list(counterfactuals.keys())
+    variables = ["y", "l", "x"]
+
+    fstats = {}
+    for var in variables:
+        data_lvl = np.exp(data_hat[var][sl] - data_hat[var][i1])
+        inv_ssr = {}
+        for name in wedge_names:
+            cf_log = counterfactuals[name][var]
+            cf_lvl = np.exp(cf_log[sl] - cf_log[i1])
+            ssr = float(np.sum((data_lvl - cf_lvl) ** 2)) + 1e-10
+            inv_ssr[name] = 1.0 / ssr
+        total = sum(inv_ssr.values())
+        fstats[var] = {name: inv_ssr[name] / total for name in wedge_names}
+
+    return pd.DataFrame(fstats, index=wedge_names)
+
+
 def peak_to_trough(
     data_hat: dict,
     counterfactuals: dict,

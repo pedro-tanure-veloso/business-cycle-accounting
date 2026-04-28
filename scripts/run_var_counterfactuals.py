@@ -31,8 +31,10 @@ from bca_core.var_estimation import estimate_var_mle, prepare_observables
 from bca_core.counterfactuals import (
     run_all_counterfactuals,
     phi_statistics,
+    f_statistics_bckm,
     peak_to_trough,
 )
+from bca_core.wedges import extract_wedges_bckm_style
 
 
 def extract_approximate_wedges(obs_hat: np.ndarray, proto) -> np.ndarray:
@@ -244,28 +246,46 @@ def main(
     V_df = pd.DataFrame(Q_chol @ Q_chol.T, index=wedge_labels, columns=wedge_labels)
     print(V_df.to_string(float_format="{:.6f}".format))
 
-    # ── 7. Wedge summary from smoothed states ────────────────────────────
-    print("\n  Smoothed wedge summary (hat-space):")
+    # ── 7. Analytical (BCKM gwedges2.m) wedge extraction ─────────────────
+    # The Kalman smoother is used to score parameters; BCKM feeds
+    # counterfactuals from the analytical inversion of static FOCs +
+    # investment-policy row (gwedges2.m:62-77). Reproduce that here so
+    # the same wedge series the paper plots feed our f-statistics.
+    states_bckm = extract_wedges_bckm_style(
+        obs_hat=obs_hat,
+        obs_offset=mle_result["obs_offset"],
+        H=mle_result["H"],
+        ss=mle_result["ss_new"],
+        params=params,
+    )
+
+    print("\n  Smoothed vs analytical wedge summary (hat-space):")
     wedge_names = ["A_hat", "taul_hat", "taux_hat", "g_hat"]
     for j, name in enumerate(wedge_names):
-        s = smoothed[:, j + 1]
-        print(f"    {name}: mean={s.mean():.4f}  std={s.std():.4f}")
+        s_sm = smoothed[:, j + 1]
+        s_an = states_bckm[:, j + 1]
+        print(f"    {name}: smoother mean={s_sm.mean():+.4f} std={s_sm.std():.4f}  "
+              f"|  analytical mean={s_an.mean():+.4f} std={s_an.std():.4f}")
 
-    # Check investment wedge during Great Recession
+    # Check investment wedge during Great Recession (analytical)
     if peak_idx is not None and trough_idx is not None:
-        taux = smoothed[:, 3]   # taux_hat (log-deviation of (1+tau_x))
-        print(f"\n  Investment wedge (1+τ_x) hat-space during GR:")
+        taux = states_bckm[:, 3]   # taux_hat (log-deviation of (1+tau_x))
+        print(f"\n  Investment wedge (1+τ_x) hat-space during GR (analytical):")
         print(f"    2007Q4 : {taux[peak_idx]:.4f}")
         print(f"    2009Q2 : {taux[trough_idx]:.4f}")
         print(f"    Δ      : {taux[trough_idx] - taux[peak_idx]:+.4f}  "
               f"({'worsened' if taux[trough_idx] > taux[peak_idx] else 'improved'})")
 
     # ── 8. Data baseline (actual observables) ────────────────────────────
-    data_hat = {"y": obs_hat[:, 0], "l": obs_hat[:, 1], "x": obs_hat[:, 2]}
+    # Counterfactuals are simulated against deviations from ss_new (matching
+    # the analytical wedges' linearization point), so the data baseline
+    # shifts by obs_offset accordingly.
+    obs_dev = obs_hat - mle_result["obs_offset"]
+    data_hat = {"y": obs_dev[:, 0], "l": obs_dev[:, 1], "x": obs_dev[:, 2]}
 
-    # ── 9. Counterfactual simulations ────────────────────────────────────
+    # ── 9. Counterfactual simulations (analytical wedges) ────────────────
     print("\nRunning counterfactual simulations...")
-    cfs = run_all_counterfactuals(smoothed, proto, P_var, P_0=P_0)
+    cfs = run_all_counterfactuals(states_bckm, proto, P_var, P_0=P_0)
 
     # ── 10. F-statistics (BCKM Table 11, fstats3.m) ──────────────────────
     # Canonical BCKM stat: GR-window (2008Q1-2011Q4) inverse-SSR, normalized.
@@ -273,11 +293,15 @@ def main(
     gr_start = find_date_index(df.index, 2008, 1)
     gr_end   = find_date_index(df.index, 2011, 4)
     if gr_start is not None and gr_end is not None:
-        print(f"\nF-statistics (BCKM Table 11, GR window "
-              f"{df.index[gr_start]}–{df.index[gr_end]}):")
-        f_gr = phi_statistics(data_hat, cfs, window=(gr_start, gr_end))
+        print(f"\nF-statistics (BCKM Table 11, fstats3.m port — Y0-rebased "
+              f"levels, GR window {df.index[gr_start]}–{df.index[gr_end]}):")
+        f_gr = f_statistics_bckm(data_hat, cfs, window=(gr_start, gr_end))
         print(f_gr.to_string(float_format="{:.4f}".format))
         print("  BCKM Table 11 targets: fY[A]=0.16  fY[τ_l]=0.46  fY[τ_x]=0.32")
+
+        print(f"\nF-statistics (legacy: log-deviations, no Y0 rebase):")
+        f_gr_log = phi_statistics(data_hat, cfs, window=(gr_start, gr_end))
+        print(f_gr_log.to_string(float_format="{:.4f}".format))
 
     print("\nPhi-statistics (full-sample variance decomposition; "
           "diagnostic, NOT BCKM Table 11):")

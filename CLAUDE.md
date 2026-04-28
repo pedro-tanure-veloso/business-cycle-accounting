@@ -44,13 +44,15 @@ Once these are matched, the model is trusted as correctly implemented and can be
 
 **Government share**: Set `g_share = mean(g_dt) / mean(y_dt)` from data (≈ 0.166 for US 1980–2014), not the model default of 0.20.
 
-**Growth rates**: Use BCKM Table 77 values: `γ = 1.9%/yr`, `n = 0.98%/yr`. Do NOT use data-estimated growth rates for the structural calibration.
+**Growth rates**: Use BCKM Table 2 (US row) values: `γ = 1.9%/yr`, `n = 0.98%/yr`. Do NOT use data-estimated growth rates for the structural calibration.
+
+**Cross-country calibration constants** (BCKM `BCA_info.md` Table 1 + `matlab_reference/datamine.m`): `α = 1/3`, `ψ = 2.5`, `δ_annual = 0.05`, `β_annual = 0.975` (so `ρ_annual = 1/0.975 − 1 ≈ 0.02564`), `σ ≈ 1` (log utility). These are the values currently in `bca_core/params.py`. **Do not change them to other "BCKM" values** — a previous session moved them to `(0.35, 2.24, 0.0464, 0.9722)` thinking those were Table 77 / Table 7-7 values; they are not, and the resulting basin failed Phase B/D against `worktemp.mat`.
 
 **Estimation**: Kalman-filter MLE (`mleqadj.m` logic), 30-parameter theta = [P₀(4), P(16), Q_lower_tri(10)].
 
 **Kalman initialization / steady-state filter**: Use the DARE-derived steady-state covariance, evaluated at the *current* VAR parameters on every objective call (steady-state Kalman, BCKM `mleqadj.m` style). On a 5×5 system the per-call DARE is cheap (~ms) and eliminates the optimized-vs-final-smoother LL mismatch that arises when Σ₀ is frozen at BCKM Table 77 params while the optimizer drifts. The `_steady_state_kalman` helper returns a constant gain K, innovation cov S, and Σ_filt; the RTS smoother uses the same constants. Frozen-Σ₀ is no longer used.
 
-**Stationarity constraints**: Spectral radius penalty + per-wedge diagonal bounds `[0.995, 1.005, 0.995, 0.995]` for [A, τ_l, τ_x, g]. The τ_l bound is relaxed to 1.005 because BCKM's estimated τ_l diagonal is ≈ 1.001.
+**Stationarity constraints**: Spectral radius penalty only — `5e5 * max(|eig(P)| − 0.995, 0)²`, matching `mleqadj.m:134`. **Do not** add per-diagonal bounds. BCKM allows individual diagonals to exceed 0.995 (Table 8 has τ_l = 1.001); only the eigenvalue constraint is BCKM-faithful. If L-BFGS-B deadlocks at the penalty boundary, switch optimizer or clip the warm-start diagonal — do **not** reintroduce a per-diagonal penalty.
 
 **Counterfactuals**: Keep full 4D VAR for rational expectations; zero out inactive wedge columns in structural equations. Capital evolves endogenously through `k' = P_k @ state`.
 
@@ -70,7 +72,7 @@ Once these are matched, the model is trusted as correctly implemented and can be
 
 - Use OLS VAR as the final estimator (warm-start only)
 - Use Lyapunov or diffuse covariance for Kalman initialization
-- Use spectral-radius penalty without per-diagonal penalty
+- Add per-diagonal penalties on P (BCKM imposes only the spectral-radius bound)
 - Run a *transient* time-varying Kalman recursion with a frozen Σ₀ during optimization — that produces a 100+-unit LL gap vs the final smoother and biases counterfactuals. Use the steady-state Kalman with DARE-per-call instead.
 - Use `std > 0.01` for random BCKM perturbations, or leave diagonal unclipped
 - Skip the BCKM Table 77 warm-start

@@ -1052,3 +1052,371 @@ against our f-stats. If wedges agree but f-stats don't, the bug is in
 
 A → B (data fix loop if needed) → C (smoother fix loop if needed)
 → D → E. Each phase is independently informative and gates the next.
+
+---
+
+## Session: 2026-04-28 — Step 9 partial: identification audit + observables/wedges/tables compare
+
+### What was completed since the last entry
+
+**Path A (per-iter SS re-solve at Sbar) lands at LL=1830.** The pipeline
+now converges with `obs_hat - obs_offset` deviations, BCKM analytical
+wedge extraction (`extract_wedges_bckm_style`, port of `gwedges2.m:62-77`),
+and BCKM's exact `fstats3.m` Y0-rebased-levels f-stat.
+
+```
+F-statistics (BCKM Table 11, fstats3.m port — Y0-rebased levels, GR window
+2008Q1–2011Q4):
+                y      l      x
+efficiency 0.0234 0.0361 0.0377
+labor      0.6192 0.7882 0.8499
+investment 0.3447 0.1567 0.0910
+government 0.0127 0.0190 0.0214
+  BCKM Table 11 targets: fY[A]=0.16  fY[τ_l]=0.46  fY[τ_x]=0.32
+```
+
+Ranking matches BCKM (τ_l > τ_x > A > g). fY[τ_x]=0.345 lands close
+to 0.32. Gaps remain:
+- fY[A] = 0.023 (target 0.16) — under by 0.14
+- fY[τ_l] = 0.619 (target 0.46) — over by 0.16
+
+**Identification audit (`scripts/eval_bckm_basin.py`).** New script
+that re-evaluates the Kalman LL at fixed (Sbar, P, Q) without
+optimizing, by adding `eval_only` short-circuit to `estimate_var_mle`.
+
+```
+Diag #1 (sanity, our params)        :  LL = +1829.72  ✓
+Diag #2 BCKM Table 8 P + Table 10 Q :  LL = -1604.36   (Δ -3434)
+Diag #3 BCKM P + OUR Q              :  LL = -87747.77  (Δ -89577)
+Diag #4 OUR P + BCKM Q              :  LL =  +841.41   (Δ -988)
+```
+
+The 3434-nat gap rules out "just need more restarts" — BCKM's published
+parameters are MUCH worse on our likelihood surface. Either the data
+setup differs from BCKM's, or our state-space matrices (F, H) are not
+the ones BCKM is implicitly fitting.
+
+|Q_chol| diagonals: ours 78%, 212%, 35%, 31% of BCKM's. Stationary
+variances of BCKM's wedges are 5–10× ours. We're in a basin where
+labor and investment wedges have less unconditional variance and labor
+absorbs the joint movement.
+
+**Phase B compare (`scripts/compare_observables.py`).** Numerical RMSE
+of our 2008Q1-normalized observables against `worktemp.w.{yt,ht,xt,gt}`:
+
+| series | RMSE   | max\|err\| | ours[2009Q2] | BCKM[2009Q2] |
+|--------|--------|------------|--------------|--------------|
+| y      | 0.0115 | 0.0284     | 0.9267       | 0.9347       |
+| l      | 0.0198 | 0.0407     | 0.9200       | 0.9340       |
+| x      | 0.0086 | 0.0284     | 0.7721       | 0.7736       |
+| g      | 0.0317 | 0.0774     | 1.2902       | 1.2830       |
+
+Modest divergence (~1–3%). Hours and gov consumption diverge more than
+output and investment. Plot saved to `figure_observables_compare.png`.
+
+**Phase D compare (`scripts/compare_wedges.py`).** RMSE of our smoothed
+wedges (after `gwedges2.m` base-normalization) vs `worktemp.w`:
+
+| wedge          | RMSE   | max\|err\| | ours[2009Q2] | BCKM[2009Q2] |
+|----------------|--------|------------|--------------|--------------|
+| z (efficiency) | 0.0148 | 0.0381     | 0.9831       | 0.9828       |
+| 1-τ_l (labor)  | 0.0371 | 0.0665     | 0.8919       | 0.9282       |
+| 1/(1+τ_x) (inv)| 0.0710 | 0.1586     | 0.9389       | 0.9105       |
+| g              | 0.0317 | 0.0774     | 1.2902       | 1.2830       |
+
+**Wedges diverge more than observables** — investment wedge max error
+16% — confirming the basin difference is in the wedge identification,
+not the obs construction. Plot in `figure_wedges_compare.png`.
+
+**Phase E compare (`scripts/compare_tables.py`).** HP-filtered (λ=1600)
+relative-std and lag-correlation tables:
+
+|table|description|max\|err\||
+|---|---|---|
+|IIA1 |relative std of wedges      | 0.5038 |
+|IIA1o|relative std of observables | 0.3595 |
+|IIA2 |xcorr(wedge_i, y)           | 0.2794 |
+|IIA2o|xcorr(obs_i, y)             | 0.1495 |
+|IIB  |wedge-wedge xcorr           | 0.4323 |
+|IIBo |obs-obs xcorr               | 0.1495 |
+
+**Smoking gun.** Our `(τ_l, τ_x)` xcorr peaks at +0.884 vs BCKM's
++0.452. Our basin couples labor and investment wedges much more
+tightly than BCKM's, which is exactly what shows up in the f-stat
+over-attribution to labor.
+
+### Diagnosis
+
+Two independent gaps stack:
+
+1. **Data divergence (Phase B):** ~1–3% RMSE on observables. Largest on
+   hours (`l`, ~2%) and gov consumption (`g`, ~3%). Worth chasing but
+   probably not the dominant story.
+2. **Basin/identification gap (Phase D, E):** wedge-wedge correlation
+   structure differs significantly. Q-shock variances are 5–10×
+   smaller than BCKM's on the τ_x and g rows. Investment wedge max
+   error 16%. fY[τ_l] over-attribution is a direct consequence of
+   `xcorr(τ_l, τ_x) = 0.88` — labor cannibalizes investment's
+   contribution because they're nearly collinear in our basin.
+
+### Phase C — BCKM params through our smoother
+
+Extended `eval_only` short-circuit in `estimate_var_mle` to also return
+`smoothed_states` (RTS pass). New script `scripts/phase_c_bckm_smooth.py`
+plugs BCKM's `(Sbar, P, Q_chol)` from `worktemp.mle` into our Kalman
+smoother on our obs:
+
+```
+LL on our obs at BCKM params: -11634.94    (vs ours +1829.72)
+ss_new[y]=1.1936 l=0.2385 x/y=0.2946 g/y=0.1209
+```
+
+The −11635 LL (vs −1604 with BCKM-P/Q + OUR-Sbar) confirms it's the
+**Sbar** that drags the LL through — our `_model_ss_from_sbar` resolves
+to a different SS at BCKM's Sbar than BCKM uses (l_ss=0.24 vs ~0.33 in
+the data), so our `obs_offset` is wrong for that basin.
+
+But the smoothed wedges *themselves* are NOT catastrophically off:
+
+| wedge          | RMSE BCKM-params | RMSE OUR-params | who wins |
+|----------------|------------------|-----------------|----------|
+| z              | 0.0214           | 0.0148          | OUR closer |
+| 1-τ_l          | 0.0265           | 0.0371          | BCKM closer |
+| 1/(1+τ_x)      | 0.1269           | 0.0710          | OUR closer |
+| g              | 0.0317           | 0.0317          | tied (driven by obs) |
+
+The investment wedge under BCKM-params has RMSE 0.127 (vs our basin's
+0.071) — even **our** basin gives a smoother investment wedge closer
+to BCKM's published wedge than BCKM's own params do, on our data.
+This rules out "our smoother is broken." Conclusion: state-space &
+smoother are operating correctly; the gap is in the **basin** that
+emerges when our calibration + our obs construction define the
+likelihood manifold.
+
+### Diagnosis after Phase C
+
+|element        | our basin | BCKM basin | gap  |
+|---------------|-----------|------------|------|
+|Sbar log_z     | −0.251    | +0.134     | huge |
+|Sbar τ_l       | +0.130    | +0.369     | huge |
+|Sbar τ_x       | +0.011    | −0.046     | sign |
+|Sbar log_g     | −1.937    | −1.935     | match (g_share) |
+|P[0,0] (z)     |  0.950    |  0.989     | gap  |
+|P[2,2] (τ_x)   |  0.924    |  0.968     | gap  |
+|Q[τ_l,τ_l]     |  0.009    |  0.004     | 2.14× |
+|Q[τ_x,τ_x]     |  0.003    |  0.009     | 0.35× |
+|Q[g,g]         |  0.004    |  0.014     | 0.31× |
+
+Both basins agree only on g (because `g_share` is a data-pinned
+quantity). Everything else diverges — most notably the τ_l shock
+variance (ours 2× BCKM's) and the τ_l/τ_x persistence and Sbar
+levels. Our basin attributes more variance and persistence to labor
+than BCKM's does, which is exactly the f-stat over-attribution we see.
+
+### What is blocked and why
+
+The basin gap is mostly explained by either (i) different calibration
+constants, (ii) different SS implied by Sbar, or (iii) data setup.
+We've measured (iii) at 1–3% RMSE on observables — too small to
+explain a 4000-nat LL gap on its own. Suspicion now centres on (i)/(ii):
+our `_model_ss_from_sbar` may use `(α, β, δ, ψ)` that differ subtly
+from BCKM's, which would make BCKM's Sbar incompatible with our
+log-linearize.
+
+### Next
+
+1. Diff our calibration `(α, β, δ, ψ, γ, n, g_share)` against BCKM
+   Table 77 and `datamine.m` exactly.
+2. Compute `_model_ss_from_sbar(BCKM.sbar)` and compare to BCKM's
+   actual data SS (`worktemp` should have the implied (l, x/y, c/y, k/y)
+   somewhere — likely in `datamine.m` constants).
+3. If those agree: the basin gap is genuinely in the optimizer; try
+   `pb=0.99 nps=200` and seed from BCKM's exact (Sbar, P, Q).
+4. If they don't: reconcile calibration constants and re-run.
+
+### 2026-04-28 — Calibration audit and fix
+
+**Found (and fixed) wrong calibration constants.** A prior session had
+moved our `CalibrationParams` defaults to `(α=0.35, ψ=2.24, δ_a=0.0464,
+ρ_a=0.02860)` with comments labelling these "BCKM 2016 θ=0.35" etc.
+Checked against:
+
+- `BCA_info.md` line 213 (Table 1 — Parameters held fixed across countries):
+  `β=0.975, δ=0.05, ψ=2.5, θ(=σ)=1, α=0.33`
+- `matlab_reference/datamine.m` lines 11-15:
+  `beta=.975^(1/4); delta=1-(1-0.05)^(1/4); psi=2.5; theta=1/3`
+
+Both agree exactly: **α=1/3, ψ=2.5, δ_a=0.05, β_a=0.975**. The
+previous session's "0.35 / 2.24" values were misattributed (possibly
+confusing US adjustment-cost coefficient `a=12.55` with capital share α,
+or pulling from a different paper).
+
+Restored `bca_core/params.py` defaults to BCKM Table 1, updated
+`tests/test_params.py`. **All 65 tests still pass.**
+
+### Effect on steady state (g_share=0.166, γ=1.9%, n=0.98%)
+
+|     | old calib | corrected |
+|-----|-----------|-----------|
+| y   | 1.350     | 1.119     |
+| l   | 0.334     | **0.314** |
+| k   | 18.10     | 14.18     |
+| x/y | 0.254     | 0.252     |
+| g/y | 0.166     | 0.166     |
+
+`l_ss = 0.314` matches BCKM `Y_raw[0,1] = exp(-1.158) ≈ 0.314` exactly,
+confirming the corrected calibration aligns with BCKM's data setup.
+
+### Effect on the optimizer basin
+
+Re-ran `scripts/run_var_counterfactuals.py` with the corrected
+calibration. Dump in `data/mle_dump_calib_fix.npz`.
+
+```
+LL final               : 1819.15 (was 1829.72; tiny -10 nat drop)
+Sbar                    : [-0.061, +0.150, +0.019, -1.884]
+   vs BCKM             : [+0.134, +0.369, -0.046, -1.935]
+P diag                  : [0.843, 0.921, 0.970, 1.020]
+   vs BCKM             : [0.989, 1.001, 0.968, 0.995]
+
+LL at BCKM params on our obs: -8110 (was -11635; +3525 nats closer)
+```
+
+**The fix is necessary but not sufficient.** BCKM's published params
+move from −11635 → −8110 LL on our data — a 3525-nat improvement, but
+still ~10000 nats short of where our optimizer converges. The basin
+gap is real and not purely a calibration issue.
+
+### F-stats & wedge structure: basin moved, didn't converge
+
+|             | old basin | new basin | BCKM target |
+|-------------|-----------|-----------|-------------|
+| fY[A]       | 0.023     | 0.030     | 0.16        |
+| fY[τ_l]     | 0.619     | 0.035     | 0.46        |
+| fY[τ_x]     | 0.345     | **0.917** | 0.32        |
+| fY[g]       | 0.013     | 0.018     | ~0          |
+
+Old basin over-attributed labor; new basin over-attributes investment.
+Both wrong but in opposite directions — the LL surface has multiple
+basins and the calibration shift moved the optimizer to a different one.
+
+|table |description                | old max\|err\| | new max\|err\| |
+|------|---------------------------|---------------|---------------|
+|IIA1  |relative std of wedges     | 0.504         | 0.500         |
+|IIA2  |xcorr(wedge_i, y)          | 0.279         | 0.206         |
+|IIB   |wedge-wedge xcorr          | 0.432         | 0.382         |
+|IIBo  |obs-obs xcorr              | 0.150         | 0.150         |
+
+Modest improvements on wedge-correlation tables, no movement on
+observables tables (those don't depend on the basin).
+
+### Diagnosis update
+
+- **Calibration: fixed** ✓ (was demonstrably wrong; matches BCKM Table 1
+  + `datamine.m`).
+- **Data construction: ~1-3% RMSE** on observables (Phase B unchanged
+  by this fix; calibration touches only the labor rescaling).
+- **Basin still wrong** — likelihood surface has multiple local optima
+  and our optimizer (`pb=0.99, nps=50`, 3 restarts) misses BCKM's basin.
+  BCKM uses `nps=200`, suggesting a wider search is needed.
+
+### Next
+
+1. Widen the optimizer search: `nps=200`, more random restarts, and
+   seed from BCKM's exact `(Sbar, P, Q)` as one of the warm-starts to
+   verify whether the optimizer can sustain that basin.
+2. If basin-of-BCKM is reachable but our optimizer drifts away, look at
+   the Sbar bounds (`_SBAR_LB/_SBAR_UB`) — BCKM Sbar[0]=+0.134 is
+   inside ours `[-1, +1]`, so this isn't a bound issue. Could be the
+   spectral-radius penalty interacting with BCKM's `P[1,1]=1.001`.
+3. Address the 2% RMSE on hours and 3% RMSE on `g` data series — these
+   could be the residual data-construction gap (durable goods split?
+   government investment treatment?).
+
+---
+
+## 2026-04-28 — Step 9 closure: assessment & path to verdict
+
+### Where we are
+
+- Pipeline produces a full BCA decomposition end-to-end with corrected
+  calibration, BCKM-faithful estimator architecture (Sbar parametrization,
+  steady-state Kalman with DARE-per-call, analytical wedge extraction
+  matching the smoother to 4 decimals, BCKM `fstats3.m`-style f-stats).
+- Numerical compare scripts in place: Phase B (observables), Phase C (BCKM
+  params through our smoother), Phase D (wedges), Phase E (HP-filtered
+  cyclical tables), Phase F (Sbar coordinate translation).
+- 65/65 tests pass. Code matches `mleqadj.m` architecture. Calibration
+  matches `datamine.m` and BCA paper Table 1 exactly.
+
+### What we cannot do
+
+Hit BCKM's Table 11 f-stats. The gap has been narrowing but oscillates:
+
+|run                           | LL    | fY[A] | fY[τ_l] | fY[τ_x] | fY[g] |
+|------------------------------|-------|-------|---------|---------|-------|
+|target (BCKM Table 11)        | —     | 0.16  | 0.46    | 0.32    | ~0    |
+|pre-calibration-fix basin     | 1830  | 0.023 | 0.619   | 0.345   | 0.013 |
+|post-calibration-fix basin    | 1819  | 0.030 | 0.035   | 0.917   | 0.018 |
+
+The two basins differ by 11 nats in LL but give economically opposite
+stories (labor-dominated vs investment-dominated). BCKM's published
+params evaluate at LL=−8110 on our data — improved from −11635 by the
+calibration fix, but still a 9930-nat gap.
+
+### The unresolved question
+
+**Does running BCKM's MATLAB on their `data.mat` reproduce Tables 8–11
+exactly, or does it land in one of several local optima?**
+
+Three possibilities:
+- (A) Their code → Tables 8–11 deterministically. Our gap is data
+  construction or optimizer scope.
+- (B) Their code → close-but-not-exact. Replication standard becomes
+  "within ε of Tables 8–11."
+- (C) Their code → multiple basins like ours. Methodology is genuinely
+  loose; published results are one draw.
+
+Resolving this is the highest-leverage single experiment we have not
+run. Roughly one day in Octave.
+
+### Bigger context
+
+The user's actual research question is post-2014 US business-cycle
+analysis. Replication is a *methodology check*, not the deliverable.
+If the replication exercise concludes (C), that's a publishable finding
+about wedge accounting — Cole–Ohanian–style under-identification — and
+informs what kind of forward analysis is defensible (point estimates
+vs. distributions over basins).
+
+### Three-step plan to a verdict
+
+1. **Run BCKM's MATLAB end-to-end in Octave on `data.mat`.** Resolves
+   (A)/(B)/(C). ~1 day.
+2. **Bootstrap our estimator** (~100 random seeds, look at f-stat
+   distribution). Tells us if *our* methodology is unimodal or bimodal,
+   independent of BCKM. ~2 hours.
+3. **Sensitivity to calibration** (vary α, ψ, δ, β by ±5%, watch f-stats).
+   Tells us how robust the framework's economic conclusions are to
+   normal calibration uncertainty. ~1 hour.
+
+### Decision matrix after the three steps
+
+|Step 1 outcome | Step 2 outcome | Verdict for forward US analysis |
+|---------------|----------------|---------------------------------|
+|Reproduces (A) | unimodal       | trust it; chase remaining data gap to close |
+|Reproduces (A) | bimodal        | optimizer issue specific to ours; widen search |
+|Approximate (B)| unimodal       | trust with point-estimate caveat |
+|Approximate (B)| bimodal        | trust with distributional caveat |
+|Multi-basin (C)| any            | use Bayesian or reject pointwise replication; document |
+
+### Notes on the rewrite of DIVERGENCE_ANALYSIS.md
+
+The original `DIVERGENCE_ANALYSIS.md` was written before the
+calibration audit and contained a Tier-1.5 calibration table that
+incorrectly listed `α=0.35, ψ=2.24, δ=0.0464, β=0.9722` as "BCKM
+defaults". Cross-checking against BCA paper Table 1 + datamine.m
+revealed those are not BCKM values — and a prior session had applied
+them to `params.py`, which we corrected today. The doc is rewritten to
+reflect current state, identify what's resolved vs outstanding, and
+hand off the path-to-verdict.
