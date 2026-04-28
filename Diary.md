@@ -974,3 +974,81 @@ correlated, and labor is absorbing the joint variance.
 2. Investigate the τ_l/τ_x co-attribution: try a stricter constraint on Q
    off-diagonals OR re-run with `nps=200` to see if the ridge has a better
    point. (Out of scope this session.)
+
+---
+
+## Step 9 — Numerical replication of BCKM `wedges.jpg` & `observables.jpg`
+
+### Motivation
+
+`fY[τ_l]` and `fY[τ_x]` aren't matching BCKM Table 11. Eyeballing the
+JPG figures (`matlab_reference/wedges.jpg`, `observables.jpg`) suggests
+our smoothed wedges look broadly similar but visual matching can hide
+correlation/timing differences that change the f-stat decomposition.
+
+`matlab_reference/worktemp.mat` stores the BCKM ground-truth numerically:
+```
+worktemp.w.yt/ht/xt/gt/ct           # observables, base-normalized at 2008Q1
+worktemp.w.zt/tault/tauxt/gt        # smoothed wedges, base-normalized
+worktemp.w.mzy/mly/mxy/mgy/...      # wedge-contribution decomposition
+worktemp.mle.{Theta,sbar,P,Q,P0,Likelihood}   # BCKM final MLE estimates
+worktemp.tableII*  worktemp.tableIII*         # pre-computed f-stats
+worktemp.bind=113   (2008Q1)
+worktemp.time = 1980.25 .. 2015.0   (T=140)
+```
+
+Verified: `worktemp.mle.P0 = [0.01398, 0.00079, 0.01288, -0.01370]`
+matches BCKM Table 9 exactly.
+
+This is enough to do RMSE-level numerical comparison instead of eyeballing,
+AND lets us split "smoother bug" from "optimizer bug" by plugging BCKM's
+MLE params directly into our smoother.
+
+### Plan
+
+**Phase A — Ground-truth loader.** `bca_core/bckm_reference.py`: typed
+loader for `worktemp.mat` returning observables, wedges, MLE params, time
+index, components, and Table II/III as a dict. Unit test asserts P0 matches
+Table 9 (pinning the format so loader breakage is loud).
+
+**Phase B — Observables RMSE (data-only).** Take our pipeline's detrended
+`y/l/x/g`, normalize by 2008Q1 value, align on the same 140-quarter grid,
+RMSE per series vs BCKM. Plot side-by-side, save
+`figure_observables_compare.png`. **If RMSE is large, the bug is in
+`bca_core/data/adjustments.py`** — none of the estimator work matters until
+this is right.
+
+**Phase C — Smoother sanity (estimator-clean).** Plug BCKM's `P/Q/sbar`
+directly into our Kalman smoother (skip optimizer entirely). Run on
+*our* obs and on *BCKM's* obs. Two RMSE results:
+- *Our obs + BCKM params*: divergence ⇒ smoother bug or state-space mismatch.
+- *BCKM obs + BCKM params*: should match nearly exactly. If not,
+  `_steady_state_kalman` is wrong.
+
+This second test should become a permanent regression test in `tests/`.
+
+**Phase D — End-to-end wedge comparison.** Take our pipeline's MLE-estimated
+smoothed wedges, normalize at 2008Q1, RMSE vs BCKM. Difference between (D)
+and (C) localizes the gap to the optimizer (i.e. a bad LL maximum).
+Save `figure_wedges_compare.png`.
+
+**Phase E — Components & f-stat tables.** Compare BCKM's `tableII*`
+against our f-stats. If wedges agree but f-stats don't, the bug is in
+`fstats3.py` translation, not the estimator.
+
+### Weak points to address (from critique)
+
+1. **Coordinate-system conversion.** Our state-space uses log-deviations
+   from calibrated SS; BCKM normalizes to 2008Q1. Conversion is
+   `obs_ours_2008Q1norm = exp(obs_hat[t] - obs_hat[2008Q1])`. Verify on
+   `yt` (single series) before scaling up.
+2. **Wedge convention check.** `bca_wedges2.m` uses `tault`/`tauxt`
+   directly in the JPG plot — confirm it's `(1−τ_L)`, `(1+τ_X)` (not
+   `exp(−τ_L)`, `exp(τ_X)`) before any RMSE.
+3. **f-stats depend on clean wedges.** Phase E only meaningful after
+   Phases B+C+D show wedges agree.
+
+### Order
+
+A → B (data fix loop if needed) → C (smoother fix loop if needed)
+→ D → E. Each phase is independently informative and gates the next.
