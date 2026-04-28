@@ -1,0 +1,10 @@
+{
+  "n_annual": 0.011673519472752636,
+  "n_quarterly": 0.0029056907593238584,
+  "gamma_annual": 0.019213999867819354,
+  "gamma_quarterly": 0.004769272416854123,
+  "gamma_calibrated": false,
+  "detrend_method": "calgz",
+  "base_idx": 112,
+  "base_year_quarter": "2008Q1"
+}

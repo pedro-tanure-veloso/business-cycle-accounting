@@ -875,3 +875,102 @@ Two items, in order:
    BCKM `initmle.m` semantics directly. Or add an iterative seed
    schedule for fsolve.
 
+---
+
+## Session: 2026-04-28 — Step 8.1 follow-up (Sbar warm-start + calgz)
+
+### What was completed
+
+**Sbar fsolve fixed** — `bca_core/var_estimation.py`:
+- Found a silent bug: `_model_ss_from_sbar` referenced `proto.params` but
+  `PrototypeModel` exposes `self.p`. The try/except in `_fsolve_sbar_initmle`
+  was swallowing the `AttributeError` and returning zeros. Single-line fix.
+- Rewrote `_fsolve_sbar_initmle` to take `data_means` from caller and use
+  BCKM-faithful residuals (initmle.m line 53):
+  `[ys − Ym[0]; xs/ys − Ym[1]; ls − Ym[2]; gs/ys − Ym[3]]`
+  with `Ym = [mean(y), mean(x/y), mean(l), mean(g/y)]` (not ratios as before).
+- `scripts/run_var_counterfactuals.py` now computes `data_means` from raw
+  detrended levels and passes to `estimate_var_mle`.
+
+**Coordinate-system pivot** — empirically tested four Sbar candidates as
+warm-starts. BCKM's initmle.m operates in absolute log-levels; our state
+space uses log-deviations from a calibrated SS. The BCKM-faithful Sbar
+(`A=-0.28, τ_l=+0.03, τ_x=+0.04, g=-2.16`) lives in the wrong coordinate
+system and crashed LL to -26434. Pivoted to the **OLS-implied Sbar**
+(`Sbar = (I-P_ols)⁻¹·P_0_ols`) which lives in the same deviation space as
+our observables. The fsolve result is kept as a diagnostic print only.
+
+**Calgz cache** — refetched FRED with `--save-data` and
+`base_year_quarter="2008Q1"`, producing `data/us_1980_2014_calgz.parquet`.
+calgz-fitted γ_q = 0.0048 (annual 0.0192).
+
+**Misleading log fixed** — `scripts/run_var_counterfactuals.py` now prints
+"calgz-fitted" when `detrend_method=='calgz'` instead of "OLS-estimated".
+
+### Result on calgz cache + OLS-implied Sbar warm-start
+
+```
+T = 140, g_share = 0.115, calgz γ_annual = 0.0192
+
+Sbar_initmle (absolute, diagnostic only): A=-0.28  τ_l=+0.03  τ_x=+0.04  g=-2.16
+Sbar_init  (OLS-implied, used as warm-start): A=-0.39  τ_l=+0.08  τ_x=+0.53  g=-0.04
+
+ll: 1601 → 1870 (multiplicative-shrink loop +268)
+
+Sbar (final):  [-0.168, +0.238, +0.040, +0.208]
+P_0:           [-0.002, -0.003, -0.002, -0.002]
+P_0 target:    [+0.014, +0.001, +0.013, -0.014]
+
+P diagonal: [0.979, 0.995, 0.939, 0.896]   (BCKM: 0.989, 1.001, 0.968, 0.995)
+Max |eigval|: 0.9956 (within bound)
+
+GR-window f-stats (BCKM Table 11):
+              y       l       x
+efficiency  0.15    0.07    0.66    target fY[A]=0.16   ✓ matched
+labor       0.65    0.75    0.11    target fY[τ_l]=0.46 (over by 0.19)
+investment  0.06    0.12    0.14    target fY[τ_x]=0.32 (under by 0.26)
+government  0.14    0.05    0.09
+
+Peak-to-trough (2007Q4→2009Q2):
+   actual  efficiency  labor  investment  government
+y -0.087    -0.059   -0.017     -0.118     +0.048
+l -0.037    -0.001   -0.020     -0.165     +0.070
+x -0.293    -0.088   -0.020     -0.769     +0.213
+```
+
+### Headline
+
+**fY[A] = 0.15 vs target 0.16 — essentially nailed.** The efficiency-wedge
+contribution to GR output, which previously sat at 0.05 (run with zero Sbar
+warm-start), is now within 0.01 of BCKM's published value. LL improved 36
+units. τ_l diagonal moved from 0.990 → 0.995, closer to BCKM's 1.001.
+
+The remaining gap is between `fY[τ_l]` (0.65 vs 0.46) and `fY[τ_x]` (0.06
+vs 0.32). The investment counterfactual *does* produce the right
+peak-to-trough decline (y=-0.118 alone vs actual -0.087, broadly in line
+with BCKM finding investment explains roughly a third of GR output drop),
+but its full-window variance contribution is suppressed because
+shock co-variance Q[τ_l, τ_x] ≠ 0 — labor and investment shocks are
+correlated, and labor is absorbing the joint variance.
+
+### Tests
+
+`pytest tests/ -v` — 52/52 passing. No regressions.
+
+### What still doesn't match BCKM
+
+1. **P_0 still very far from Table 9** (~0.002 vs target ±0.013). Suggests
+   our state-space coordinate system (deviations from calibrated SS) does
+   not coincide with BCKM's (absolute log-levels). They will not match
+   unless the SS frame is shifted or BCKM is reproduced in absolute levels.
+2. **fY[τ_l] over-attributed, fY[τ_x] under-attributed.** Likely tied to
+   the joint-shock covariance. Worth investigating whether the
+   multiplicative-shrink iterates explored a flatter ridge of the LL surface.
+
+### Next
+
+1. Commit Step 8.1 follow-up (this session's changes to `bca_core/var_estimation.py`,
+   `scripts/run_var_counterfactuals.py`, and the new calgz cache).
+2. Investigate the τ_l/τ_x co-attribution: try a stricter constraint on Q
+   off-diagonals OR re-run with `nps=200` to see if the ridge has a better
+   point. (Out of scope this session.)

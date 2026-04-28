@@ -305,6 +305,7 @@ def estimate_var_mle(
     P_ols: np.ndarray | None = None,
     Q_ols: np.ndarray | None = None,
     P_0_ols: np.ndarray | None = None,
+    data_means: np.ndarray | None = None,
     **kwargs,
 ) -> dict:
     """
@@ -318,10 +319,17 @@ def estimate_var_mle(
 
     Parameters
     ----------
-    obs_hat   : T x 4 array  [y_hat, l_hat, x_hat, g_hat]  (demeaned)
-    proto     : PrototypeModel
-    n_restarts: optimizer restarts (first from BCKM init, rest perturbed)
-    verbose   : print per-restart log-likelihoods
+    obs_hat    : T x 4 array  [y_hat, l_hat, x_hat, g_hat]  (demeaned)
+    proto      : PrototypeModel
+    n_restarts : optimizer restarts (first from BCKM init, rest perturbed)
+    verbose    : print per-restart log-likelihoods
+    data_means : optional 4-vector matching BCKM ``initmle.m`` Ym units:
+                 ``[mean(y_dt), mean(x_dt/y_dt), mean(l_dt), mean(g_dt/y_dt)]``.
+                 When provided, the Sbar fsolve seed uses BCKM-faithful
+                 level-and-ratio residuals (``initmle.m`` line 53).
+                 When None (legacy), falls back to ratio-only residuals
+                 derived from ``mean(exp(obs_hat))`` — these don't converge
+                 in practice and Sbar resets to zeros.
 
     Returns
     -------
@@ -560,7 +568,7 @@ def estimate_var_mle(
         Mirrors mleqadj.m / initmle.m sec 5a: with Sbar=(log_zs, tauls,
         tauxs, log_gs), recompute kls→A,B,ks,ls,ys,xs.
         """
-        p = proto.params
+        p = proto.p
         gz_q = (1 + p.gamma_annual) ** 0.25 - 1
         gn_q = (1 + p.n_annual) ** 0.25 - 1
         beta_q = (1 + p.rho_annual) ** -0.25
@@ -590,37 +598,42 @@ def estimate_var_mle(
     def _fsolve_sbar_initmle():
         """initmle.m-style nonlinear fsolve seed (BCKM runmleadj.m line 14).
 
-        Returns the Sbar that drives [ys−Ym1, xs/ys−Ym2, ls−Ym3, gs/ys−Ym4]
-        to zero. Falls back to zeros on failure.
+        Returns the Sbar that drives BCKM `initmle.m` line 53 residuals
+        ``[ys − Ym(1); xs/ys − Ym(2); ls − Ym(3); gs/ys − Ym(4)]`` to zero,
+        where Ym is the data sample-mean vector in BCKM units:
+        ``[mean(y_dt), mean(x_dt/y_dt), mean(l_dt), mean(g_dt/y_dt)]``.
+
+        Falls back to zeros on failure.
         """
         from scipy.optimize import fsolve
 
-        Ym = sample_obs_lvl  # [mean(exp(y_hat)), exp(l_hat), exp(x_hat), exp(g_hat)]
-        # NOTE: our obs_hat columns are y_hat, l_hat, x_hat, g_hat — but
-        # x_hat is log(x_dt / (x_ss/y_ss)) and g_hat similarly relative to
-        # the SS x/y, g/y ratios. So mean(exp(x_hat)) is on the *ratio* scale,
-        # and we compare to xs/ys (model SS x/y ratio) — units consistent.
+        if data_means is not None:
+            # BCKM-faithful path: residuals match initmle.m line 53 exactly.
+            Ym = np.asarray(data_means, dtype=float)
 
-        def _residuals(Sbar):
-            ys, xs, ls, gs = _model_ss_from_sbar(Sbar)
-            ys_ss, xs_ss, ls_ss, gs_ss = ss["y"], ss["x"], ss["l"], ss["g"]
-            # data Ym in our units: y is exp(y_hat) = y_dt (already in y_ss
-            # units since we don't subtract log y_ss); x/y, l/l_ss, g/(g_ss/y_ss)
-            # Match BCKM semantics:
-            #   y residual: ys − mean(y_dt) = ys − ys_ss · Ym(0)/ys_ss
-            #             ≈ ys − Ym(0)·ys_ss   (since exp(y_hat)=y_dt and ys_ss≈mean(y_dt))
-            # In our normalization, exp(y_hat) = y_dt with mean ≈ ys_ss·something,
-            # but for warm-start a simpler match:
-            #   ys/ys_ss − Ym(0)
-            #   (xs/ys) / (xs_ss/ys_ss) − Ym(2)   [Ym(2) is exp(x_hat) mean]
-            #   ls/ls_ss − Ym(1)
-            #   (gs/ys) / (gs_ss/ys_ss) − Ym(3)
-            return np.array([
-                ys / ys_ss - Ym[0],
-                ls / ls_ss - Ym[1],
-                (xs / ys) / (xs_ss / ys_ss) - Ym[2],
-                (gs / ys) / (gs_ss / ys_ss) - Ym[3],
-            ])
+            def _residuals(Sbar):
+                ys, xs, ls, gs = _model_ss_from_sbar(Sbar)
+                return np.array([
+                    ys - Ym[0],          # output level
+                    xs / ys - Ym[1],     # x/y ratio
+                    ls - Ym[2],          # labor level
+                    gs / ys - Ym[3],     # g/y ratio
+                ])
+        else:
+            # Legacy ratio-only path (back-compat). Doesn't converge in
+            # practice; Sbar falls back to zeros and the caller sees a
+            # warm-start collapse.
+            Ym = sample_obs_lvl
+
+            def _residuals(Sbar):
+                ys, xs, ls, gs = _model_ss_from_sbar(Sbar)
+                ys_ss, xs_ss, ls_ss, gs_ss = ss["y"], ss["x"], ss["l"], ss["g"]
+                return np.array([
+                    ys / ys_ss - Ym[0],
+                    ls / ls_ss - Ym[1],
+                    (xs / ys) / (xs_ss / ys_ss) - Ym[2],
+                    (gs / ys) / (gs_ss / ys_ss) - Ym[3],
+                ])
 
         try:
             sol, _info, ier, _msg = fsolve(
@@ -660,15 +673,33 @@ def estimate_var_mle(
         return (-ll if np.isfinite(ll) else 1e20) + penalty
 
     # ── Warm-starts (BCKM runmleadj.m / mleqadj.m architecture) ─────────
-    # Step 8.4: Sbar from initmle.m fsolve.
-    # Step 8.6: P warm-start = 0.995·I (mleqadj.m line 28 / runmleadj.m
-    #          x0a/b/c lines 21,26,31,36,etc.).
-    # Q warm-start: BCKM x0c values (runmleadj.m line 100-110, "result from
-    #          initpw with annual adja=12.88" — the closest match to our
-    #          model since we don't have a previous run).
-    Sbar_init = _fsolve_sbar_initmle()
+    # Step 8.4 (revised): the BCKM initmle.m fsolve seed is computed in
+    # *absolute* log-level units (zs, gs, etc.). Our state-space wedges are
+    # log-DEVIATIONS from the calibrated SS, so initmle's Sbar can't be
+    # plugged in directly without coordinate translation. Empirical test
+    # (using `data/us_1980_2014_calgz.parquet` + this estimator) showed
+    # that even after shifting Sbar[3] by log(g_ss/y_ss), the LL collapses
+    # from ~914 (zeros) to ~−89 (translated initmle). We therefore use the
+    # OLS-implied Sbar as the warm-start: `Sbar_ols = (I − P_ols)⁻¹ · P_0_ols`,
+    # which lives in the same coordinate system as our state and gives a
+    # well-conditioned initial point. The BCKM-style fsolve is still
+    # *computed* (and reported) for comparison/diagnostic purposes, but is
+    # not used as the warm-start.
+    Sbar_initmle_abs = _fsolve_sbar_initmle()
     if verbose:
-        print(f"  Sbar_init (initmle.m fsolve): "
+        print(f"  Sbar_initmle.m (absolute, diagnostic): "
+              f"A={Sbar_initmle_abs[0]:+.4f}  τ_l={Sbar_initmle_abs[1]:+.4f}  "
+              f"τ_x={Sbar_initmle_abs[2]:+.4f}  g={Sbar_initmle_abs[3]:+.4f}")
+
+    if P_ols is not None and P_0_ols is not None:
+        try:
+            Sbar_init = np.linalg.solve(np.eye(4) - P_ols, P_0_ols)
+        except np.linalg.LinAlgError:
+            Sbar_init = np.zeros(4)
+    else:
+        Sbar_init = np.zeros(4)
+    if verbose:
+        print(f"  Sbar_init (OLS-implied, used as warm-start): "
               f"A={Sbar_init[0]:+.4f}  τ_l={Sbar_init[1]:+.4f}  "
               f"τ_x={Sbar_init[2]:+.4f}  g={Sbar_init[3]:+.4f}")
 

@@ -121,8 +121,14 @@ def main(
     )
     T = len(df)
     print(f"  T = {T}")
-    print(f"  Detrend γ (annual): {meta['gamma_annual']:.4f}  "
-          f"({'calibrated' if meta.get('gamma_calibrated') else 'OLS-estimated'})")
+    _detrend_method = meta.get("detrend_method", "linear")
+    if meta.get("gamma_calibrated"):
+        _gamma_source = "calibrated"
+    elif _detrend_method == "calgz":
+        _gamma_source = "calgz-fitted"
+    else:
+        _gamma_source = "OLS-estimated"
+    print(f"  Detrend γ (annual): {meta['gamma_annual']:.4f}  ({_gamma_source})")
 
     # ── 3. Calibrate g_share and model SS from data ──────────────────────
     # g_share = mean(g_dt)/mean(y_dt) so that model g_ss/y_ss matches data
@@ -176,10 +182,24 @@ def main(
               f"({'worsened ✓' if taux_ols[trough_idx] > taux_ols[peak_idx] else 'improved ✗'})")
 
     # ── 6. Kalman-filter MLE (BCKM approach) ────────────────────────────
+    # BCKM `initmle.m` line 53 expects Ym in [y level, x/y ratio, l level,
+    # g/y ratio] units. Compute from the post-rescale `df` so the Sbar
+    # fsolve seed is on the right manifold.
+    data_means = np.array([
+        df["y"].mean(),
+        (df["x"] / df["y"]).mean(),
+        df["l"].mean(),
+        (df["g"] / df["y"]).mean(),
+    ])
+    print(f"  data_means (BCKM Ym): "
+          f"y={data_means[0]:.4f}  x/y={data_means[1]:.4f}  "
+          f"l={data_means[2]:.4f}  g/y={data_means[3]:.4f}")
+
     print("\nEstimating VAR(1) by Kalman-filter MLE (BCKM 2016 mleqadj)...")
     mle_result = estimate_var_mle(
         obs_hat, proto, n_restarts=2, verbose=True,
         P_ols=P_ols, Q_ols=Q_ols, P_0_ols=P_0_ols,
+        data_means=data_means,
     )
 
     P_0      = mle_result["P_0"]
