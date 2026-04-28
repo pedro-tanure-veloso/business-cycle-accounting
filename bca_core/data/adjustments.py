@@ -147,21 +147,25 @@ def compute_labor_input(
     """
     Compute labor input l_t in [0, 1].
 
-    Prefers `hours_index` (FRED PRS85006023, nonfarm business hours of all
-    persons, 1947+) so the labor series spans BCKM's full 1948Q1+ MLE
-    sample. Falls back to `employment * avg_weekly_hours` if hours_index
-    is unavailable (the latter only goes back to 1964 because AWHNONAG
-    starts then).
+    Prefers `employment * avg_weekly_hours` (PAYEMS × AWHNONAG — total
+    hours in levels) so that division by a population level is dimensionally
+    consistent. Mirrors BCKM `usdata.m` semantics. AWHNONAG starts 1964Q1,
+    so for sub-samples that include earlier quarters this falls back to
+    `hours_index` (PRS85006023) — but the resulting series carries a
+    spurious negative trend (Phase B observed −30% / 35yrs for 1980+
+    sample) because dividing an INDEX by a population LEVEL is not
+    dimensionally meaningful. Avoid the fallback whenever AWHNONAG covers
+    the sample.
 
     Normalizes so the sample mean equals target_mean — post-hoc rescaling
     in run_var_counterfactuals.py then re-normalizes to the model l_ss.
     """
-    if "hours_index" in df.columns:
+    if "employment" in df.columns and "avg_weekly_hours" in df.columns:
+        hours = (df["employment"] * df["avg_weekly_hours"]).copy()
+    elif "hours_index" in df.columns:
         hours = df["hours_index"].copy()
-    elif "employment" in df.columns and "avg_weekly_hours" in df.columns:
-        hours = df["employment"] * df["avg_weekly_hours"]
     else:
-        raise ValueError("Need hours_index or (employment, avg_weekly_hours) columns.")
+        raise ValueError("Need (employment, avg_weekly_hours) or hours_index columns.")
 
     hours = hours.dropna()
 
