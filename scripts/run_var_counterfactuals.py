@@ -90,6 +90,7 @@ def find_date_index(dates, year: int, quarter: int) -> int | None:
 def main(
     data_path: str | None = None,
     save_data_path: str | None = None,
+    dump_mle_path: str | None = None,
 ) -> None:
     # ── 1. BCKM calibration parameters ──────────────────────────────────
     # BCKM (2016) US: γ=1.9%/yr, n=0.98%/yr (Table 77)
@@ -207,6 +208,24 @@ def main(
     P_var    = mle_result["P"]
     Q_chol   = mle_result["Q"]
     smoothed = mle_result["smoothed_states"]   # T x 5  [k, A, taul, taux, g]
+
+    if dump_mle_path is not None:
+        # Phase D artifact: everything needed to run the wedge mapping +
+        # RMSE comparison without re-running MLE (~3-5 min).
+        np.savez(
+            dump_mle_path,
+            smoothed=smoothed,
+            obs_hat=obs_hat,
+            P_0=P_0,
+            Sbar=Sbar,
+            P=P_var,
+            Q_chol=Q_chol,
+            log_likelihood=mle_result["log_likelihood"],
+            dates=np.array([str(d) for d in df.index]),
+            ss_y=ss["y"], ss_l=ss["l"], ss_x=ss["x"], ss_g=ss["g"],
+            alpha=params.alpha,
+        )
+        print(f"\n  Dumped MLE artifacts to {dump_mle_path}")
 
     wedge_labels = ["A", "τ_l", "τ_x", "g"]
     print(f"\n  Log-likelihood: {mle_result['log_likelihood']:.4f}")
@@ -340,5 +359,15 @@ if __name__ == "__main__":
         metavar="PATH",
         help="Fetch from FRED and save processed dataset to this .parquet file.",
     )
+    parser.add_argument(
+        "--dump-mle",
+        metavar="PATH",
+        help="Save smoothed states + MLE params + obs_hat + SS to a .npz "
+        "for downstream wedge-comparison scripts (Phase D).",
+    )
     args = parser.parse_args()
-    main(data_path=args.data, save_data_path=args.save_data)
+    main(
+        data_path=args.data,
+        save_data_path=args.save_data,
+        dump_mle_path=args.dump_mle,
+    )
