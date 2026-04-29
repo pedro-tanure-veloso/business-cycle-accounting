@@ -101,19 +101,64 @@ if isfield(worktemp, 'adjb')
     fprintf(fid, 'adjb  = %.10g\n', worktemp.adjb);
 end
 
-% MLE solution (added by gmle.m)
+% MLE solution (added by gmle.m). BCKM nests it under worktemp.mle.{...}.
+% Walk one level deep generically so we don't depend on field name casing
+% or layout. Anything nested deeper than one level (e.g. mle.Sbar.estimate)
+% is unwrapped if it has an `estimate` subfield, otherwise its struct
+% summary is printed.
 fprintf(fid, '\n--- MLE solution (if present) ---\n');
-solution_fields = {'F', 'LL', 'theta', 'Sbar', 'P0', 'P', 'Q', 'V'};
-for k = 1:numel(solution_fields)
-    f = solution_fields{k};
-    if isfield(worktemp, f)
-        val = worktemp.(f);
-        if isscalar(val)
-            fprintf(fid, '%-8s = %.10g\n', f, val);
+
+if isfield(worktemp, 'mle') && isstruct(worktemp.mle)
+    mle = worktemp.mle;
+    mle_fields = fieldnames(mle);
+    for k = 1:numel(mle_fields)
+        fname = mle_fields{k};
+        val = mle.(fname);
+
+        if isstruct(val) && isfield(val, 'estimate')
+            % BCKM convention: mle.<param>.estimate is the converged value
+            est = val.estimate;
+            if isscalar(est)
+                fprintf(fid, 'mle.%-12s.estimate = %.10g\n', fname, est);
+            else
+                fprintf(fid, 'mle.%-12s.estimate (size %dx%d) = %s\n', ...
+                        fname, size(est, 1), size(est, 2), mat2str(est, 6));
+            end
+        elseif isnumeric(val) && isscalar(val)
+            fprintf(fid, 'mle.%-12s = %.10g\n', fname, val);
+        elseif isnumeric(val)
+            fprintf(fid, 'mle.%-12s (size %dx%d) = %s\n', ...
+                    fname, size(val, 1), size(val, 2), mat2str(val, 6));
+        elseif ischar(val)
+            fprintf(fid, 'mle.%-12s = "%s"\n', fname, val);
+        elseif isstruct(val)
+            sub = fieldnames(val);
+            fprintf(fid, 'mle.%-12s (struct with fields: %s)\n', ...
+                    fname, strjoin(sub, ', '));
         else
-            fprintf(fid, '%-8s = %s (size %dx%d)\n', f, ...
-                    mat2str(val, 6), size(val, 1), size(val, 2));
+            fprintf(fid, 'mle.%-12s (skipped, type=%s)\n', fname, class(val));
         end
+    end
+else
+    % Fall back to top-level field names just in case
+    solution_fields = {'F', 'LL', 'Likelihood', 'theta', 'Sbar', 'P0', 'P', 'Q', 'V'};
+    found_any = false;
+    for k = 1:numel(solution_fields)
+        f = solution_fields{k};
+        if isfield(worktemp, f)
+            found_any = true;
+            val = worktemp.(f);
+            if isscalar(val)
+                fprintf(fid, '%-12s = %.10g\n', f, val);
+            else
+                fprintf(fid, '%-12s = %s (size %dx%d)\n', f, ...
+                        mat2str(val, 6), size(val, 1), size(val, 2));
+            end
+        end
+    end
+    if ~found_any
+        fprintf(fid, '(no mle struct and no top-level F/LL/Sbar/P/Q/V — ');
+        fprintf(fid, 'top-level fields: %s)\n', strjoin(fieldnames(worktemp), ', '));
     end
 end
 
