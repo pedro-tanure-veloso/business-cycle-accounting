@@ -10,7 +10,8 @@
   - `mleqadj.m` — objective function (Kalman-filter log-likelihood)
   - `kfilter.m` → `doubalg.m` — steady-state Kalman filter (called inside `mleqadj`)
   - `uncmin.m` — custom unconstrained minimizer
-  - `octave_multistart.m` — our probe script (independent random restarts)
+  - `octave_fresh_run.m` — from-scratch replication starting from raw `data.mat`
+  - `octave_multistart.m` — independent random-restart basin probe
 - **Source of baseline theta**: `worktemp.mat`, confirmed to be the authors' published replication
   file (not a fresh run from this machine). This gives us the ground truth to replicate against.
 - **Data**: `worktemp.mat` → `mled` (T=140 quarterly observations, 1980Q1–2014Q4),
