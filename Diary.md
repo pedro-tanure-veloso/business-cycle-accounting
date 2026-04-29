@@ -1420,3 +1420,69 @@ revealed those are not BCKM values — and a prior session had applied
 them to `params.py`, which we corrected today. The doc is rewritten to
 reflect current state, identify what's resolved vs outstanding, and
 hand off the path-to-verdict.
+
+## 2026-04-28 — Step 9 verdict (Phase 4 convergence: Steps 1+2+3 done)
+
+The three-step plan from `DIVERGENCE_ANALYSIS.md` §6 is complete. Both
+task branches merged into `main`:
+- `step1-octave-replication` (other machine, Octave/MATLAB run)
+- `step23-bootstrap-sensitivity` (this machine, Python pipeline probes)
+
+Full results in `STEP1_OCTAVE_RESULTS.md` and
+`STEP23_BOOTSTRAP_SENSITIVITY.md`. Verdict synthesis is in
+`DIVERGENCE_ANALYSIS.md` §10. One-paragraph headline below.
+
+### Headline
+
+Step 1 outcome **B**: BCKM's Octave reproduces Tables 8–11 within
+machine precision from the published warm-start (verified F = −2402.876
+exactly; fY = [0.16, 0.46, 0.32, 0.06] match Table 11). Multi-start
+shows 6/10 land in the main basin and 4/10 hit *degenerate* basins
+(numerical artifacts, not alternative economic interpretations). So
+BCKM's objective is well-behaved — the under-identification hypothesis
+of §5(C) is **not** what is going on with the published numbers.
+
+Step 2 outcome **bimodal**: our Python objective shows 92/100
+labor-dominated and 8/100 investment-dominated basins from std=0.01
+random restarts; no restart reaches within 10 nats of our reference
+LL=1837.16. Step 3 shows δ_annual+5% flips the basin (fY[τ_l] 0.90 →
+0.24). Calibration noise spread of fY[τ_l] is 0.69, wider than the 0.44
+gap to BCKM Table 11.
+
+Decision-matrix cell: **B + bimodal → "trust with distributional
+caveat"**. But the more useful framing: the Octave run isolates **two
+named code-level bugs** in our Python pipeline that account for almost
+all of the gap to BCKM:
+
+1. **f-stat formula**. BCKM `runall.m` uses level-ratio MSE residuals
+   `mzye = Y(t)/Y(t₀) − CF(t)/CF(t₀)`. Our `f_statistics_bckm` uses
+   log-deviation SSR. Step 1 §Anomalies item 1 names this as the
+   primary source of f-stat disagreement.
+2. **BGG adjustment costs**. BCKM uses `adjc=2 → adja=12.88`; ours has
+   `adja=0`. Affects investment-Euler residual; most likely affects
+   fY[τ_x].
+
+### Forward plan
+
+- **Fix #1 (f-stat formula)**: code-level change in
+  `bca_core/counterfactuals.py`. Low risk. Re-run
+  `scripts/run_var_counterfactuals.py` to compare fY against Table 11
+  at our current MLE optimum.
+- **Fix #2 (adjustment costs)**: structural model change. Plan +
+  user sign-off needed per CLAUDE.md "Asking Before Deviating" before
+  modifying state-space.
+- After both fixes, re-run the bootstrap (Step 2) — the residual basin
+  structure tells us how much of the multimodality is real vs.
+  missing-feature artifact.
+
+### Files merged
+
+| from `step1-octave-replication`         | from `step23-bootstrap-sensitivity`        |
+|------------------------------------------|--------------------------------------------|
+| `STEP1_OCTAVE_RESULTS.md`                | `STEP23_BOOTSTRAP_SENSITIVITY.md`          |
+| `matlab_reference/octave_fresh_run.m`    | `scripts/bootstrap_mle.py`                 |
+| `matlab_reference/octave_multistart.m`   | `scripts/sensitivity_calibration.py`       |
+| `octave_output/*.mat`, `octave_output/*.log` | `data/bootstrap_results.npz`           |
+|                                          | `data/sensitivity_results.npz`             |
+|                                          | `figure_bootstrap.png`                     |
+
