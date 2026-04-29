@@ -18,9 +18,10 @@ __pycache__/
 data/mle_dump_*.npz
 
 # Octave run logs — regeneratable; can run into 10s-100s of MB.
-# Keep the .mat result snapshots in octave_output/ (they're tiny and
-# carry the actual numbers); only exclude the verbose run logs.
+# Keep the .mat result snapshots and CSV outputs in octave_output/;
+# exclude verbose run logs regardless of extension.
 octave_output/*.log
+octave_output/*_log.txt
 
 # Jupyter
 .ipynb_checkpoints/
