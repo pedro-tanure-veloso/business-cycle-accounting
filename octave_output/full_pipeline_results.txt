@@ -1,0 +1,45 @@
+=== BCKM Full Pipeline Results ===
+Run date: 29-Apr-2026 13:11:48
+MLE solution: published optimal (L=2402.876124)
+
+--- Table 8: VAR Transition Matrix P ---
+    0.98869 -0.00117 -0.00449  0.00633
+    0.03069  1.00106  0.04490  0.00166
+   -0.00886 -0.02753  0.96751  0.00157
+   -0.04072  0.01749 -0.04258  0.99446
+  max|eig(P)| = 0.995133
+
+--- Table 9: P0 ---
+  A :   0.01398  (BCKM: 0.0140)
+  tL:   0.00079  (BCKM: 0.0008)
+  tX:   0.01288  (BCKM: 0.0129)
+  g :  -0.01370  (BCKM: -0.0137)
+
+--- Table 10: V = QQ' ---
+   8.17887e-05 2.40646e-05-5.85310e-05-6.35102e-06
+   2.40646e-05 2.63136e-04 2.06032e-04 3.07005e-04
+  -5.85310e-05 2.06032e-04 2.47861e-04 3.10364e-04
+  -6.35102e-06 3.07005e-04 3.10364e-04 5.75872e-04
+
+--- Table 11: F-statistics ---
+           fA       fL       fX       fG
+  y:   0.1592   0.4622   0.3212   0.0574
+  h:   0.0368   0.6959   0.2529   0.0144
+  x:   0.0471   0.0510   0.8794   0.0225
+  c:   0.0733   0.8237   0.0300   0.0730
+
+  BCKM Table 11 targets:
+  y:   0.16     0.46     0.32     0.06
+
+--- Table IIA1: Relative std of wedges (HP-filtered) ---
+  std(A)/std(y) = 0.5203
+  std(tL)/std(y) = 1.1224
+  std(tX)/std(y) = 1.3717
+  std(g)/std(y) = 3.1401
+
+--- Table IIA1o: Relative std of observables (HP-filtered) ---
+  std(y)/std(y) = 1.0000
+  std(h)/std(y) = 1.0269
+  std(x)/std(y) = 3.4743
+  std(g_obs)/std(y) = 3.1401
+
