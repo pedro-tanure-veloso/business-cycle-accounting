@@ -4,7 +4,24 @@ import pytest
 import numpy as np
 from bca_core.params import CalibrationParams
 from bca_core.model import PrototypeModel
-from bca_core.var_estimation import BCAStateSpace, prepare_observables
+from bca_core.var_estimation import BCAStateSpace, prepare_observables, estimate_var_mle
+
+
+# BCKM 2016 published US estimates (Tables 8/10) — the canonical θ at
+# which the per-call DARE must converge inside the optimizer's inner loop.
+SBAR_BCKM = np.array([0.1336, 0.3691, -0.0460, -1.9355])
+P_BCKM = np.array([
+    [0.9887, 0.0307, -0.0089, -0.0407],
+    [-0.0012, 1.0011, -0.0275, 0.0175],
+    [-0.0045, 0.0449, 0.9675, -0.0426],
+    [0.0063, 0.0017, 0.0016, 0.9945],
+])
+QCHOL_BCKM = np.array([
+    [0.0077, 0.0, 0.0, 0.0],
+    [0.0024, 0.0043, 0.0, 0.0],
+    [-0.0041, 0.0023, 0.0088, 0.0],
+    [0.0003, 0.0153, 0.0121, 0.0139],
+])
 
 
 @pytest.fixture
@@ -97,9 +114,11 @@ class TestPrepareObservables:
 
     def test_at_steady_state(self):
         """
-        At SS values, the raw observables are constants (one per channel).
+        At SS values the raw observables are constants (one per channel).
         After phi0 centering, obs is exactly zero in every channel and phi0
-        equals the raw constants (log_y_ss for y/x/g, 0 for l).
+        equals the raw constants: log(ss[var]) for each channel (BCKM
+        ``mleqadj.m`` Y = log(detrended data) convention, applied
+        symmetrically across y/l/x/g — Option A everywhere).
         """
         import pandas as pd
         ss = PrototypeModel().steady_state()
@@ -115,9 +134,35 @@ class TestPrepareObservables:
         assert phi0.shape == (4,)
         # Centered obs is exactly zero (constants subtracted).
         np.testing.assert_allclose(obs, 0.0, atol=1e-14)
-        # phi0 carries the raw SS-misalignment offsets.
-        log_y_ss = np.log(ss["y"])
-        np.testing.assert_allclose(phi0[0], log_y_ss, atol=1e-14)
-        np.testing.assert_allclose(phi0[1], 0.0, atol=1e-14)
-        np.testing.assert_allclose(phi0[2], log_y_ss, atol=1e-14)
-        np.testing.assert_allclose(phi0[3], log_y_ss, atol=1e-14)
+        # phi0 carries the raw SS-misalignment offsets — symmetric across
+        # all four channels (BCKM mleqadj.m:237 convention).
+        np.testing.assert_allclose(phi0[0], np.log(ss["y"]), atol=1e-14)
+        np.testing.assert_allclose(phi0[1], np.log(ss["l"]), atol=1e-14)
+        np.testing.assert_allclose(phi0[2], np.log(ss["x"]), atol=1e-14)
+        np.testing.assert_allclose(phi0[3], np.log(ss["g"]), atol=1e-14)
+
+
+class TestBckmThetaEvaluation:
+    """The optimizer must score BCKM-published θ without DARE failures.
+
+    The per-call steady-state Kalman runs DARE thousands of times during
+    L-BFGS-B; if it ever returns ``None`` (unstable F or non-PSD Σ_pred)
+    the LL goes to ``-inf`` and the optimizer takes a tiny step. The
+    BCKM basin is right at the spectral-radius boundary (max|eig(P)| ≈
+    0.996), so this is the most failure-prone θ in the parameter space.
+    """
+
+    def test_loglike_at_bckm_theta_finite_and_stable(self, model):
+        rng = np.random.default_rng(0)
+        obs = 1e-3 * rng.standard_normal((40, 4))
+        res = estimate_var_mle(
+            obs, model, eval_only=(SBAR_BCKM, P_BCKM, QCHOL_BCKM)
+        )
+        assert np.isfinite(res["log_likelihood"])
+        # H must be finite — guards against silent NaN propagation.
+        assert np.all(np.isfinite(res["H"]))
+        # ss_new must be a complete dict (not a partial fallback).
+        for key in ["y", "l", "x", "k", "g"]:
+            assert key in res["ss_new"]
+            assert np.isfinite(res["ss_new"][key])
+            assert res["ss_new"][key] > 0

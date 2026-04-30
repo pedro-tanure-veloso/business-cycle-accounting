@@ -127,10 +127,13 @@ def extract_static_wedges(
     alpha = params.alpha
     psi = params.psi
 
-    # Initial capital stock: use SS k/y ratio * y[0]
-    # From SS: y/k = [(1+n)(1+gamma)/beta - (1-delta)] / alpha
-    yk = ((1 + n) * (1 + gamma) / params.beta - (1 - delta)) / alpha
-    k0 = y[0] / yk
+    # Initial capital stock: BCKM gwedges2.m:59 sets ``lkt(1,1) = lk``,
+    # i.e., the level k(1) = k_ss.  Anchor at the calibrated SS so the
+    # subsequent perpetual-inventory recursion matches the linearized
+    # extractor (which sets ``k_hat[0] = 0``).
+    from .model import PrototypeModel
+    ss_calib = PrototypeModel(params).steady_state()
+    k0 = ss_calib["k"]
 
     # Build capital stock
     k = build_capital_stock(x, k0, delta, n, gamma)
@@ -240,9 +243,11 @@ def extract_all_wedges_direct(
     n = params.n
     gamma = params.gamma
 
-    # Capital stock via perpetual inventory
-    yk_ss = ((1 + n) * (1 + gamma) / params.beta - (1 - delta)) / alpha
-    k0 = y[0] / yk_ss
+    # Capital stock via perpetual inventory; initial level at calibrated
+    # SS k_ss (BCKM gwedges2.m:59 ``lkt(1,1) = lk``).
+    from .model import PrototypeModel
+    ss_calib = PrototypeModel(params).steady_state()
+    k0 = ss_calib["k"]
     k = build_capital_stock(x, k0, delta, n, gamma)  # length T+1
 
     # Static extractions
@@ -287,7 +292,8 @@ def extract_wedges_bckm_style(
     params: CalibrationParams,
 ) -> np.ndarray:
     """
-    Analytical wedge extraction matching BCKM ``gwedges2.m`` lines 62-77.
+    Analytical wedge extraction matching BCKM ``gwedges2.m`` lines 62-77
+    line-for-line, in the BCKM state convention.
 
     Recovers the four wedges by direct inversion of static FOCs and the
     investment-policy row, with capital evolved via the linearized
@@ -295,27 +301,37 @@ def extract_wedges_bckm_style(
     smoother is involved — the smoother in ``mleqadj.m`` is used to score
     parameters; ``gwedges2.m`` is what feeds the counterfactuals.
 
-    Inputs are in BCKM Path-A coordinates: ``obs_hat`` is log-deviation
-    from the *calibrated* SS used by ``prepare_observables(center=False)``,
-    and ``obs_offset`` is the log-gap between the *converged* SS (``ss``,
-    re-solved at the MLE Sbar) and that calibrated SS. Their difference
-    is therefore log-deviation from the converged SS, which is the right
-    linearization point for both the FOCs and the policy-row inversion.
+    State convention (matches BCKM and our optimizer's H):
+
+        x_t = [log(k_t), log(z_t), taul_t (level), taux_t (level), log(g_t)]
+
+    where ``z`` is the **labor-augmenting** efficiency wedge (so the
+    production function is ``y = k^θ · (z·l)^(1-θ)``) and ``τ_l``,
+    ``τ_x`` are level deviations of the corresponding wedge values
+    (not log-deviations of ``1-τ_l`` / ``1+τ_x``).
+
+    BCKM ``gwedges2.m`` formulas (in hat-coordinates):
+
+        z_hat   = (y_hat − θ·k_hat) / (1−θ) − l_hat              (line 71)
+        τ_l_hat = (1−τ_l_ss) · (y_hat − c_hat − l_hat/(1−l_ss))  (line 72)
+        τ_x_hat = (x_hat − H_x · [k, z, τ_l, ·, g]_hat) / H_x[3] (line 73)
+
+    where ``τ_l_ss = 1 − ψ·c_ss·l_ss / (y_ss·(1−θ)·(1−l_ss))`` is recovered
+    from the labor FOC at SS.
 
     Parameters
     ----------
     obs_hat : T x 4, observables [y, l, x, g] from ``prepare_observables``.
-    obs_offset : 4-vec, ``log(ss_new) - log(calib SS reference)`` per the
-        ``_build_ss`` in ``var_estimation.py``.
-    H : 4 x 5, observation matrix at the converged SS — H[i] gives
-        [P_y, P_l, P_x, e_g] over the state [k, A, τ_l, τ_x, g].
-    ss : converged SS dict with y, l, x, k, g (and yk).
-    params : calibration parameters (alpha, delta, n, gamma).
+    obs_offset : 4-vec, log(ss_new) per Option A symmetric centering.
+    H : 4 x 5, observation matrix at the converged SS — rows in our
+        [y, l, x, g] order; columns in BCKM convention [k, z, τ_l, τ_x, g].
+    ss : converged SS dict with y, l, x, k, g, c.
+    params : calibration parameters (alpha, delta, n, gamma, psi).
 
     Returns
     -------
-    states : T x 5 array [k_hat, A_hat, taul_hat, taux_hat, g_hat] in
-        deviations from the converged SS.
+    states : T x 5 array ``[log_k_hat, log_z_hat, taul_hat (level dev),
+        taux_hat (level dev), log_g_hat]`` — same convention as H.
     """
     dev = obs_hat - obs_offset  # T x 4 in deviations from ss
     y_hat = dev[:, 0]
@@ -326,41 +342,50 @@ def extract_wedges_bckm_style(
 
     alpha = params.alpha
     delta = params.delta
+    psi = params.psi
     ng = (1 + params.n) * (1 + params.gamma)
     xk = ss["x"] / ss["k"]                 # = b at SS
     kk_coeff = (1 - delta) / ng
     kx_coeff = xk / ng
 
-    # Capital: linearized perpetual inventory, k_hat[0] = 0 (BCKM gwedges2.m:59).
+    # Capital: linearized perpetual inventory, k_hat[0] = 0 (gwedges2.m:59).
     k_hat = np.zeros(T)
     for t in range(T - 1):
         k_hat[t + 1] = kk_coeff * k_hat[t] + kx_coeff * x_hat[t]
 
-    # Production-fn inversion (Hicks-neutral A in our convention; BCKM does
-    # the same algebra in labor-augmenting form, then converts).
-    A_hat = y_hat - alpha * k_hat - (1 - alpha) * l_hat
+    # Labor-augmenting efficiency wedge (gwedges2.m:71):
+    #   z_hat = (y_hat − θ·k_hat) / (1−θ) − l_hat
+    z_hat = (y_hat - alpha * k_hat) / (1.0 - alpha) - l_hat
 
-    # Resource-constraint linearization for c_hat: c*c_hat = y*y_hat − x*x_hat − g*g_hat.
+    # Resource-constraint linearization for c_hat:
+    #   c·c_hat = y·y_hat − x·x_hat − g·g_hat
     c_hat = (
         ss["y"] * y_hat - ss["x"] * x_hat - ss["g"] * g_hat
-    ) / (ss["y"] - ss["x"] - ss["g"])
+    ) / ss["c"]
 
-    # Labor FOC: log(1−τ_l) = log(c) + log(l)/(1−l) − log(y) + const.
-    # In hat-space: τ_l_hat ≡ (1−τ_l)_hat = c_hat + l_hat/(1−l_ss) − y_hat.
-    taul_hat = c_hat + l_hat / (1.0 - ss["l"]) - y_hat
+    # τ_l_ss recovered from labor FOC at SS:
+    #   ψ · c_ss · l_ss / y_ss = (1 − τ_l_ss) · (1 − θ) · (1 − l_ss)
+    one_minus_tauls = (
+        psi * ss["c"] * ss["l"] / (ss["y"] * (1.0 - alpha) * (1.0 - ss["l"]))
+    )
 
-    # Investment-policy inversion (gwedges2.m:73):
-    #   x_hat = H[2,0]·k_hat + H[2,1]·A_hat + H[2,2]·τ_l + H[2,3]·τ_x + H[2,4]·g
+    # Labor wedge as a level deviation (gwedges2.m:72):
+    #   τ_l_hat (level) = (1 − τ_l_ss) · (y_hat − c_hat − l_hat/(1−l_ss))
+    taul_hat = one_minus_tauls * (y_hat - c_hat - l_hat / (1.0 - ss["l"]))
+
+    # Investment-policy inversion (gwedges2.m:73). H row 2 is the x
+    # equation in our [y, l, x, g] ordering; columns [k, z, τ_l, τ_x, g]
+    # are in the BCKM state convention now consistent with z/τ_l above.
     h_x = H[2]
     taux_hat = (
         x_hat
         - h_x[0] * k_hat
-        - h_x[1] * A_hat
+        - h_x[1] * z_hat
         - h_x[2] * taul_hat
         - h_x[4] * g_hat
     ) / h_x[3]
 
-    return np.column_stack([k_hat, A_hat, taul_hat, taux_hat, g_hat])
+    return np.column_stack([k_hat, z_hat, taul_hat, taux_hat, g_hat])
 
 
 def extract_all_wedges_from_fit(

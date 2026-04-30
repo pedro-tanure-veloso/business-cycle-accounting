@@ -27,3 +27,6 @@ include = ["bca_core*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: tests that load the US data parquet and run the MLE/CF pipeline (skip in fast CI with `pytest -m 'not slow'`)",
+]

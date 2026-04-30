@@ -271,7 +271,6 @@ def build_pipeline():
     )
     proto = PrototypeModel(params)
     ss = proto.steady_state()
-    df["l"] = df["l"] * (ss["l"] / df["l"].mean())
     obs_hat, _phi0 = prepare_observables(df, ss, center=False)
     data_means = np.array([
         df["y"].mean(),
@@ -311,7 +310,9 @@ def downstream_fstats(theta_final, proto, params, obs_hat, df,
     data_hat = {"y": obs_dev[:, 0], "l": obs_dev[:, 1], "x": obs_dev[:, 2]}
 
     P0_implied = (np.eye(4) - P_var) @ Sbar
-    cfs = run_all_counterfactuals(states, proto, P_var, P_0=P0_implied)
+    cfs = run_all_counterfactuals(
+        states, proto, P_var, P_0=P0_implied, ss=ss_new, Sbar=Sbar,
+    )
 
     gr_start = find_idx(df.index, 2008, 1)
     gr_end = find_idx(df.index, 2011, 4)

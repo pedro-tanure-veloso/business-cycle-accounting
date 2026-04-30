@@ -97,6 +97,7 @@ class PrototypeModel:
         x_ss = xk * k_ss
         g_ss = g_share * y_ss
 
+        import math
         return {
             "y": y_ss,
             "c": c_ss,
@@ -106,6 +107,12 @@ class PrototypeModel:
             "g": g_ss,
             "yk": yk,
             "xk": xk,
+            # Wedge SS values for BCKM CF engine linearization.
+            # Calibrated SS: A=z=1, τ_l=τ_x=0.
+            "log_z": 0.0,
+            "taul": 0.0,
+            "taux": 0.0,
+            "log_g": math.log(g_ss),
         }
 
     def log_linearize(self, ss: dict[str, float] | None = None):

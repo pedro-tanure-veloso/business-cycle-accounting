@@ -155,3 +155,16 @@ class TestSolution:
             state = np.concatenate([[k_hat], s])
             k_hat = sol.P_k @ state
         assert abs(k_hat) < 1e-6
+
+    def test_taux_shock_lowers_y_and_x(self, model):
+        """Positive τ_x shock must lower output and investment.
+
+        State layout is [k, A, τ_l, τ_x, g], so the τ_x slot is index 3 in
+        every policy vector. A positive investment-tax shock raises the
+        cost of investing → households substitute into consumption →
+        x and y fall on impact. Sign-flips here would silently invert the
+        Great Recession decomposition.
+        """
+        sol = model.solve()
+        assert sol.P_y[3] < 0, f"P_y[τ_x] should be negative, got {sol.P_y[3]:+.4f}"
+        assert sol.P_x[3] < 0, f"P_x[τ_x] should be negative, got {sol.P_x[3]:+.4f}"

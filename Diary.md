@@ -1486,3 +1486,213 @@ all of the gap to BCKM:
 |                                          | `data/sensitivity_results.npz`             |
 |                                          | `figure_bootstrap.png`                     |
 
+---
+
+## 2026-04-28 — Step 9 follow-up: BCKM-θ diagnostic + Step 1 anomalies revisited
+
+### Outcome
+
+Before implementing the two "named bugs" from Step 1, verified them
+against the live code. **Both are already fixed** — Step 1's anomaly
+list was looking at older / pre-Step-8 code:
+
+- Anomaly #1 (level-ratio f-stat): `f_statistics_bckm` already uses
+  the BCKM `runall.m`/`fstats3.m` level-ratio inverse-MSE formula
+  (counterfactuals.py:248, added in commit `59f5bd2`, Step 8.1).
+  Older `phi_statistics` lives alongside it for diagnostics; that's
+  what Step 1 saw.
+- Anomaly #2 (BGG adjustment costs): `params.adj_cost_elasticity =
+  0.25` and the property `a = 0.25/b ≈ 12.56` for US calibration
+  (BCKM uses 12.88 → only 2.5% gap, not 100%). Coefficient is wired
+  through model.py:268 → 381–422 → Klein solve.
+
+### What we ran instead
+
+To localize the actual gap to BCKM Table 11, ran
+`scripts/eval_bckm_fstats.py` — drops BCKM's published θ
+(Sbar/P/Q from Step 1 Octave) into our pipeline:
+
+| scenario                          | LL        | fY[A] | fY[τ_l] | fY[τ_x] | fY[g] |
+|-----------------------------------|-----------|-------|---------|---------|-------|
+| BCKM θ                            | −11241.18 | 0.17  | 0.71    | 0.04    | 0.08  |
+| BCKM P,Q + our `initmle` Sbar     |   −989.55 | 0.15  | 0.76    | 0.02    | 0.07  |
+| Our converged MLE                 |  +1834.89 | 0.03  | 0.69    | 0.26    | 0.01  |
+| BCKM Table 11 (Octave LL=+2402.88)|     —     | 0.16  | 0.46    | 0.32    | 0.06  |
+
+### Three real findings (replacing the two retracted "named bugs")
+
+1. **LL gap of ~13,644 nats at identical θ**. ~10K vanishes by
+   re-fitting Sbar to our observables → most of it is observable
+   centering. ~3K residual is a smaller, unlocalized structural
+   difference (likely Q convention, H matrix, or data series detail).
+2. **fY[τ_l] ≈ 0.69–0.76 across all three scenarios** vs BCKM 0.46.
+   Invariant under the optimizer → the τ_l-only counterfactual path
+   itself absorbs more `y` variance in our pipeline than in BCKM's.
+3. **fY[τ_x] flips by basin** — 0.04 at BCKM θ, 0.26 at our converged
+   MLE (close to BCKM's 0.32). τ_x identification works in our
+   pipeline at our MLE but not at BCKM's θ.
+
+Side note from the diagnostic: `g_share = mean(g)/mean(y) = 0.1152`
+from our parquet, vs CLAUDE.md's quoted 0.166. Construction
+(`gov_consumption + net_exports`, `bca_core/data/adjustments.py:185`)
+matches BCKM `mleqadj.m`; the 0.166 in CLAUDE.md likely comes from a
+different aggregate. Doc needs a follow-up.
+
+### Forward plan (revised)
+
+1. Localize the ~3K-nat residual in scenario 2 (after Sbar refit) →
+   should be Q convention, H matrix, or data series detail.
+2. Inspect `run_all_counterfactuals` τ_l block side-by-side against
+   Matlab `runall.m`. fY[τ_l] over-absorption is the headline gap.
+3. Fix CLAUDE.md `g_share` line OR confirm BCKM's actual aggregate.
+
+DIVERGENCE_ANALYSIS.md §10.5/§10.6 rewritten to match. Repo state:
+`scripts/eval_bckm_fstats.py` and `/tmp/eval_bckm_fstats.log`
+(diagnostic script + run output) untracked; main commits
+`df0cefd` (Step 9 verdict) and `b1240d8` (octave log gitignore)
+unchanged.
+
+---
+
+## Session: 2026-04-29 — BCKM C0 subtraction + Y0 anchor + open Tier 2 gap
+
+### What was completed since the last entry
+
+**Counterfactual decomposition fixed to BCKM `gwedges2.m:111-116` ground truth.**
+
+Two bugs in the previous CF code, both verified against Matlab and now patched:
+
+1. **`solve_counterfactual` was linearizing at the calibrated SS instead of the
+   optimizer's `ss_new(Sbar)`.** With BCKM's published Sbar the calibrated SS
+   differs from `ss_new` by non-trivial amounts; resulting CF policies disagreed
+   with the optimizer's H by 1.5–4.5 in places. Added `ss=None` kwarg so the
+   linearization point is explicit and pinned to whatever Sbar the caller used.
+
+2. **C0 baseline subtraction missing.** BCKM constructs the per-wedge CF as
+   `YMz = (Xt0 − Xt0[Y0])(C1 − C0)' + YM0[Y0]`, **not** `(Xt0 − Xt0[Y0])C1' + …`.
+   The `−C0` subtraction is what makes the four single-wedge CFs additive
+   (their sum ≈ all-active CF ≈ data). Without it, each single-wedge CF carries
+   the no-wedge baseline plus its wedge effect, so the four CFs over-count the
+   data drop and the inverse-SSR f-stat decomposition collapses onto whichever
+   wedge happens to track the baseline closest. Implemented as a strict-subset
+   branch in `solve_counterfactual`: all-active returns H directly (BCKM
+   `YMall = (Xt0−…)C' + …`), strict-subset returns `H_active − H_zero` where
+   `H_zero` is computed at `As=[0,0,0,0]`.
+
+3. **`f_statistics_bckm` default anchor wrong.** Was 0 (sample start = 1980Q1);
+   BCKM `gwedges2.m:21` sets `Y0 = worktemp.bind` and every level-ratio
+   (`w.yt`, `w.mzy`, …) is anchored at `bind` (= 2008Q1 in our window).
+   Changed default to `anchor=window[0]`, which equals `bind` for the GR slice.
+   Using anchor=0 was collapsing the cumulative pre-2008 drift into the SSR
+   and biasing every wedge's f-stat.
+
+4. **`run_counterfactual` no longer zeros inactive wedges.** Earlier patch
+   pinned inactive wedges at `(I−P)⁻¹·P_0 = Sbar` (level coords), which was
+   wrong because `smoothed_states` are HAT (deviations from `ss_new`). Then
+   we briefly zeroed them — also wrong, because BCKM `gwedges2.m` feeds the
+   full realized state into `(C_j − C0)`, and the inactive-wedge columns of
+   `(C_j − C0)` are non-zero via P_var × Gamma coupling. Final patch: feed
+   the realized `smoothed_states[:, 1:]` directly. The C0 subtraction zeros
+   the *capital* column of the policy (gammak invariant of As) but the
+   wedge-coupling stays.
+
+CLAUDE.md updated with the BCKM-incremental rule and the Y0 anchor rule
+(lines 58–61). Test suite expanded to lock these in:
+
+- `TestLinearizationPoint` (T1–T3 from plan): `solve_counterfactual` honours
+  the `ss=` kwarg; `ss=None` matches `model.steady_state()`; all-active CF
+  reproduces optimizer's H at BCKM-θ to `rtol=1e-10`.
+- `TestInactiveWedgesUseRealizedValues`: passing nonzero P_0 doesn't shift
+  results (it's not `(I−P)⁻¹·P_0` anymore).
+- T4: SS-constant data → all four wedge HATs zero to `atol=1e-12`.
+- T5: τ_x positive shock lowers y and x.
+- T6: per-call DARE returns PSD `Sigma_pred` at BCKM-θ.
+- T7: `scripts/diag_tx_counterfactual.py` smoke test.
+
+**77 / 77 fast tests pass.**
+
+### What is in progress
+
+**Localizing the residual ~1500-nat LL gap at BCKM-published θ.** The lock-in
+fixes above resolved everything we could verify with internal algebraic
+identities. But running `scripts/eval_bckm_fstats.py` on US 1980Q1–2014Q4
+still shows:
+
+| scenario                       | LL       | fY[A] | fY[τ_l] | fY[τ_x] | fY[g] |
+|--------------------------------|----------|-------|---------|---------|-------|
+| BCKM published θ in our pipe   | +1233.13 | 0.81  | 0.01    | 0.06    | 0.12  |
+| BCKM P,Q + our `initmle` Sbar  | +1200.86 | 0.67  | 0.04    | 0.06    | 0.24  |
+| Our converged MLE              | +1840.13 | 0.82  | 0.03    | 0.09    | 0.06  |
+| **BCKM Table 11 target**       | ~+2706   | 0.16  | 0.46    | 0.32    | 0.06  |
+
+At BCKM's *own* θ, our LL is ~1500 nats below their published basin and the
+f-stats are wildly off (A dominates 5×, τ_l 30× too small, τ_x 5× too small).
+This pattern proves the bug is **not** in Klein, **not** in the Kalman filter,
+**not** in the optimizer — those don't see θ differently from BCKM. The bug is
+in **what we feed into the Kalman**: `prepare_observables`, `_build_ss`,
+`phi0`, or the state-space matrices A/C at our `ss_new`.
+
+CLAUDE.md already flagged a labor convention bug (Option A) and the Plan
+identified a likely sibling bug in the x and g rows of `obs_offset`
+(`bca_core/var_estimation.py:468-473` mixes `ss_new` and `ss_calib`):
+
+```python
+np.log(ss_new["x"] / (ss_calib["x"] / ss_calib["y"])),  # mix
+np.log(ss_new["g"] / (ss_calib["g"] / ss_calib["y"])),  # mix
+```
+
+Hypothesis: each mixed row contributes ~50 nats of residual mean, accounting
+for ~100 of the 1500 nats. The remaining ~1400 likely lives in `ss_new`,
+`phi0`, or the construction of A/C — needs an element-wise comparison
+against `worktemp.mat` to localize.
+
+### What is blocked and why
+
+We've been verifying **bottom-up with algebraic identities** (all 77 tests
+pass). We have **never** done the top-down check: load `worktemp.mat`, and
+for each Kalman input quantity, compare ours to BCKM's element-wise at
+BCKM-published θ. That's the diagnostic that would have caught the labor
+bug, the C0 bug, and any remaining convention mismatch in one pass.
+
+A first attempt at this diagnostic earlier in the session hit a
+`FileNotFoundError` on `BCA/BCKM/worktemp.mat`; the file lives at the path
+exposed by `bca_core.bckm_reference.DEFAULT_MAT_PATH` (under `BCA/BCKM`,
+read-only per CLAUDE.md). Path fix is trivial; full diagnostic is the
+plan for the next session.
+
+### Exact next step (next session)
+
+Write `scripts/diag_worktemp_compare.py`:
+
+1. Load `worktemp.mat` via `bca_core.bckm_reference.DEFAULT_MAT_PATH`.
+2. At BCKM Table 8/10 published Sbar/P/Q (already in `scripts/eval_bckm_fstats.py`
+   as `SBAR_BCKM`, `P_BCKM`, `QCHOL_BCKM`), run our pipeline through
+   `_build_ss → prepare_observables → state-space matrices`.
+3. For each of `{Y observables (T×4), C state-to-obs (4×5), A state-transition
+   (5×5), phi0 intercept (4,), Sbar/ss_new}`, print
+   `max|ours − bckm|` and the (i,j) of the largest disagreement.
+4. The first row that blows up beyond rounding is the file we fix next.
+
+### Repo state at session end
+
+Modified (uncommitted before this session's commit):
+- `bca_core/counterfactuals.py` — C0 subtraction + run_counterfactual realized-wedge feed
+- `bca_core/var_estimation.py` — earlier obs/SS edits (this session)
+- `bca_core/model.py`, `bca_core/wedges.py` — minor support
+- `tests/test_counterfactuals.py`, `tests/test_var_estimation.py`,
+  `tests/test_wedges.py`, `tests/test_model.py` — T1–T7 lock-in tests
+- `CLAUDE.md` — incremental-CF rule + Y0 anchor rule
+- `Diary.md` — this entry
+
+New files:
+- `scripts/eval_bckm_fstats.py` — at-θ pipeline diagnostic
+- `scripts/diag_tx_counterfactual.py` — CF/H equivalence smoke test
+- `tests/test_bckm_table12.py` — Table 12 numbers (Tier 2; **3 still failing**:
+  per-quarter mzy 2.6pp gap, efficiency CF +0.67 vs target −1.9)
+- `tests/test_diag_smoke.py` — wraps T7
+- `bca_core/bckm_lom.py` — BCKM Euler-residual capital LOM helper
+- `BCKM_DIFF_GUIDE.md`, `matlab_reference/BCKM_STRATEGY.md`
+
+77/77 fast tests pass. 3 Tier 2 tests in `test_bckm_table12.py` fail —
+those are the diagnostic targets for the worktemp comparison plan above.
+

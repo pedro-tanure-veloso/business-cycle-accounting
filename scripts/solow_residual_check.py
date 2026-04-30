@@ -66,7 +66,6 @@ def main() -> int:
     )
     proto = PrototypeModel(params)
     ss = proto.steady_state()
-    df["l"] = df["l"] * (ss["l"] / df["l"].mean())  # match pipeline rescale
 
     alpha = params.alpha
     delta = params.delta

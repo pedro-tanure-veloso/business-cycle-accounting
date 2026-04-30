@@ -14,6 +14,7 @@ from statsmodels.tsa.statespace.mlemodel import MLEModel
 from .params import CalibrationParams
 from .model import PrototypeModel
 from .klein import klein_solve, BlancharKahnError
+from .bckm_lom import bckm_state_space
 
 
 def prepare_observables(
@@ -24,11 +25,19 @@ def prepare_observables(
     """
     Build BCKM-style observables: log-deviations from model SS.
 
-    Raw step (deviation from model SS via ratio normalization):
+    Raw step (BCKM mleqadj.m:237-238 convention — uncentered logs):
         y_raw = log(y_dt)
-        l_raw = log(l / l_ss)
+        l_raw = log(l)                 # raw log labor (no SS centering)
         x_raw = log(x_dt / (x_ss/y_ss))
         g_raw = log(g_dt / (g_ss/y_ss))
+
+    Labor is fed at its raw data mean (≈0.243 for US 1980–2014); the
+    SS-vs-data level gap is then absorbed by Sbar via the corresponding
+    ``obs_offset[1] = log(ss_new["l"])`` cancellation. Earlier versions
+    rescaled ``df["l"]`` to model ``l_ss`` before centering — that
+    rescale produced a constant +0.197 phantom innovation at every
+    quarter when Sbar implied ``l_new ≠ l_ss_calib``, which was the
+    dominant source of the LL gap to BCKM at fixed θ.
 
     Two architectures supported:
 
@@ -58,14 +67,18 @@ def prepare_observables(
     obs : T x 4 array.  Mean ≈ 0 if ``center=True``, else mean = phi0.
     phi0 : 4-vector, the sample mean of obs_raw.
     """
-    x_ss_norm = ss["x"] / ss["y"]
-    g_ss_norm = ss["g"] / ss["y"]
-    l_ss = ss["l"]
-
+    # BCKM mleqadj.m:237 convention: Y = log(per-capita data) − log(growth
+    # factor) for y, x, g (gz-detrended); l is just log(per-capita hours).
+    # Our df is already detrended via build_us_dataset(method="calgz"), so
+    # raw log(df["var"]) recovers BCKM's Y rows directly.  All four channels
+    # are RAW detrended logs — no calibrated-ratio centering.  The SS-vs-
+    # data offset lives entirely in `obs_offset` (set by `_build_ss` from
+    # `ss_new`).  This is "Option A" applied symmetrically (extended from
+    # the earlier labor-only fix on 2026-04-29).
     y_hat = np.log(df["y"].values)
-    l_hat = np.log(df["l"].values) - np.log(l_ss)
-    x_hat = np.log(df["x"].values) - np.log(x_ss_norm)
-    g_hat = np.log(df["g"].values) - np.log(g_ss_norm)
+    l_hat = np.log(df["l"].values)
+    x_hat = np.log(df["x"].values)
+    g_hat = np.log(df["g"].values)
 
     obs_raw = np.column_stack([y_hat, l_hat, x_hat, g_hat])
     phi0 = obs_raw.mean(axis=0)
@@ -398,6 +411,12 @@ def estimate_var_mle(
         return {
             "y": ys, "c": cs, "k": ks, "l": ls, "x": xs, "g": gs,
             "yk": ys / ks,
+            # Wedge SS values — needed by ``bckm_state_space_cf`` to
+            # linearize at the actual SS and to pin inactive wedges.
+            "log_z": float(Sbar[0]),
+            "taul": float(Sbar[1]),
+            "taux": float(Sbar[2]),
+            "log_g": float(Sbar[3]),
         }
 
     # ── Build state-space matrices, re-linearizing per call (Path A) ────
@@ -412,60 +431,56 @@ def estimate_var_mle(
                 and 0 < ss_new["l"] < 1):
             raise np.linalg.LinAlgError("infeasible SS at Sbar")
 
-        A_mod, B_mod, C_mod, static, D_mod = proto.log_linearize(ss=ss_new)
-        sol = klein_solve(A_mod, B_mod, n_predetermined=1)
-        pk = sol.P[0, 0]
-        fc = sol.F[0, 0]
-
-        # Decision rules under VAR persistence P_var
-        C_eff = C_mod - D_mod @ P_var
-        a00 = A_mod[0, 0] + A_mod[0, 1] * fc
-        a10 = A_mod[1, 0] + A_mod[1, 1] * fc
-        M01 = A_mod[0, 1] * P_var.T - B_mod[0, 1] * np.eye(4)
-        M11 = A_mod[1, 1] * P_var.T - B_mod[1, 1] * np.eye(4)
-        LHS = M11 - (a10 / a00) * M01
-        RHS = C_eff[1] - (a10 / a00) * C_eff[0]
-        phi_c = np.linalg.solve(LHS, RHS)
-        phi_k = (C_eff[0] - M01 @ phi_c) / a00
-
-        P_k_v = np.concatenate([[pk], phi_k])
-
-        def _build_pol(coeffs):
-            return np.concatenate([
-                [coeffs[0] + coeffs[1] * fc],
-                coeffs[1] * phi_c + coeffs[2:],
-            ])
-
-        P_y = _build_pol(static["y"])
-        P_l = _build_pol(static["l"])
-        P_x = _build_pol(static["x"])
-
-        F = np.zeros((5, 5))
-        F[0, :] = P_k_v
-        F[1:, 1:] = P_var
-
-        H = np.zeros((4, 5))
-        H[0] = P_y
-        H[1] = P_l
-        H[2] = P_x
-        H[3, 4] = 1.0  # g directly observed
+        # BCKM-faithful state-space construction (mleqadj.m:167-232 +
+        # res_adjust.m). The Klein-based path produced phi_k values ~12x
+        # BCKM's Gamma on the wedge columns (and a sign flip on g),
+        # which inflated H[2,:] and flipped the sign of the GR-window
+        # τ_x extraction. ``bckm_state_space`` ports BCKM's exact
+        # numerical-differentiation Euler-residual approach. Returns
+        # (F, H) directly in our log convention.
+        # Replaced 2026-04-29.
+        try:
+            F, H, _Gamma_ours = bckm_state_space(
+                ss_new, proto.p, P_var, Sbar, a=proto.p.a,
+            )
+        except (np.linalg.LinAlgError, ValueError):
+            # No stable root or singular linear system at this Sbar/P
+            raise np.linalg.LinAlgError("BCKM capital-LOM solve failed")
 
         Q_proc = np.zeros((5, 5))
         Q_proc[1:, 1:] = Q_mat
 
-        # obs_offset: model-implied mean of obs_hat. The state has 0
-        # unconditional mean (deviations from new SS), so E[obs_hat] is
-        # the gap between new SS and the calibrated-SS reference used by
-        # prepare_observables(center=False). BCKM mleqadj.m line 232
-        # captures the same quantity in `phi0 = Y0 - C * X0(1:5)`.
-        obs_offset = np.array([
-            np.log(ss_new["y"]),                                    # y_hat = log(y_dt)
-            np.log(ss_new["l"] / ss_calib["l"]),                    # l_hat = log(l/l_ss_calib)
-            np.log(ss_new["x"] / (ss_calib["x"] / ss_calib["y"])),  # x_hat
-            np.log(ss_new["g"] / (ss_calib["g"] / ss_calib["y"])),  # g_hat
+        # Two distinct obs_offsets, one per consumer:
+        #
+        # 1. ``obs_offset_kf`` for the Kalman LL.  BCKM mleqadj.m:232
+        #    ``phi0 = Y(:,1) − C·X0(1:5)``.  Our state has unconditional
+        #    mean 0, so phi0 reduces to ``obs_hat[0, :]``.  This anchors
+        #    the obs equation to t=0 (innov(0)=0).
+        #
+        # 2. ``obs_offset_wedge`` for ``extract_wedges_bckm_style``.  The
+        #    inversion needs ``dev = obs_hat − obs_offset = log(df) −
+        #    log(ss_new)`` elementwise so the policy inversion happens at
+        #    the linearization SS.  With ``prepare_observables(
+        #    center=False)`` now returning raw ``[log y, log l, log x,
+        #    log g]`` (Option A everywhere, BCKM mleqadj.m:237 convention),
+        #    the symmetric offset is just ``log(ss_new[var])``.
+        #
+        # Both produced here; downstream picks the right one.
+        # Symmetrized 2026-04-29: dropped the (x/y)_calib and (g/y)_calib
+        # divisions that paired with the old calibrated-ratio shift in
+        # `prepare_observables`.  Both shifts cancelled mathematically,
+        # but their presence coupled the obs definition to ss_calib in
+        # a way that drifted with `g_share` and was a constant source of
+        # confusion in diagnostics.
+        obs_offset_kf = obs_hat[0, :].copy()
+        obs_offset_wedge = np.array([
+            np.log(ss_new["y"]),
+            np.log(ss_new["l"]),
+            np.log(ss_new["x"]),
+            np.log(ss_new["g"]),
         ])
 
-        return F, H, Q_proc, obs_offset, ss_new
+        return F, H, Q_proc, obs_offset_kf, obs_offset_wedge, ss_new
 
     # ── Steady-state Kalman (DARE per call, BCKM mleqadj.m architecture) ─
     _R_OBS = 1e-8 * np.eye(n_obs)
@@ -599,19 +614,35 @@ def estimate_var_mle(
 
     # ── Starting point: BCKM Table 8/9/10 US MLE estimates ─────────────
     # Wedge order: [A/z, tau_l, tau_x, g]  (matches our state ordering)
+    # P from Table 8 (US converged MLE, 1980Q1-2014Q4)
     _P_bckm = np.array([
         [ 0.9887,  0.0307, -0.0089, -0.0407],
         [-0.0012,  1.0011, -0.0275,  0.0175],
         [-0.0045,  0.0449,  0.9675, -0.0426],
         [ 0.0063,  0.0017,  0.0016,  0.9945],
     ])
-    # Q_chol from mleqadj x0c (adja=12.88, nearest to our a=12.5)
-    _Q_bckm = np.array([
+    # Q_chol from mleqadj x0c (adja=12.88, nearest to our a=12.5) —
+    # this is the BCKM warm-start init (runmleadj.m lines 80-110), NOT
+    # the converged MLE.  Used for the legacy "BCKM warm-start" entry.
+    _Q_bckm_x0c = np.array([
         [ 0.0240,  0.0000,  0.0000,  0.0000],
         [-0.0099,  0.0274,  0.0000,  0.0000],
         [-0.0169, -0.0656,  0.1208,  0.0000],
         [ 0.0000,  0.0000,  0.0000,  0.1003],
     ])
+    # Q_chol from BCKM Table 10 (the published US converged MLE Q).
+    # Used as a starting point for L-BFGS-B so the optimizer has a real
+    # chance to land in BCKM's reported basin instead of drifting into
+    # a competing local maximum during warm-start.
+    _Q_bckm_table10 = np.array([
+        [ 0.0077,  0.0000,  0.0000,  0.0000],
+        [ 0.0024,  0.0043,  0.0000,  0.0000],
+        [-0.0041,  0.0023,  0.0088,  0.0000],
+        [ 0.0003,  0.0153,  0.0121,  0.0139],
+    ])
+    # Sbar from BCKM Step 1 fresh-run replication on data.mat (matches
+    # paper to 3-4 sig figs).  Used in the new BCKM-θ warm-start.
+    _Sbar_bckm = np.array([0.1336, 0.3691, -0.0460, -1.9355])
 
     # ── fsolve-init Sbar (BCKM initmle.m: nonlinear over model SS) ───────
     # Returns the Sbar (BCKM coords) that drives ``initmle.m`` line 53
@@ -654,7 +685,18 @@ def estimate_var_mle(
                 _residuals, np.array([0.0, 0.05, 0.0, np.log(0.2)]),
                 full_output=True, xtol=1e-10, maxfev=2000,
             )
-            if ier != 1:
+            res_at_sol = _residuals(sol)
+            res_norm = float(np.max(np.abs(res_at_sol)))
+            if verbose:
+                print(f"  initmle fsolve: ier={ier}  ‖residual‖∞ = {res_norm:.2e}  "
+                      f"residuals = {np.array2string(res_at_sol, precision=3, sign='+')}")
+            # ier==1 alone is unreliable (scipy reports it for early termination
+            # at maxfev too).  Require BCKM line-53 residuals to actually be
+            # near zero (1e-6 is well within the model's elasticity scales).
+            if ier != 1 or res_norm > 1e-6:
+                if verbose:
+                    print("  initmle fsolve: failed convergence check, "
+                          "falling back to Sbar=zeros warm-start")
                 return np.zeros(4)
             return sol
         except Exception:
@@ -677,10 +719,10 @@ def estimate_var_mle(
         sbar_excess_hi = np.maximum(Sbar - _SBAR_UB, 0.0)
         penalty += 5e5 * (np.sum(sbar_excess_lo ** 2) + np.sum(sbar_excess_hi ** 2))
         try:
-            F, H, Q_proc, obs_offset, _ = _build_ss(Sbar, P_var, Q_chol @ Q_chol.T)
+            F, H, Q_proc, obs_offset_kf, _, _ = _build_ss(Sbar, P_var, Q_chol @ Q_chol.T)
         except (np.linalg.LinAlgError, BlancharKahnError, ValueError, FloatingPointError):
             return 1e20
-        ll = _kf_ll(F, H, Q_proc, obs_offset)
+        ll = _kf_ll(F, H, Q_proc, obs_offset_kf)
         return (-ll if np.isfinite(ll) else 1e20) + penalty
 
     # ── Diagnostic short-circuit: evaluate LL at a fixed (Sbar, P, Q_chol)
@@ -688,15 +730,20 @@ def estimate_var_mle(
     # BCKM Table 8/10 published parameters against our converged basin.
     if eval_only is not None:
         Sbar_e, P_e, Qchol_e = (np.asarray(a, dtype=float) for a in eval_only)
-        F_e, H_e, Qproc_e, off_e, ss_e = _build_ss(Sbar_e, P_e, Qchol_e @ Qchol_e.T)
-        x_f, P_f, x_p, P_p, ll_e = _kf_full(F_e, H_e, Qproc_e, off_e)
+        F_e, H_e, Qproc_e, off_kf_e, off_w_e, ss_e = _build_ss(
+            Sbar_e, P_e, Qchol_e @ Qchol_e.T
+        )
+        x_f, P_f, x_p, P_p, ll_e = _kf_full(F_e, H_e, Qproc_e, off_kf_e)
         smoothed_e = _rts(x_f, P_f, x_p, P_p, F_e)
         return {
             "Sbar": Sbar_e, "P": P_e, "Q": Qchol_e,
             "V": Qchol_e @ Qchol_e.T,
             "log_likelihood": ll_e,
             "smoothed_states": smoothed_e,
-            "ss_new": ss_e, "obs_offset": off_e,
+            "ss_new": ss_e,
+            "obs_offset": off_w_e,        # alias: wedge-extraction default
+            "obs_offset_kf": off_kf_e,
+            "obs_offset_wedge": off_w_e,
             "F": F_e, "H": H_e,
         }
 
@@ -732,9 +779,15 @@ def estimate_var_mle(
     rng = np.random.default_rng(42)
     x0_bckm = _pack(Sbar_init, P_warm, _Q_x0c)
     starts = [x0_bckm]
-    # Also seed from BCKM Table 8 estimates (US final result) and OLS if
-    # available. These give the optimizer two non-trivial alternative basins.
-    starts.append(_pack(Sbar_init, _P_bckm, _Q_bckm))
+    # BCKM published θ start: SBAR + Table 8 P + Table 10 Q.  This
+    # gives L-BFGS-B a starting point INSIDE BCKM's reported basin,
+    # which is the only way our optimizer can plausibly converge to
+    # the f-stats reported in BCKM Table 11 (the alternative basin
+    # our optimizer otherwise finds has higher LL but trades τ_l for
+    # A/g — fY[τ_l] drops from 0.42 to 0.36).
+    starts.append(_pack(_Sbar_bckm, _P_bckm, _Q_bckm_table10))
+    # Legacy BCKM warm-start (Table 8 P + x0c Q + fsolve Sbar).
+    starts.append(_pack(Sbar_init, _P_bckm, _Q_bckm_x0c))
     if P_ols is not None:
         Q_warm = Q_ols if Q_ols is not None else _Q_x0c
         starts.append(_pack(Sbar_init, P_ols, Q_warm))
@@ -777,11 +830,11 @@ def estimate_var_mle(
 
     # ── Final smoother pass ───────────────────────────────────────────────
     Sbar, P_var, Q_chol = _unpack(best_theta)
-    F_f, H_f, Q_proc_f, obs_offset_f, ss_new = _build_ss(
+    F_f, H_f, Q_proc_f, obs_offset_kf_f, obs_offset_wedge_f, ss_new = _build_ss(
         Sbar, P_var, Q_chol @ Q_chol.T
     )
     x_filt, P_filt, x_pred, P_pred, final_ll = _kf_full(
-        F_f, H_f, Q_proc_f, obs_offset_f
+        F_f, H_f, Q_proc_f, obs_offset_kf_f
     )
     smoothed = _rts(x_filt, P_filt, x_pred, P_pred, F_f)
 
@@ -798,7 +851,9 @@ def estimate_var_mle(
         "smoothed_states": smoothed,
         "log_likelihood": final_ll,
         "ss_new": ss_new,
-        "obs_offset": obs_offset_f,
+        "obs_offset": obs_offset_wedge_f,        # alias: wedge-extraction default
+        "obs_offset_kf": obs_offset_kf_f,
+        "obs_offset_wedge": obs_offset_wedge_f,
         "F": F_f,
         "H": H_f,
     }

@@ -51,7 +51,6 @@ def main() -> None:
     )
     proto = PrototypeModel(params)
     ss_calib = proto.steady_state()
-    df["l"] = df["l"] * (ss_calib["l"] / df["l"].mean())
     obs_hat, _phi0 = prepare_observables(df, ss_calib, center=False)
 
     ref = load_bckm_reference()

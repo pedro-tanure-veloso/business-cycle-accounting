@@ -91,7 +91,6 @@ def main() -> int:
     )
     proto = PrototypeModel(params)
     ss = proto.steady_state()
-    df["l"] = df["l"] * (ss["l"] / df["l"].mean())
 
     obs_hat, phi0 = prepare_observables(df, ss, center=False)
     print(f"  phi0 = mean(obs_raw): {np.array2string(phi0, precision=4)}")

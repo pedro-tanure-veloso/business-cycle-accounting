@@ -267,56 +267,97 @@ that places forward analysis in:
 > contributions need a basin-distribution caveat or an explicit
 > warm-start sensitivity check.
 
-### 10.5 The actual cause of our divergence — two named bugs
+### 10.5 Step 9 follow-up: both named bugs were already fixed
 
-The matrix cell is correct, but it is **not the most useful framing of
-what we found**. The Octave run isolates two concrete code-level
-defects in our Python pipeline that, together, account for almost all
-of the gap to Table 11:
+The two "named bugs" reported by Step 1's anomaly section are
+**not present in the current code**. Verified by direct inspection of
+`bca_core/counterfactuals.py` and `bca_core/model.py`:
 
-1. **f-statistic formula**. BCKM's `runall.m` computes f-stats from
-   *level-ratio* MSE residuals: `mzye = Y(t)/Y(t₀) − CF_A(t)/CF_A(t₀)`,
-   then `φ_A = (1/MSE_A) / Σᵢ(1/MSEᵢ)`. Our Python `f_statistics_bckm`
-   uses a log-deviation SSR. The formulas are not algebraically
-   equivalent and the level-ratio version is **the primary source of
-   our f-stat disagreement** (per Step 1 §Anomalies item 1).
-   - Lives in [`bca_core/counterfactuals.py`](bca_core/counterfactuals.py).
-   - Fix is local: replace the SSR formula. State-space, optimizer,
-     calibration all stay as they are.
-2. **Adjustment costs (BGG)**. BCKM uses `adjc=2 → adja=12.88`. Our
-   Python pipeline has `adja=0`. The adjustment-cost term enters the
-   investment-Euler residual structurally and most affects fY[τ_x] —
-   the wedge whose disagreement is largest.
-   - Touches the prototype model's investment FOC in
-     [`bca_core/model.py`](bca_core/model.py) and counterfactual
-     residual definitions in [`bca_core/counterfactuals.py`](bca_core/counterfactuals.py).
-   - Adds one calibration constant (`adja` or `adjc`).
+1. **f-statistic formula** — already implemented as level-ratio
+   inverse-MSE. `f_statistics_bckm` (counterfactuals.py:248) computes
+   `data_lvl = exp(y_t − y_{t₀})`, `cf_lvl = exp(cf_log − cf_log_{t₀})`,
+   `inv_ssr = 1/SSR(data_lvl − cf_lvl)`. Added in commit `59f5bd2`
+   (Step 8.1) — *before* Step 1 ran. Step 1's anomaly was looking at
+   the older `phi_statistics` (log-dev) which still exists alongside
+   for diagnostics.
+2. **BGG adjustment costs** — already wired through. `params.py`
+   has `adj_cost_elasticity = 0.25` and the property `a = 0.25/b`
+   yields `a ≈ 12.56` for US calibration (BCKM uses `12.88`,
+   2.5% gap). The coefficient flows into the linearized Euler at
+   `model.py:268` (`ab = a*b`) and into A_sys/B_sys for the
+   Klein solve (model.py:381–422). Adjustment costs are *active*,
+   not zero, in our pipeline.
 
-A smaller note: BCKM uses 1980Q1–2014Q4 (T=140); our Step 2/3 already
-matched T=140, but the underlying parquet is `us_1969_2014.parquet`
-which can mask the sample choice. Documenting and pinning the sample
-window is housekeeping, not a divergence driver.
+So the Step 1 anomalies, as written, **do not point at a real bug**.
+They were a misreading of older code — possibly Step 1 looked at a
+pre-Step-8 commit, or compared the legacy log-dev f-stat that lives
+alongside the level-ratio version.
 
-### 10.6 Forward plan
+### 10.6 What the BCKM-θ diagnostic actually shows
 
-1. **Fix #1 (f-stat formula)** — in scope as a code-level change. Low
-   risk; can be done immediately and tested by re-running
-   `scripts/run_var_counterfactuals.py` and comparing fY against BCKM
-   Table 11 at our current MLE optimum.
-2. **Fix #2 (adjustment costs)** — touches the model. Belongs in a
-   separate change, with tests, and likely needs the user's sign-off
-   per CLAUDE.md ("Asking Before Deviating"). After fix #1, re-running
-   the bootstrap (Step 2) will tell us how much of the residual basin
-   structure is real vs. a missing-adjustment-cost artifact.
-3. **Forward US analysis** can proceed in parallel using the corrected
-   f-stat formula, with a distributional caveat noted on any
-   wedge-attribution claim.
+To localize the real source of the Table 11 gap, we ran
+[`scripts/eval_bckm_fstats.py`](scripts/eval_bckm_fstats.py): drop BCKM's
+published θ (Sbar/P/Q from Step 1's verified Octave warm-start) into
+our pipeline and read off the LL and f-stats.
 
-The "wedge accounting is under-identified à la Cole–Ohanian" hypothesis
-is not supported by Step 1 — BCKM's objective is well-behaved. The
-multimodality we observe in Step 2 is partially an artifact of the two
-bugs above, and we will not know how much of it remains until both are
-fixed and the bootstrap is re-run.
+| scenario                                | LL        | fY[A] | fY[τ_l] | fY[τ_x] | fY[g] |
+|-----------------------------------------|-----------|-------|---------|---------|-------|
+| BCKM θ (Sbar, P, Q from Octave Step 1)  | −11241.18 | 0.17  | 0.71    | 0.04    | 0.08  |
+| BCKM P,Q + our `initmle` Sbar           |   −989.55 | 0.15  | 0.76    | 0.02    | 0.07  |
+| Our converged MLE                       |  +1834.89 | 0.03  | 0.69    | 0.26    | 0.01  |
+| **BCKM Table 11 target**                | (+2402.88 in Octave) | **0.16** | **0.46** | **0.32** | **0.06** |
+
+Three structural findings, not two named code bugs:
+
+1. **LL gap of ~13,644 nats at identical θ** (Octave +2402 vs ours
+   −11241). About 10K nats vanishes by re-fitting `Sbar` to our
+   observables (scenario 2: −989), confirming most of the gap is
+   *observable centering* — the way our `prepare_observables` aligns
+   data means with model SS differs from BCKM's. The remaining ~3K
+   nats is a smaller structural difference we have not localized.
+2. **fY[τ_l] ≈ 0.69–0.76 across all three scenarios**, vs BCKM's
+   0.46. This is *invariant under the optimizer*: our pipeline's
+   τ_l-only counterfactual tracks `y` more closely than BCKM's does.
+   The labor wedge is over-absorbing variance regardless of basin.
+3. **fY[τ_x] flips by basin**, not by formula. At BCKM θ in our
+   pipeline it is 0.04 (effectively zero). At our converged MLE it
+   rises to 0.26 — close to BCKM's 0.32. So τ_x identification works
+   in our pipeline at our MLE but not at BCKM's.
+
+A separate calibration note that emerged from the diagnostic:
+`g_share = mean(g)/mean(y) = 0.1152` from our parquet, vs the 0.166
+quoted in `CLAUDE.md`. Construction in
+[`bca_core/data/adjustments.py:185`](bca_core/data/adjustments.py#L185)
+is `g = gov_consumption + net_exports`, matching BCKM `mleqadj.m`'s
+documented formula. The 0.166 figure in `CLAUDE.md` therefore appears
+to come from a different aggregate (likely total government
+expenditure incl. transfers); the current 0.1152 is the BCKM-faithful
+value for our 1980Q1–2014Q4 sample.
+
+### 10.7 Revised forward plan
+
+1. **Localize the LL-at-BCKM-θ residual (~3K nats after Sbar refit)**.
+   Likely culprits: residual covariance Q convention (V = Q Q' vs
+   Q' Q, or order of Cholesky), state-space H matrix construction, or
+   a small mismatch in the data series (deflator/base-year/sample).
+   This is the prerequisite for trusting BCKM θ as a likelihood
+   anchor.
+2. **Diagnose fY[τ_l] over-absorption across basins**. The fact that
+   τ_l absorbs ~0.69 of `y` variance even at BCKM's published θ
+   (where Octave gives 0.46) points at the τ_l-only counterfactual
+   path itself, not the optimizer or the f-stat formula. Worth
+   inspecting `run_all_counterfactuals` for τ_l vs. the Matlab
+   `runall.m` τ_l block side-by-side.
+3. **Reconcile `CLAUDE.md` g_share statement** with the 0.1152 our
+   data actually produces. If 0.166 is wrong, fix the doc; if 0.166
+   is what BCKM uses, find which aggregate they construct.
+
+The "trust with distributional caveat" verdict in §10.4 still holds
+for forward US analysis. The structural findings above refine *why*
+we trust it with that caveat: the basin variability we documented in
+Step 2/3 is genuine, but it is not a Cole–Ohanian-style identification
+failure — it is interaction between observable centering, the τ_l
+counterfactual path, and the optimizer's chosen basin.
 
 ---
 

@@ -10,6 +10,24 @@ from bca_core.counterfactuals import (
     run_all_counterfactuals,
     phi_statistics,
 )
+from bca_core.var_estimation import estimate_var_mle
+
+
+# BCKM 2016 published US estimates (Tables 8/10) — used by lock-in tests
+# that pin behaviour at the basin we care about replicating.
+SBAR_BCKM = np.array([0.1336, 0.3691, -0.0460, -1.9355])
+P_BCKM = np.array([
+    [0.9887, 0.0307, -0.0089, -0.0407],
+    [-0.0012, 1.0011, -0.0275, 0.0175],
+    [-0.0045, 0.0449, 0.9675, -0.0426],
+    [0.0063, 0.0017, 0.0016, 0.9945],
+])
+QCHOL_BCKM = np.array([
+    [0.0077, 0.0, 0.0, 0.0],
+    [0.0024, 0.0043, 0.0, 0.0],
+    [-0.0041, 0.0023, 0.0088, 0.0],
+    [0.0003, 0.0153, 0.0121, 0.0139],
+])
 
 
 @pytest.fixture
@@ -37,18 +55,29 @@ def synthetic_states():
 class TestSolveCounterfactual:
 
     def test_all_wedges_active(self, model, P_var):
-        """With all wedges active, should match the full solution."""
+        """All-active CF must match BCKM ``bckm_state_space`` exactly.
+
+        The CF engine was rewritten 2026-04-29 to call ``bckm_state_space_cf``
+        with ``As=[1,1,1,1]``, which equals ``bckm_state_space`` (the optimizer
+        path) by construction. This is the algebraic identity that locks in
+        Bug 1 / Deviation #1 from the BCKM ground truth: the all-active CF
+        produces exactly the optimizer's H rows, no Klein-vs-BCKM gap.
+        """
+        import math
+        from bca_core.bckm_lom import bckm_state_space
+        ss = model.steady_state()
+        # Calibrated Sbar: A=1, τ_l=τ_x=0, g pinned to ss["g"].
+        Sbar = np.array([0.0, 0.0, 0.0, math.log(ss["g"])])
+        F_bckm, H_bckm, _Gamma = bckm_state_space(
+            ss, model.p, P_var, Sbar, a=model.p.a,
+        )
         cf = solve_counterfactual(model, P_var, active_wedges=[0, 1, 2, 3])
 
-        # Compare with the full model re-solved with P_var
-        from bca_core.var_estimation import BCAStateSpace
-        obs_dummy = np.zeros((10, 4))
-        ss_mod = BCAStateSpace(obs_dummy, model)
-        phi_k, phi_c = ss_mod._solve_with_var(P_var)
-        P_k_full, P_y_full, P_l_full, P_x_full = ss_mod._build_policies(phi_k, phi_c)
-
-        np.testing.assert_allclose(cf["P_k"], P_k_full, rtol=1e-10)
-        np.testing.assert_allclose(cf["P_y"], P_y_full, rtol=1e-10)
+        # F[0,:] is Gamma -> P_k; H rows in [y,l,x,g] order.
+        np.testing.assert_allclose(cf["P_k"], F_bckm[0, :], rtol=1e-12, atol=1e-14)
+        np.testing.assert_allclose(cf["P_y"], H_bckm[0, :], rtol=1e-12, atol=1e-14)
+        np.testing.assert_allclose(cf["P_l"], H_bckm[1, :], rtol=1e-12, atol=1e-14)
+        np.testing.assert_allclose(cf["P_x"], H_bckm[2, :], rtol=1e-12, atol=1e-14)
 
     def test_single_wedge_different(self, model, P_var):
         """Single-wedge counterfactual should differ from full solution."""
@@ -67,18 +96,25 @@ class TestSolveCounterfactual:
 class TestRunCounterfactual:
 
     def test_all_wedges_reproduce_data(self, model, P_var, synthetic_states):
-        """With all wedges active, counterfactual should match the data."""
+        """All-active CF must reproduce a path simulated from the same policy.
+
+        The "data" here is built by simulating with the BCKM-engine policy
+        directly (same engine the CF uses). With all wedges active they
+        must produce identical paths under arbitrary state inputs.
+        """
+        import math
+        from bca_core.bckm_lom import bckm_state_space
+        ss = model.steady_state()
+        Sbar = np.array([0.0, 0.0, 0.0, math.log(ss["g"])])
+        F_bckm, H_bckm, _ = bckm_state_space(
+            ss, model.p, P_var, Sbar, a=model.p.a,
+        )
+        P_k, P_y = F_bckm[0, :], H_bckm[0, :]
+
         cf_pol = solve_counterfactual(model, P_var, active_wedges=[0, 1, 2, 3])
         result = run_counterfactual(synthetic_states, cf_pol)
 
-        # Compute "data" using the same policies
-        from bca_core.var_estimation import BCAStateSpace
-        obs_dummy = np.zeros((10, 4))
-        ss_mod = BCAStateSpace(obs_dummy, model)
-        phi_k, phi_c = ss_mod._solve_with_var(P_var)
-        P_k, P_y, P_l, P_x = ss_mod._build_policies(phi_k, phi_c)
-
-        # Simulate "data" with full policies
+        # Simulate "data" with the same policies via BCKM engine.
         T = synthetic_states.shape[0]
         y_data = np.zeros(T)
         k = synthetic_states[0, 0]
@@ -121,3 +157,137 @@ class TestPhiStatistics:
 
         phi = phi_statistics(data_result, cfs)
         assert (phi.values > 0).all()
+
+
+class TestLinearizationPoint:
+    """Lock in the ss-kwarg invariants from the 2026-04-29 cf-fix."""
+
+    def test_default_ss_matches_calibrated_ss(self, model, P_var):
+        """ss=None must equal an explicit ss=model.steady_state() call."""
+        cf_none = solve_counterfactual(model, P_var, active_wedges=[0, 1, 2, 3])
+        cf_explicit = solve_counterfactual(
+            model, P_var, active_wedges=[0, 1, 2, 3], ss=model.steady_state()
+        )
+        np.testing.assert_allclose(cf_none["P_k"], cf_explicit["P_k"], rtol=1e-12)
+        np.testing.assert_allclose(cf_none["P_y"], cf_explicit["P_y"], rtol=1e-12)
+        np.testing.assert_allclose(cf_none["P_l"], cf_explicit["P_l"], rtol=1e-12)
+        np.testing.assert_allclose(cf_none["P_x"], cf_explicit["P_x"], rtol=1e-12)
+
+    def test_solve_counterfactual_uses_provided_ss(self, model, P_var):
+        """A perturbed ss must produce different policy coefficients.
+
+        Pre-fix this kwarg did not exist and the linearization was always at
+        ``model.steady_state()`` regardless of which Sbar the optimizer reached
+        — that was Bug 1. A non-trivial perturbation should change at least
+        one of the four policy vectors.
+        """
+        ss_default = model.steady_state()
+        ss_pert = dict(ss_default)
+        # Perturb capital and consumption — both enter the linearization
+        # coefficients through ratios in the Euler/resource constraints.
+        ss_pert["k"] = ss_default["k"] * 1.10
+        ss_pert["c"] = ss_default["c"] * 1.10
+
+        cf_default = solve_counterfactual(model, P_var, active_wedges=[0, 1, 2, 3])
+        cf_pert = solve_counterfactual(
+            model, P_var, active_wedges=[0, 1, 2, 3], ss=ss_pert
+        )
+
+        assert not np.allclose(cf_default["P_y"], cf_pert["P_y"], rtol=1e-6)
+
+    def test_all_active_at_ss_new_matches_build_ss(self, model):
+        """All-active CF at ``ss_new`` must equal H from estimate_var_mle.
+
+        This is the regression test for Bug 1 at BCKM-θ specifically:
+        ``solve_counterfactual(..., ss=res["ss_new"])`` with all wedges active
+        should reproduce the policy rows that the optimizer's ``_build_ss``
+        produces (H[0]=P_y, H[1]=P_l, H[2]=P_x). Pre-fix this disagreed by up
+        to 1.5–4.5 in places when Sbar moved away from the calibrated SS.
+        """
+        # Need a non-degenerate observable matrix for estimate_var_mle's
+        # eval_only path; the LL value is irrelevant — we only need H/ss_new.
+        rng = np.random.default_rng(7)
+        obs = 1e-3 * rng.standard_normal((20, 4))
+        res = estimate_var_mle(
+            obs, model, eval_only=(SBAR_BCKM, P_BCKM, QCHOL_BCKM)
+        )
+        cf = solve_counterfactual(
+            model, P_BCKM, active_wedges=[0, 1, 2, 3], ss=res["ss_new"]
+        )
+        np.testing.assert_allclose(cf["P_y"], res["H"][0], rtol=1e-10, atol=1e-12)
+        np.testing.assert_allclose(cf["P_l"], res["H"][1], rtol=1e-10, atol=1e-12)
+        np.testing.assert_allclose(cf["P_x"], res["H"][2], rtol=1e-10, atol=1e-12)
+
+
+class TestInactiveWedgesUseRealizedValues:
+    """Lock in BCKM gwedges2.m semantics: inactive wedges flow through.
+
+    Earlier (2026-04-29) we zeroed inactive wedges inside
+    ``run_counterfactual`` as a workaround for Bug 2 (``P_0`` was injecting
+    BCKM-level constants as unconditional means). The **right** fix for
+    Bug 2 is to ignore ``P_0`` entirely; zeroing inactive wedges was an
+    overcorrection that dropped the BCKM coupling contribution.
+
+    BCKM ``gwedges2.m`` lines 80-115 use the FULL observed state for
+    every CF, multiplied by ``(C_j − C0)``. Inactive-column coefficients
+    of ``(C_j − C0)`` are non-zero through P_var × Gamma coupling, and
+    they multiply realized inactive-wedge values to produce ~1-2pp
+    contributions over the GR window. Zeroing them produced -5.4% labor
+    peak-trough vs target -3.4%; using realized values closes the gap.
+    """
+
+    def test_single_wedge_uses_realized_inactive_columns(
+        self, model, P_var, synthetic_states
+    ):
+        """A single-wedge CF MUST depend on inactive wedge values via coupling.
+
+        The previous test (locked in pre-2026-04-30 behaviour) asserted the
+        opposite: that A-only CF was invariant to τ_l, τ_x, g values. That
+        was wrong — it dropped the BCKM gwedges2.m coupling terms.
+        """
+        cf_pol = solve_counterfactual(model, P_var, active_wedges=[0])
+        result_orig = run_counterfactual(synthetic_states, cf_pol)
+
+        states_zeroed = synthetic_states.copy()
+        states_zeroed[:, 2] = 0.0  # τ_l hat
+        states_zeroed[:, 3] = 0.0  # τ_x hat
+        states_zeroed[:, 4] = 0.0  # g hat
+        result_zeroed = run_counterfactual(states_zeroed, cf_pol)
+
+        # Result MUST differ — coupling through Gamma_1 means τ_l, τ_x, g
+        # have small but non-zero coefficients in (H_A − H0).
+        assert not np.allclose(
+            result_orig["y"], result_zeroed["y"], rtol=1e-6, atol=1e-10
+        ), (
+            "A-only CF appears invariant to inactive wedges — coupling "
+            "term is missing, BCKM additivity will fail"
+        )
+
+    def test_passing_nonzero_p0_does_not_shift_results(
+        self, model, P_var, synthetic_states
+    ):
+        """Setting ``cf_policies['P_0']`` must NOT shift the CF path.
+
+        Pre-2026-04-29, ``run_counterfactual`` used ``(I-P)^{-1} P_0`` as
+        the inactive wedge value, treating ``P_0`` as a BCKM-level VAR
+        drift. Wedges are HAT coords, so this injected huge constant
+        offsets (σ(y^A)/σ(y) blew up to 7.0 vs target 0.6). Post-fix,
+        ``P_0`` is irrelevant inside ``run_counterfactual``.
+        """
+        cf_pol = solve_counterfactual(model, P_var, active_wedges=[0])
+
+        cf_pol_p0 = dict(cf_pol)
+        cf_pol_p0["P_0"] = np.array([0.10, 0.20, -0.05, -1.50])
+
+        result_zero_p0 = run_counterfactual(synthetic_states, cf_pol)
+        result_nonzero_p0 = run_counterfactual(synthetic_states, cf_pol_p0)
+
+        np.testing.assert_allclose(
+            result_zero_p0["y"], result_nonzero_p0["y"], rtol=1e-12
+        )
+        np.testing.assert_allclose(
+            result_zero_p0["l"], result_nonzero_p0["l"], rtol=1e-12
+        )
+        np.testing.assert_allclose(
+            result_zero_p0["x"], result_nonzero_p0["x"], rtol=1e-12
+        )

@@ -148,14 +148,7 @@ def main(
     print(f"  SS: y={ss['y']:.4f}  l={ss['l']:.4f}  "
           f"x/y={ss['x']/ss['y']:.4f}  g/y={ss['g']/ss['y']:.4f}")
 
-    # ── 4. Rescale labor so sample mean = model l_ss (BCKM approach) ─────
-    # pipeline.py normalizes over the full fetch window (1947-2024), so the
-    # trimmed sample mean of l may differ from labor_target_mean. Post-hoc
-    # rescaling ensures l_hat = log(l / l_ss) has mean ≈ 0 as in BCKM.
-    df["l"] = df["l"] * (ss["l"] / df["l"].mean())
-    print(f"  Labor rescaled: new mean = {df['l'].mean():.4f} (= l_ss)")
-
-    # ── 5. Build observables normalized by model SS (BCKM initmle.m) ─────
+    # ── 4. Build observables (BCKM mleqadj.m initmle.m convention) ──────
     # Uncentered: SS gap is absorbed by free Sbar in the wedge VAR
     # (Step 7), not by a fixed phi0 in the obs equation.
     print("\nPreparing observables (log-deviations from model SS, uncentered)...")
@@ -285,7 +278,10 @@ def main(
 
     # ── 9. Counterfactual simulations (analytical wedges) ────────────────
     print("\nRunning counterfactual simulations...")
-    cfs = run_all_counterfactuals(states_bckm, proto, P_var, P_0=P_0)
+    cfs = run_all_counterfactuals(
+        states_bckm, proto, P_var, P_0=P_0, ss=mle_result["ss_new"],
+        Sbar=Sbar,
+    )
 
     # ── 10. F-statistics (BCKM Table 11, fstats3.m) ──────────────────────
     # Canonical BCKM stat: GR-window (2008Q1-2011Q4) inverse-SSR, normalized.

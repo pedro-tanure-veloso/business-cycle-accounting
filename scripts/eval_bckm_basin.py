@@ -54,7 +54,6 @@ def main() -> None:
     )
     proto = PrototypeModel(params)
     ss    = proto.steady_state()
-    df["l"] = df["l"] * (ss["l"] / df["l"].mean())
 
     obs_hat, _phi0 = prepare_observables(df, ss, center=False)
     data_means = np.array([

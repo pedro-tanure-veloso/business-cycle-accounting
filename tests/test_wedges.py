@@ -10,7 +10,9 @@ from bca_core.wedges import (
     efficiency_wedge,
     labor_wedge,
     extract_static_wedges,
+    extract_wedges_bckm_style,
 )
+from bca_core.counterfactuals import solve_counterfactual
 
 
 @pytest.fixture
@@ -147,3 +149,39 @@ class TestExtractStaticWedges:
         })
         wedges = extract_static_wedges(df, params)
         assert len(wedges) == T
+
+
+class TestExtractWedgesAtSS:
+    """Lock the HAT-coord convention: when data sits exactly at the converged
+    SS, every wedge HAT must be exactly zero."""
+
+    def test_all_wedge_hats_zero_when_data_at_ss(self, model, params):
+        """obs_hat = obs_offset (data at converged SS) → states[:, :] == 0.
+
+        Guards the convention used by ``extract_wedges_bckm_style``: A_hat,
+        τ_l_hat, τ_x_hat, g_hat are deviations from ``ss``. If the data
+        equals ``ss`` everywhere then the deviation is zero on every channel,
+        including the τ_x channel that depends on the policy row H[2].
+        """
+        ss = model.steady_state()
+        T = 12
+        # obs_hat with constant SS values; obs_offset matches → dev = 0.
+        obs_offset = np.array([
+            np.log(ss["y"]),
+            np.log(ss["l"]),
+            np.log(ss["x"]),
+            np.log(ss["g"]),
+        ])
+        obs_hat = np.tile(obs_offset, (T, 1))
+
+        # Build a valid H at the calibrated ss via solve_counterfactual.
+        # The all-active CF policies (P_y, P_l, P_x) are exactly H[0:3];
+        # H[3] is just the g-selector row.
+        P_var_dummy = 0.9 * np.eye(4)
+        cf = solve_counterfactual(model, P_var_dummy, [0, 1, 2, 3], ss=ss)
+        H = np.vstack([cf["P_y"], cf["P_l"], cf["P_x"], [0, 0, 0, 0, 1]])
+
+        states = extract_wedges_bckm_style(
+            obs_hat=obs_hat, obs_offset=obs_offset, H=H, ss=ss, params=params
+        )
+        np.testing.assert_allclose(states, 0.0, atol=1e-12)
