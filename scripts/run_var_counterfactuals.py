@@ -310,8 +310,16 @@ def main(
         pt = peak_to_trough(data_hat, cfs, peak_idx, trough_idx)
         print(pt.to_string(float_format="{:.4f}".format))
 
-    # ── 12. Figure 2B: Counterfactual decomposition (2008–2014) ──────────
-    print("\nGenerating Figure 2B...")
+    # ── 12. Figures 2B–2E (BCKM-faithful, US 2008–2014) ──────────────────
+    # Figure 2B: output and the three wedges themselves (efficiency, labor
+    #   wedge (1−τ_l), investment wedge 1/(1+τ_x)) — level-friendly forms,
+    #   indexed to 2008Q1 = 100. BCKM excludes government from 2B–2E since
+    #   the paper "focuses primarily on fluctuations due to efficiency,
+    #   labor, and investment wedges" (BCA_info.md §3).
+    # Figure 2C/2D/2E: per-variable single-wedge counterfactual paths
+    #   (output / labor / investment), three lines each (efficiency, labor,
+    #   investment), data overlay — also no government.
+    print("\nGenerating Figures 2B–2E (BCKM convention, US 2008–2014)...")
 
     mask = []
     for d in df.index:
@@ -328,42 +336,75 @@ def main(
         return 100 * np.exp(vals - vals[0])
 
     sub_dates = df.index[idx_range]
+    bind_local = 0  # idx_range[0] = 2008Q1; BCKM `Y0 = bind`
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    fig.suptitle(
-        "Counterfactual Decomposition — US 2008–2014 (BCKM Figure 2B, MLE)",
-        fontsize=13, fontweight="bold",
-    )
+    # Wedge series in hat-space (states_bckm columns: [k, z, Δτ_l, Δτ_x, g])
+    ss = mle_result["ss_new"]
+    z_window    = states_bckm[idx_range, 1]   # log z deviation
+    taul_window = states_bckm[idx_range, 2]   # absolute level dev Δτ_l
+    taux_window = states_bckm[idx_range, 3]   # absolute level dev Δτ_x
 
-    var_titles = {"y": "Output", "l": "Labor", "x": "Investment"}
-    wedge_styles = {
-        "efficiency": ("r--", "Efficiency"),
-        "labor":      ("g-.", "Labor"),
-        "investment": ("m:",  "Investment"),
-        "government": ("c-",  "Government"),
+    # Level-friendly indexed forms (BCKM `gwedges2.m` convention)
+    otls = 1.0 - ss["taul"]                   # (1 − τ_l_ss)
+    txs  = 1.0 + ss["taux"]                   # (1 + τ_x_ss)
+
+    eff_idx  = 100.0 * np.exp(z_window - z_window[bind_local])
+    labw_idx = 100.0 * (otls - taul_window) / (otls - taul_window[bind_local])
+    invw_idx = 100.0 * (txs + taux_window[bind_local]) / (txs + taux_window)
+
+    output_idx = to_level(data_hat["y"], idx_range)
+    labor_idx  = to_level(data_hat["l"], idx_range)
+    invest_idx = to_level(data_hat["x"], idx_range)
+
+    # ─── Figure 2B: output and the three wedges ─────────────────────────
+    fig, ax = plt.subplots(figsize=(9, 6))
+    ax.plot(sub_dates, output_idx, "k-",  linewidth=2.0, label="Output")
+    ax.plot(sub_dates, eff_idx,    "b--", linewidth=1.8, label=r"Efficiency wedge ($z_t$)")
+    ax.plot(sub_dates, labw_idx,   "g-.", linewidth=1.8, label=r"Labor wedge $(1-\tau_{l,t})$")
+    ax.plot(sub_dates, invw_idx,   "m:",  linewidth=2.2, label=r"Investment wedge $1/(1+\tau_{x,t})$")
+    ax.axhline(100, color="k", linewidth=0.5, linestyle=":")
+    ax.set_title("Figure 2B — Output and wedges (US 2008–2014)")
+    ax.set_ylabel("Index, 2008Q1 = 100")
+    ax.legend(loc="best", fontsize=10)
+    ax.grid(True, alpha=0.3)
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(45)
+    plt.tight_layout()
+    plt.savefig("figure_2B.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved: figure_2B.png")
+
+    # ─── Figures 2C/2D/2E: per-variable single-wedge components ─────────
+    component_styles = {
+        "efficiency": ("b--", "Efficiency only"),
+        "labor":      ("g-.", "Labor only"),
+        "investment": ("m:",  "Investment only"),
     }
-
-    for ax_idx, var in enumerate(["y", "l", "x"]):
-        ax = axes[ax_idx]
-        actual = to_level(data_hat[var], idx_range)
-        ax.plot(sub_dates, actual, "b-", linewidth=2, label="Data")
-
-        for wname, (style, label) in wedge_styles.items():
+    fig_specs = [
+        ("y", "Figure 2C — Output components (US 2008–2014)",
+         "figure_2C.png", output_idx),
+        ("l", "Figure 2D — Labor components (US 2008–2014)",
+         "figure_2D.png", labor_idx),
+        ("x", "Figure 2E — Investment components (US 2008–2014)",
+         "figure_2E.png", invest_idx),
+    ]
+    for var, title, fname, data_idx in fig_specs:
+        fig, ax = plt.subplots(figsize=(9, 6))
+        ax.plot(sub_dates, data_idx, "k-", linewidth=2.0, label="Data")
+        for wname, (style, label) in component_styles.items():
             cf_level = to_level(cfs[wname][var], idx_range)
-            ax.plot(sub_dates, cf_level, style, linewidth=1.5, label=f"{label} only")
-
+            ax.plot(sub_dates, cf_level, style, linewidth=1.8, label=label)
         ax.axhline(100, color="k", linewidth=0.5, linestyle=":")
-        ax.set_title(var_titles[var])
-        ax.set_ylabel("Index (2008Q1 = 100)")
-        ax.legend(fontsize=8)
+        ax.set_title(title)
+        ax.set_ylabel("Index, 2008Q1 = 100")
+        ax.legend(loc="best", fontsize=10)
         ax.grid(True, alpha=0.3)
         for tick in ax.get_xticklabels():
             tick.set_rotation(45)
-
-    plt.tight_layout()
-    plt.savefig("figure_2B_mle.png", dpi=150, bbox_inches="tight")
-    print("Saved: figure_2B_mle.png")
-    plt.show()
+        plt.tight_layout()
+        plt.savefig(fname, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Saved: {fname}")
 
 
 if __name__ == "__main__":

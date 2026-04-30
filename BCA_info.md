@@ -11,7 +11,15 @@
 - **Part II — Data and Calibration** (from the Technical Appendix)
   - 4. Data and Sources
   - 5. Parametrization and Calibration
-- **Part III — Empirical Results** (from the Technical Appendix)
+- **Part III — Findings: Cross-Country Application** (from the main paper §3.B)
+  - The Great Recession
+    - Three Illustrative Recessions (United States detail kept; France and Ireland omitted)
+    - Summary Statistics for OECD Countries
+    - Comparing the Great Recession with the 1980s Recessions
+    - Summary Statistics for the Entire Period
+    - The Importance of the Classification of Consumer Durables
+    - Comparing our Procedure with a Perfect Foresight Procedure
+- **Part IV — Empirical Results: United States Replication** (from the Technical Appendix)
   - 6. Whole-Sample Tables
   - 7. United States — MLE Estimates
   - 8. Great Recession — United States
@@ -247,7 +255,101 @@ where β is the (annualized) discount factor and δ the (annualized) depreciatio
 
 ---
 
-# Part III — Empirical Results
+# Part III — Findings: Cross-Country Application
+
+*From Brinca, Chari, Kehoe, and McGrattan — "Accounting for Business Cycles," NBER Working Paper No. 22663, §3.B. The setup of §3 in the paper (functional forms, calibration constants, the consumer-durables and sales-tax treatments, and the OECD trend-removal step) duplicates Part I §3 above and is not repeated here. The paragraphs below pick up where §3.A in the paper leaves off.*
+
+Now we describe the results of applying our procedure to OECD countries for the Great Recession and the 1982 recession. Here we focus primarily on the fluctuations due to the efficiency, labor, and investment wedges.[^1]
+
+[^1]: We alert the reader that the quantitative results for Spain should be treated with caution. In some robustness analysis for Spain, we found that the nonlinear labor wedge computed directly from the consumer's first-order condition (4) moved substantially more than the labor wedge computed using our log-linearization procedure.
+
+## The Great Recession
+
+Here we discuss our findings for the 24 OECD countries. The main finding is that in terms of accounting for the downturn, in the United States the labor wedge is by far the most important, in Spain, Ireland, and Iceland the investment wedge is the most important, and in the rest of the countries, the efficiency wedge is the most important.
+
+### Three Illustrative Recessions
+
+Here we illustrate our findings for one country for which the efficiency wedge, labor wedge, and investment wedge, respectively, is the most important. In reporting our findings, we remove a country-specific trend from output, investment, and the government consumption wedge. Both output and labor are normalized to equal 100 in the base period 2008:1. Here we focus primarily on the fluctuations due to the efficiency, labor, and investment wedges. We discuss the government consumption wedge and its components in our Appendix.
+
+#### France: Primarily an Efficiency Wedge Recession
+
+Removed since it's not relevant to the exercise.
+
+#### United States: Primarily a Labor Wedge Recession
+
+Next consider the United States. In Figure 2, panel A, we see that output and labor both fell about 7% from 2008:1 to 2009:3 while investment fell about 23%. In Figure 2, panel B, we see that the efficiency wedge fell very modestly by only about 1%, while the labor wedge and the investment wedge both worsened dramatically, by about 8% and 9%, respectively. In Figure 2, panels C, D, and E, we see that the labor and investment wedges play the most important role in accounting for the downturn in output and labor, while the investment wedge accounts for the bulk of the downturn in investment.
+
+Overall, considering the period from 2008 until the end of 2011, these results imply that the Great Recession in the United States should be thought of as primarily a labor wedge recession, with an important secondary role for the investment wedge. This finding implies that the most promising models must yield significant fluctuations in the labor wedge, with some role for the investment wedge. Models that emphasize the efficiency wedge are less promising.[^2]
+
+[^2]: In the Appendix we show that if we estimated the stochastic process for the wedges from 1948 to 2015, the contribution of the labor wedge rises and that of the investment wedge falls. A similar change occurs if we decrease the investment adjustment cost parameter.
+
+#### Ireland: Primarily an Investment Wedge Recession
+
+Removed since it's not relevant to the exercise.
+
+### Summary Statistics for our OECD Countries
+
+So far we have described the Great Recession in three countries. Here we describe useful summary statistics over the period 2008:1 to 2011:3. One such statistic, referred to as the φ statistic, is intended to capture how closely a particular component, say, the output component due to the efficiency wedge, tracks the underlying variable, say, output. For our decomposition of output, we let
+
+$$\phi^Y_i = \frac{1 / \sum_t (y_t - y_{it})^2}{\sum_j \left(1 / \sum_t (y_t - y_{jt})^2 \right)},$$
+
+where y_{it} is the output component due to wedge *i* = (A, τ_l, τ_x, g). We compute similar statistics for labor and investment. The φ statistic has the desirable feature that it lies in [0, 1], sums to one across the four wedges, and when a particular output component tracks output perfectly — in that if (y_t − y_{it}) = 0 for all *t* — then φ^Y_i = 1, that is, the φ statistic for the wedge reaches its maximum value of 1. Note that this statistic is the inverse of the mean-square error for each wedge appropriately scaled so that the sum across wedges adds to one.
+
+Now consider our main finding. In Figure 4, panel A, we display the φ statistic for the efficiency wedge and labor wedge components of output. The downward-sloping lines represent combinations for which the sum of the labor wedge and efficiency wedge components is constant at 70% and 90%, respectively. This figure shows that the United States stands out from the other countries in that the labor wedge accounts for a much greater fraction of the movements in output than it does in any other country. Specifically, the labor wedge accounts for about 46% of the movements in output in the United States but no more than 22% in any other country. In all other countries except Iceland, Ireland and Spain, the efficiency wedge accounts for roughly 50% or more of the movements in output. In Table 1, we report the decompositions of output, labor, and investment for all countries. There we see that for Iceland, Ireland, New Zealand, and Spain, the investment wedge accounts for 51%, 48%, 42%, and 82% of the movements in output, respectively. In the other panels of Figure 4, we display the φ statistics for the components of labor and investment.
+
+Our main finding is also apparent if we use other ways to measure how important a given wedge is for the movements in output, labor, and investment. When we discussed the three illustrative recessions earlier, we compared simple peak-to-trough measures of output, labor, and investment to the corresponding measures for each of the components. In Tables 2A, 2B, and 2C, we report such measures for all of our countries. A quick perusal of these measures shows that they give the same message as the φ statistics do. Consider France, for example. The φ statistic indicates that the efficiency wedge accounts for the bulk of the movements in output, namely, about 92% of its decline. The peak-to-trough measure indicates that the efficiency wedge also accounts for the bulk of the peak-to-trough decline, namely about 5.9% of the 6.5% decline, or about 91% of the decline.
+
+### Comparing the Great Recession with Recessions of the Early 1980s
+
+The postwar era had essentially two periods during which most developed economies experienced recessions at roughly the same time: the early 1980s and the Great Recession of 2008. Here we compare the recessions of the early 1980s with the Great Recession. For the United States, we use the NBER business cycle dates; for the OECD countries, we use the business cycle dates as estimated by ECRI when available and otherwise use the CEPR Euro Area Business Cycle Dates. We use the stochastic process for wedges estimated over the 1980–2014 period for both episodes. (See the Appendix for details.)
+
+In Figure 5, panel A, we compare the φ statistics for the efficiency wedge component of output for the two recessions. This panel shows that for most of the countries, the efficiency wedge in the Great Recession played a more important role than it did during the recessions of the 1980s. In Figure 5, panel B, we compare the φ statistics for the labor wedge component of output for the two recessions. This panel shows that in the Great Recession, the labor wedge accounts for over 40% of the fluctuations in output only in the United States, while in the 1982 recession it does so only in Belgium, the United Kingdom, and France. In Figure 5, panel C, we compare the φ statistics for the investment wedge component of output for the two recessions. This panel shows that in most of the countries, the investment wedge played a larger role in the recessions of the 1980s than it did during the Great Recession.
+
+In Table 3 we report the φ statistics for the 1982 recessions. This table shows that the efficiency wedge played the most important role for ten countries, the labor wedge for three countries, and the investment wedge for seven countries. Together with Table 1, this table broadly reinforces our two main findings for the comparison. First, the labor wedge played an important role for output in the Great Recession only for the United States, and in the 1982 recession it played a dominant role only in Belgium, France, the United Kingdom, and New Zealand. Second, for most countries, in the Great Recession the efficiency wedge played a more important role and the investment wedge played a less important role than they did in the recessions of the 1980s.
+
+In Table 4, panels A, B, and C, we report peak-to-trough results for the 1982 recession. Comparing Table 3 with the panels of Table 4, we see that the peak-to-trough results present the same overall picture as our φ statistics do. If we compare the classification of the most important wedge for each country using φ statistics for output to that using the peak-to-trough decline for output, we see that they agree in all but three cases.
+
+### Summary Statistics for the Entire Period
+
+In Tables 5A, 5B, and 5C, we present some summary statistics for the entire period 1980:1–2014:3 about the importance of the various wedges in accounting for the movements in output, labor, and investment. In Table 5A, for example, we report the standard deviation of the output component due to each wedge relative to the standard deviation of output during the entire period, along with the correlation of each such output component with output. In Tables 5B and 5C, we report similar statistics for labor and its components and for investment and its components.
+
+Using these statistics to infer the importance of various wedges is more subtle than using the φ statistics. The φ statistic captures in one statistic how much the component due to a wedge moves, as well as how closely this component tracks the underlying variable. Instead, to evaluate the importance of a wedge using the statistics in this table, we need to jointly consider the relative standard deviations and the correlations.
+
+Consider France, for example. Viewing the relative standard deviations alone suggests that the labor and investment wedges play roughly the same role in accounting for the movement in output. Indeed, the relative standard deviations of the labor and investment components of output are 93% and 92%, respectively. But the correlations of these variables with output suggests that the investment wedge plays a much more important role. Indeed, the labor component of output comoves negatively with output, whereas the investment component of output comoves positively with output.
+
+With this perspective in mind, the averages across countries show that the efficiency wedge plays the most important role in accounting for output. The standard deviation of the efficiency component of output is 92% of output, and its correlation with output is 0.77. Even though the labor component of output is 89% as variable as output itself, it is essentially uncorrelated with output. In this sense, the labor wedge does not account for much of the movements in output.
+
+### The Importance of the Classification of Consumer Durables
+
+Macroeconomists have long argued that theory implies it is appropriate to treat the expenditures on consumer durables as a form of investment that yields a flow of consumption services. This treatment requires adjustments to the national income accounts classification of consumption and investment to make them consistent with the theory.
+
+Here we show that while this adjustment is quantitatively important for some countries, for most countries it does not change the overall findings. In Figure 6, panel A, we contrast the φ statistic for the efficiency wedge component of output when this consistent adjustment is made and when it is not. Clearly, the countries with statistics most affected by this adjustment are Iceland and Spain. In Iceland, for example, the contribution of the efficiency wedge falls from 26% when durables are correctly accounted for to 12% when they are not. In Spain, the contribution of the efficiency wedge increases from 11% when durables are correctly accounted for to 29% when they are not.
+
+In Figure 6, panels B and C, we contrast the analogous φ statistics for the labor wedge component of output and for the investment wedge component of output. In panel C we see that in Iceland and Spain, the contribution of the investment wedge to output is 51% and 82% when durables are correctly accounted for and 65% and 35% when they are not.
+
+### Comparing our Procedure with a Perfect Foresight Procedure
+
+Some authors implement a perfect foresight version of our procedure in which agents have perfect foresight about the future evolution of the wedges. The equilibrium conditions for the deterministic version of our prototype model are
+
+$$(68)\quad c_t + x_t + g_t = y_t,$$
+
+$$(69)\quad y_t = A_t F(k_t, (1 + \gamma)^t l_t),$$
+
+$$(70)\quad \frac{-U_{lt}}{U_{ct}} = [1 - \tau_{lt}]\, A_t (1 + \gamma)^t F_{lt},\text{ and}$$
+
+$$(71)\quad U_{ct}[1 + \tau_{xt}] = \beta U_{ct+1}\{A_{t+1} F_{kt+1} + (1 - \delta)[1 + \tau_{xt+1}]\}.$$
+
+Clearly, the efficiency wedge, the labor wedge, and the government consumption wedge can be recovered from the static relationships in (68), (69), and (70). Recovering the investment wedge, however, requires solving the difference equation implied by the Euler equation (71). To do so we need to impose either an initial condition or a terminal condition. In practice, we imposed an initial condition that the investment wedge begins at zero.
+
+In Figure 7, panels A, B, and C, we plot the φ statistics for the perfect foresight procedure against the same statistics for our procedure. These panels show that for a significant number of the countries, the φ statistics are very different. In particular, the perfect foresight procedure greatly exaggerates the importance of the labor wedge for the United States and Spain. Under perfect foresight, the labor wedge accounts for 92% and 72% of the movements in output for the United States and Spain, while under the standard business cycle accounting procedure, the labor wedge accounts for only 46% and 5%, respectively.
+
+We highlight two important sources for these differences. One is that in the perfect foresight procedure, private agents anticipate the evolution of future wedges perfectly and thus react in the current period to actual future worsening or improvement of the wedges. In this sense, the perfect foresight procedure brings with it all the undesirable properties of the simple "news" models by which an anticipated worsening of, say, the labor wedge leads to a current boom as households choose to increase labor supply before times worsen. The other is that, as we noted earlier, the perfect foresight procedure uses the nonlinear version of the first-order conditions (68)–(71) to compute the wedges, whereas our procedure uses log-linearized versions of these conditions.
+
+---
+
+# Part IV — Empirical Results: United States Replication
+
+*The following sections come from the Technical Appendix and apply the procedure of Parts I–III to U.S. data 1980Q1–2014Q4. They are the calibration target the codebase must replicate (CLAUDE.md → "Goal"). Section numbering 6/7/8 is preserved from the source.*
 
 ## 6. Whole-Sample Tables
 
