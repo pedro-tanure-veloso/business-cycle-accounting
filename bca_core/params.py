@@ -19,7 +19,18 @@ class CalibrationParams:
     rho_annual: float = 1.0 / 0.975 - 1.0  # annual rate of time preference (BCKM Table 1: β=0.975 → ρ≈0.025641)
     n_annual: float = 0.0          # annual population growth (estimated from data)
     gamma_annual: float = 0.0      # annual technology growth (estimated from data)
-    adj_cost_elasticity: float = 0.25  # target elasticity of q w.r.t. x/k (BGG 1999)
+    adj_cost_elasticity: float = 0.256448  # target elasticity of q w.r.t. x/k.
+                                      # Calibrated to match BCKM ``adja=12.88``
+                                      # (mleqadj.m, datamine.m). Closed-form:
+                                      #   a = adj_cost_elasticity / b
+                                      # where b = (1+γ)(1+n) − (1−δ) ≈ 0.01991
+                                      # at our calibration. Solving 0.256448/b
+                                      # = 12.88 gives the value above. Earlier
+                                      # default 0.25 came from BGG (1999) and
+                                      # produced a = 12.56 — close but not
+                                      # BCKM-exact. The 2.5% gap is small but
+                                      # propagates into H matrix entries; this
+                                      # eliminates it.
     g_share: float = 0.20         # government share of output at steady state
 
     # --- quarterly conversions ---
