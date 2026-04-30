@@ -228,15 +228,33 @@ class TestInactiveWedgesUseRealizedValues:
     """
 
     def test_single_wedge_uses_realized_inactive_columns(
-        self, model, P_var, synthetic_states
+        self, model, synthetic_states
     ):
         """A single-wedge CF MUST depend on inactive wedge values via coupling.
 
         The previous test (locked in pre-2026-04-30 behaviour) asserted the
         opposite: that A-only CF was invariant to τ_l, τ_x, g values. That
         was wrong — it dropped the BCKM gwedges2.m coupling terms.
+
+        Note: a diagonal ``P_var`` makes this test vacuous. With As=[1,0,0,0]
+        the gamma solve in ``bckm_capital_lom`` reduces to
+        ``gamma = -((a0·γk + a1)·I + a0·P.T)^{-1} (b0_z · P[0,:] + [b1_z,0,0,0])``,
+        and ``b0``/``b1`` are non-zero only on the z entry (inactive wedges are
+        pinned in ``res_adjust2``). When P_var is diagonal, both LHS and RHS
+        decouple by wedge, so ``(Γ_A − Γ_0)`` is identically zero on
+        τ_l/τ_x/g positions and the coupling channel cancels exactly. The
+        BCKM coupling story requires off-diagonals in the z row of P (which
+        published Table 8 does have); use a P with such off-diagonals here.
         """
-        cf_pol = solve_counterfactual(model, P_var, active_wedges=[0])
+        P_coupled = 0.9 * np.eye(4)
+        # Non-zero z-row off-diagonals: τ_l/τ_x/g feed into z next period.
+        # These propagate through (b0_z · P[0,:]) into the gamma solve and
+        # produce non-zero (Γ_A − Γ_0) coefficients on inactive columns.
+        P_coupled[0, 1] = 0.05
+        P_coupled[0, 2] = 0.03
+        P_coupled[0, 3] = -0.02
+
+        cf_pol = solve_counterfactual(model, P_coupled, active_wedges=[0])
         result_orig = run_counterfactual(synthetic_states, cf_pol)
 
         states_zeroed = synthetic_states.copy()
