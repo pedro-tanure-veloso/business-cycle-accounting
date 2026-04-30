@@ -88,6 +88,31 @@ fallback is auditable.
 
 **Kalman initialization / steady-state filter**: Use the DARE-derived steady-state covariance, evaluated at the *current* VAR parameters on every objective call (steady-state Kalman, BCKM `mleqadj.m` style). On a 5×5 system the per-call DARE is cheap (~ms) and eliminates the optimized-vs-final-smoother LL mismatch that arises when Σ₀ is frozen at BCKM Table 77 params while the optimizer drifts. The `_steady_state_kalman` helper returns a constant gain K, innovation cov S, and Σ_filt; the RTS smoother uses the same constants. Frozen-Σ₀ is no longer used.
 
+**LL formula and the BCKM `mle.likelihood` sign convention**. BCKM `mleqadj.m:257` is
+
+```
+L = 0.5·(T·log|Ω| + tr(Ω⁻¹·Σ_innov)) + penalty
+```
+
+where `Ω` is the steady-state innovation covariance and `Σ_innov = Σ_t innov_t innov_t'`. **There is no `n_obs·log(2π)` constant** — `mleqadj.m` is a minimizer of `L`, not a probability density. Our `_kf_ll` in `var_estimation.py:546` computes
+
+```
+ll_ours = -0.5·(T·n_obs·log(2π) + T·log|Ω| + quad)
+        = -L − 0.5·T·n_obs·log(2π)
+```
+
+so we add a `0.5·T·n_obs·log(2π) ≈ 514.6` nat normalization (T=140, n_obs=4) that BCKM omits. **This is harmless for parameter estimation — the constant doesn't change argmax — but it makes printed LL values incomparable.** When stating an LL gap, always specify the convention: `"BCKM form"` (positive-minimization L) vs `"our form"` (log-density LL).
+
+**Critical sign trap**: `worktemp.mat`'s `mle.Likelihood` field stores `L` directly — it is **not** `−L`. The stored value `−2402.88` is *negative* because at the converged θ the `T·log|Ω| ≈ −5398` term dominates the positive `quad ≈ 538` term; `L = 0.5·(−5398 + 538) ≈ −2430`. So the conversions are:
+
+```
+L_bckm                   = -2402.88   (stored mle.Likelihood, may be negative)
+L_ours_at_BCKM_θ_BCKMdata = -2386.28   (our mleqadj.m:257-form L on BCKM Y_raw)
+ll_ours_at_BCKM_θ_BCKMdata = -L − 514.6 = +1871.67   (printed by ``estimate_var_mle``)
+```
+
+Verified by `scripts/diag_bckm_data_isolation.py`: at identical (Sbar, P, Q, data) the gap between our `L` and BCKM's stored `mle.Likelihood` is **16.6 nats**, not 757. Earlier confusion was from comparing `ll_ours` (with 2π) directly to `|mle.Likelihood|` (BCKM form), conflating two different L definitions and the sign convention.
+
 **Stationarity constraints**: Spectral radius penalty only — `5e5 * max(|eig(P)| − 0.995, 0)²`, matching `mleqadj.m:134`. **Do not** add per-diagonal bounds. BCKM allows individual diagonals to exceed 0.995 (Table 8 has τ_l = 1.001); only the eigenvalue constraint is BCKM-faithful. If L-BFGS-B deadlocks at the penalty boundary, switch optimizer or clip the warm-start diagonal — do **not** reintroduce a per-diagonal penalty.
 
 **Counterfactuals**: Keep full 4D VAR for rational expectations; zero out inactive wedge columns in structural equations. Capital evolves endogenously through `k' = P_k @ state`.
