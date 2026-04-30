@@ -44,15 +44,16 @@ from bca_core.klein import klein_solve, BlancharKahnError
 from bca_core.var_estimation import estimate_var_mle, prepare_observables
 from bca_core.counterfactuals import run_all_counterfactuals, f_statistics_bckm
 from bca_core.wedges import extract_wedges_bckm_style
+from bca_core.constants import P_BCKM_TABLE8
 
 
 # --- BCKM Table 8/10 warm-start (US MLE estimates) -------------------------
-_P_BCKM = np.array([
-    [ 0.9887,  0.0307, -0.0089, -0.0407],
-    [-0.0012,  1.0011, -0.0275,  0.0175],
-    [-0.0045,  0.0449,  0.9675, -0.0426],
-    [ 0.0063,  0.0017,  0.0016,  0.9945],
-])
+# P imported from bca_core.constants (see that module's docstring for the
+# row/col convention story — paper Table 8 is the TRANSPOSE of code form).
+_P_BCKM = P_BCKM_TABLE8
+# Q is the BCKM ``x0c`` warm-start init (mleqadj.m adja=12.88, NOT the
+# converged Table 10 MLE) — kept inline because it does not appear in the
+# published tables. No row/col convention issue (Cholesky is lower-tri).
 _Q_BCKM = np.array([
     [ 0.0240,  0.0000,  0.0000,  0.0000],
     [-0.0099,  0.0274,  0.0000,  0.0000],

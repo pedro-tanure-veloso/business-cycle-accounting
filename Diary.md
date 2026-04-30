@@ -1696,3 +1696,105 @@ New files:
 77/77 fast tests pass. 3 Tier 2 tests in `test_bckm_table12.py` fail —
 those are the diagnostic targets for the worktemp comparison plan above.
 
+---
+
+## Session: 2026-04-30 — P-transpose discovery (`+501 nats` at BCKM-θ)
+
+### What was completed
+
+**The walk-down diagnostic shipped, fired on Stage 3, and named the bug.**
+
+Stages 1–2 (Y_raw, ss_new) matched BCKM `worktemp.mat` to <1e-10. Stage 3
+(state-space matrices `bckm_state_space(F, H)`) blew up: `max|A − A_bckm|
+= 0.1128`, `max|C − C_bckm| = 2.09`. Cell-by-cell, our `P_BCKM[i, j]`
+matched BCKM's `A[j+1, i+1]` — i.e. our P was the **transpose** of what
+BCKM stored in `worktemp.params`.
+
+Root cause, in one sentence: `BCA_info.md` §7 Table 8 prints P in a
+"rows = drivers, columns = receivers" *narrative* convention (row 0 reads
+"what z does"); BCKM's matlab code (`mleqadj.m:222`) and our pipeline use
+the textbook `state_{t+1} = P · state_t` convention (row 0 reads "what
+determines z's update"); the two are transposes of each other.
+
+The Table-8 matrix had been hardcoded **nine independent times** (once
+each in `var_estimation.py`, `eval_bckm_fstats.py`, `eval_bckm_basin.py`,
+`diag_tx_counterfactual.py`, `bootstrap_mle.py`, `diag_worktemp_compare.py`,
+`test_var_estimation.py`, `test_counterfactuals.py`,
+`test_bckm_table12.py`) — all in paper convention but used as code
+convention. A silent transpose at every BCKM-θ probe, the warm-start, and
+the counterfactual decomposition.
+
+**Quantified impact at BCKM-published θ** (verified via
+`/tmp/probe_p_transposed.py`):
+
+```
+Wrong (current paper-convention) P:  LL = +1195.45    gap to BCKM = 678
+Fixed (transpose, code-convention):  LL = +1697.16    gap to BCKM = 176
+                                                       Δ = +501 nats
+                                                       (74% of 678 closed)
+```
+
+`max|P_paper.T − P_dump| = 4.3e-5` — within Table 8's 4-decimal
+publication precision. Not a coding mistake to be debugged: a convention
+mismatch in transcription that compounded across nine sites.
+
+### Fix landed (uncommitted)
+
+Single canonical module **`bca_core/constants.py`** exports
+`P_BCKM_TABLE8`, `SBAR_BCKM_TABLE8`, `QCHOL_BCKM_TABLE10` in CODE
+convention with a 35-line docstring that explains the convention switch
+and the +501 nat cost. Verified element-wise against
+`octave_output/{P,Sbar,Qchol}_bckm.csv`.
+
+All nine call sites converted from inline `np.array([...])` to imports.
+1 in `bca_core/`, 5 in `scripts/`, 3 in `tests/` — eight files modified
+plus the new constants module.
+
+23 of 24 fast tests pass (excluding `test_bckm_table12.py`, the Tier 2
+diagnostic). The one failure (`test_single_wedge_uses_realized_inactive_columns`)
+was confirmed via `git stash` to be **pre-existing**, not caused by the
+transpose fix — it uses `P_var = 0.9 * np.eye(4)` (diagonal,
+transpose-invariant). Separate bug, separate session.
+
+### Documentation written
+
+- `BCA_info.md` §7 Table 8 — added a callout box right under the table
+  with the convention story and a pointer to `bca_core/constants.py`.
+- `CLAUDE.md` — added a "P matrix convention — the paper transposes"
+  paragraph under "Key methodological choices" with the +501-nat
+  quantification and the "import, never re-transcribe" rule.
+- This Diary entry.
+
+### Remaining ~176-nat gap — hypothesis
+
+User confirmed from a separate machine reading `worktemp.mat`:
+`adja = 12.8800 (adjc index = 2)`. Our `params.a` is computed
+`adj_cost_elasticity / b ≈ 12.56` (from `adj_cost_elasticity = 0.25`).
+The 12.88 vs 12.56 discrepancy enters `phi*kp` capital LOM coefficients
+and the linearized investment Euler — plausible source of the residual
+176 nats. **Calibration constant change requires user sign-off per
+CLAUDE.md "Asking Before Deviating"** — flagged, deferred.
+
+### Repo state at session end
+
+Modified (uncommitted):
+- `bca_core/var_estimation.py` (imports + `_P_bckm`/`_Q_bckm_table10`/`_Sbar_bckm` cleanup)
+- `scripts/{eval_bckm_fstats, eval_bckm_basin, diag_tx_counterfactual, bootstrap_mle}.py`
+- `tests/{test_var_estimation, test_counterfactuals, test_bckm_table12}.py`
+
+New files:
+- `bca_core/constants.py` — canonical CODE-convention constants
+- `scripts/diag_worktemp_compare.py` — the walk-down diagnostic that found the bug
+
+### Exact next step
+
+1. Re-run `scripts/eval_bckm_fstats.py` end-to-end to confirm the +501
+   nat win propagates to the f-stats (not just LL). Expect
+   `fY[A]`/`fY[τ_l]`/`fY[τ_x]` to move from `(0.81, 0.01, 0.06)` toward
+   targets `(0.16, 0.46, 0.32)`.
+2. Commit the transpose fix with a message that names the bug and the
+   +501 nat win — single logical change, nine files.
+3. (Pending user sign-off) audit `params.a` vs BCKM `adja=12.88`. If
+   approved, that's the candidate close on the residual 176 nats.
+4. Re-run the walk-down at the corrected P to localize what's left.
+

@@ -419,6 +419,20 @@ where β is the (annualized) discount factor and δ the (annualized) depreciatio
 | -0.0045 |  0.0449 |  0.9675 | -0.0426 |
 |  0.0063 |  0.0017 |  0.0016 |  0.9945 |
 
+> ⚠️ **Convention note (read before transcribing).** Table 8 above is
+> printed in the paper's **"rows = drivers, columns = receivers"**
+> narrative convention: row 0 reads "what z does" — its self-persistence
+> in column 0, its outgoing spillover to τ_l in column 1, etc. This is
+> the **transpose** of the textbook VAR convention
+> `state_{t+1} = P · state_t` that BCKM's matlab code (`mleqadj.m:222`)
+> and our codebase actually use. In the code convention, row 0 reads
+> "what determines z's update" — coefficients on lags of [z, τ_l, τ_x, g].
+> The canonical CODE-convention matrix lives in
+> [`bca_core/constants.py`](bca_core/constants.py) as
+> `P_BCKM_TABLE8`; **import from there, never re-transcribe Table 8**.
+> A transposed-P bug across nine independent transcription sites cost us
+> +501 nats of LL at BCKM-published θ; see Diary 2026-04-30.
+
 **Table 9: P₀ vector**
 
 |        |        |        |         |

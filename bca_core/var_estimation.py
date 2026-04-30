@@ -15,6 +15,7 @@ from .params import CalibrationParams
 from .model import PrototypeModel
 from .klein import klein_solve, BlancharKahnError
 from .bckm_lom import bckm_state_space
+from .constants import P_BCKM_TABLE8, QCHOL_BCKM_TABLE10, SBAR_BCKM_TABLE8
 
 
 def prepare_observables(
@@ -614,13 +615,11 @@ def estimate_var_mle(
 
     # ── Starting point: BCKM Table 8/9/10 US MLE estimates ─────────────
     # Wedge order: [A/z, tau_l, tau_x, g]  (matches our state ordering)
-    # P from Table 8 (US converged MLE, 1980Q1-2014Q4)
-    _P_bckm = np.array([
-        [ 0.9887,  0.0307, -0.0089, -0.0407],
-        [-0.0012,  1.0011, -0.0275,  0.0175],
-        [-0.0045,  0.0449,  0.9675, -0.0426],
-        [ 0.0063,  0.0017,  0.0016,  0.9945],
-    ])
+    # P, Q, Sbar are imported from ``bca_core.constants`` — see that
+    # module's docstring for the row/col convention story (the paper's
+    # Table 8 is the TRANSPOSE of what the code uses; importing from a
+    # single canonical source prevents that bug from recurring).
+    _P_bckm = P_BCKM_TABLE8
     # Q_chol from mleqadj x0c (adja=12.88, nearest to our a=12.5) —
     # this is the BCKM warm-start init (runmleadj.m lines 80-110), NOT
     # the converged MLE.  Used for the legacy "BCKM warm-start" entry.
@@ -634,15 +633,10 @@ def estimate_var_mle(
     # Used as a starting point for L-BFGS-B so the optimizer has a real
     # chance to land in BCKM's reported basin instead of drifting into
     # a competing local maximum during warm-start.
-    _Q_bckm_table10 = np.array([
-        [ 0.0077,  0.0000,  0.0000,  0.0000],
-        [ 0.0024,  0.0043,  0.0000,  0.0000],
-        [-0.0041,  0.0023,  0.0088,  0.0000],
-        [ 0.0003,  0.0153,  0.0121,  0.0139],
-    ])
+    _Q_bckm_table10 = QCHOL_BCKM_TABLE10
     # Sbar from BCKM Step 1 fresh-run replication on data.mat (matches
     # paper to 3-4 sig figs).  Used in the new BCKM-θ warm-start.
-    _Sbar_bckm = np.array([0.1336, 0.3691, -0.0460, -1.9355])
+    _Sbar_bckm = SBAR_BCKM_TABLE8
 
     # ── fsolve-init Sbar (BCKM initmle.m: nonlinear over model SS) ───────
     # Returns the Sbar (BCKM coords) that drives ``initmle.m`` line 53

@@ -29,27 +29,15 @@ from bca_core.counterfactuals import (
     phi_statistics,
 )
 from bca_core.wedges import extract_wedges_bckm_style
-
-
-# BCKM (2016) Section 7 Table 8: P matrix (US MLE, 1980Q1-2014Q4)
-P_BCKM = np.array([
-    [ 0.9887,  0.0307, -0.0089, -0.0407],
-    [-0.0012,  1.0011, -0.0275,  0.0175],
-    [-0.0045,  0.0449,  0.9675, -0.0426],
-    [ 0.0063,  0.0017,  0.0016,  0.9945],
-])
-
-# BCKM Table 10: Q lower-triangular Cholesky factor (V = Q Q')
-QCHOL_BCKM = np.array([
-    [ 0.0077,  0.0,     0.0,     0.0],
-    [ 0.0024,  0.0043,  0.0,     0.0],
-    [-0.0041,  0.0023,  0.0088,  0.0],
-    [ 0.0003,  0.0153,  0.0121,  0.0139],
-])
-
-# BCKM published Sbar (from Step 1 fresh-run replication on data.mat,
-# matches authors' worktemp.mat to 3-4 sig figs).
-SBAR_BCKM = np.array([0.1336, 0.3691, -0.0460, -1.9355])
+from bca_core.constants import (
+    P_BCKM_TABLE8 as P_BCKM,
+    QCHOL_BCKM_TABLE10 as QCHOL_BCKM,
+    SBAR_BCKM_TABLE8 as SBAR_BCKM,
+)
+# Convention note: BCKM's paper publishes P in the transpose of the
+# code's textbook ``state_{t+1} = P · state_t`` convention. See
+# ``bca_core/constants.py`` for the full story. Do not re-transcribe
+# Table 8 here.
 
 
 def find_idx(dates, year, quarter):

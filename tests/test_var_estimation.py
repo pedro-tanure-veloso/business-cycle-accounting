@@ -5,23 +5,14 @@ import numpy as np
 from bca_core.params import CalibrationParams
 from bca_core.model import PrototypeModel
 from bca_core.var_estimation import BCAStateSpace, prepare_observables, estimate_var_mle
-
-
-# BCKM 2016 published US estimates (Tables 8/10) — the canonical θ at
-# which the per-call DARE must converge inside the optimizer's inner loop.
-SBAR_BCKM = np.array([0.1336, 0.3691, -0.0460, -1.9355])
-P_BCKM = np.array([
-    [0.9887, 0.0307, -0.0089, -0.0407],
-    [-0.0012, 1.0011, -0.0275, 0.0175],
-    [-0.0045, 0.0449, 0.9675, -0.0426],
-    [0.0063, 0.0017, 0.0016, 0.9945],
-])
-QCHOL_BCKM = np.array([
-    [0.0077, 0.0, 0.0, 0.0],
-    [0.0024, 0.0043, 0.0, 0.0],
-    [-0.0041, 0.0023, 0.0088, 0.0],
-    [0.0003, 0.0153, 0.0121, 0.0139],
-])
+from bca_core.constants import (
+    P_BCKM_TABLE8 as P_BCKM,
+    QCHOL_BCKM_TABLE10 as QCHOL_BCKM,
+    SBAR_BCKM_TABLE8 as SBAR_BCKM,
+)
+# Convention note: see ``bca_core/constants.py`` — BCKM's paper Table 8
+# is the TRANSPOSE of the code's textbook ``state_{t+1} = P · state_t``
+# convention. Always import; never re-transcribe.
 
 
 @pytest.fixture
