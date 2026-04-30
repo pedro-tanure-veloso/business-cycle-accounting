@@ -31,7 +31,7 @@ def build_us_dataset(
     use_bea_sales_tax: bool = True,
     params: CalibrationParams | None = None,
     detrend_method: str = "linear",
-    labor_target_mean: float = 0.25,
+    labor_target_mean: float = 0.24279,
     data_path: str | Path | None = None,
     gamma_annual: float | None = None,
     base_year_quarter: str | None = None,
@@ -152,6 +152,16 @@ def build_us_dataset(
 
     sample = adj.loc[start_dt:end_dt].copy()
     sample = sample.dropna(subset=["y_real_pc", "c_real_pc", "x_real_pc", "l"])
+
+    # Re-rescale labor over the sample window so mean(l_sample) ==
+    # labor_target_mean exactly. ``compute_labor_input`` rescaled over the
+    # full 1947+ FRED range, but the labor_target_mean=0.24279 default is
+    # specifically BCKM's hpc mean over 1980Q1–2014Q4 (sample window). The
+    # full-range mean drifts ~+0.006 in log from the sample-window mean
+    # because pre-1980 hours-per-capita ran lower (different LFPR regime),
+    # so a single full-range rescale leaves a residual sample-window level
+    # offset. Re-applying within-sample makes the BCKM-faithful pin exact.
+    sample["l"] = sample["l"] * (labor_target_mean / sample["l"].mean())
 
     pop = sample["working_age_pop"].dropna()
     if len(pop) > 4:

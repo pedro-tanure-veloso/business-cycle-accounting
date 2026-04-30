@@ -154,7 +154,7 @@ def to_real_per_capita(df: pd.DataFrame, series_cols: list[str]) -> pd.DataFrame
 
 def compute_labor_input(
     df: pd.DataFrame,
-    target_mean: float = 0.25,
+    target_mean: float = 0.24279,
 ) -> pd.Series:
     """
     Compute labor input l_t in [0, 1].
@@ -199,6 +199,23 @@ def compute_labor_input(
     neither is in BCKM's hpc≈0.24 range without rescaling. Per CLAUDE.md,
     the level is preserved through to `prepare_observables` — no second
     rescale.
+
+    target_mean=0.24279 source: BCKM's worktemp.mat Y_raw[:, 2] (the
+    growth-detrended log-hours-per-capita BCKM's KF actually consumes)
+    has ``exp(Y_raw[:, 2]).mean() = 0.24279`` over 1980Q1–2014Q4, which
+    is BCKM's empirical hpc level. BCKM constructs hpc directly as
+    ``H ./ Pop`` in usdata.m:48-60 with no separate "discretionary
+    hours" denominator — the 0.24 level is whatever the unit conventions
+    inside their ``hours.dat`` produce (the file isn't in the BCA repo).
+    Pinning target_mean to 0.24279 makes our rescaled labor series
+    level-match BCKM's at every quarter, closing the +0.029 log shift
+    visible in scripts/diag_bckm_data_isolation.py at BCKM-θ. Earlier
+    default 0.25 was a McGrattan-tradition round number not derived from
+    any specific BCKM constant; the residual ~+0.006 cycle-amplitude gap
+    after this fix comes from PAYEMS×AWHNONAG vs BCKM's BLS Productivity
+    & Costs total-economy hours universe difference and is unfixable
+    without a BLS fetcher (see compute_labor_input call site for the
+    series-source ranking).
     """
     if "employment" in df.columns and "avg_weekly_hours" in df.columns:
         hours = (df["employment"] * df["avg_weekly_hours"]).copy()
