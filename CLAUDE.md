@@ -36,6 +36,40 @@ Once these are matched, the model is trusted as correctly implemented and can be
 - Do not introduce approximations or shortcuts that are not in the paper
 - Document any unavoidable deviations clearly
 
+### Data sources — BEA / BLS first, FRED only as fallback
+
+**McGrattan's working rule (passed down from advisor): always pull data from
+the original source — BEA NIPA, BLS Productivity & Costs, BLS CPS — and use
+FRED only when the original source has no equivalent.** BCKM's `usdata.m` does
+exactly this: every series in their construction is sourced from BEA NIPA
+tables or BLS series-level files, not aggregated FRED tickers.
+
+Why this matters for replication:
+- FRED republishes BEA/BLS series but sometimes truncates them when BEA
+  rebases the chain index (e.g. `PCDGCC96`, `PCNDGC96`, `PCESVC96`,
+  `A782RX1Q020SBEA` only have data from 2007Q1+ on FRED after the 2017
+  chain rebase, even though BEA's NIPA API serves the full 1947+ history).
+- FRED aggregates can paper over construction details that matter at the
+  margin (e.g. PCE chain-type price index vs component-specific deflators;
+  state-only vs federal+state+local sales tax).
+- "Faithful to BCKM" means the same NIPA line item, not a FRED ticker that
+  happens to have a similar name.
+
+Concrete order of preference for each US series we need:
+1. **BEA NIPA API** for any nominal/real/deflator NIPA quantity (national
+   accounts, gov consumption/investment, PCE breakdown, sales tax aggregates).
+   `bca_core/data/bea.py` already implements `BeaDataFetcher` with disk cache.
+2. **BLS series-level files** for hours, employment, productivity (BLS
+   `Productivity & Costs` releases, `CES` employment, `CPS` labor force).
+3. **OECD MEI** for working-age population (the BCKM-canonical universe is
+   gone from BLS post-2014; OECD MEI 15-64 is the cleanest current proxy).
+4. **FRED** only if 1–3 don't carry the series, AND only after verifying the
+   FRED ticker has full history (not truncated at a chain-rebase boundary).
+
+When a FRED-default series is being used as a stand-in for a BEA/BLS source,
+note the original source explicitly in the FRED dictionary docstring so the
+fallback is auditable.
+
 ### Key methodological choices (already verified against paper)
 
 **Observables**: `[y_hat, l_hat, x_hat, g_hat]` are time-detrended log levels. `prepare_observables` centers them against `obs_offset` so the prediction side sees zero at SS. BCKM `mleqadj.m:237` keeps observables uncentered and folds the SS into the obs-equation intercept `phi0 = Y0 − C(:,1:5)·X0(1:5)` — mathematically equivalent. (P₀ in BCKM is the VAR drift `(I−P)·Sbar`, not an SS-offset absorber; the SS lives in `phi0` on the model side.)

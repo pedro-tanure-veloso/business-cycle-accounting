@@ -1798,3 +1798,450 @@ New files:
    approved, that's the candidate close on the residual 176 nats.
 4. Re-run the walk-down at the corrected P to localize what's left.
 
+---
+
+## Session: 2026-04-30 (continued) — BCKM-faithful data: BEA sales tax + working-age (15-64) population
+
+### What was completed
+
+After the P-transpose fix landed, the walk-down at BCKM-θ still showed Stage-1
+(raw observables) diverging from `worktemp.mat`:
+
+```
+Channel | mean(ours-bckm) | max|diff|
+y       | +0.0000         | 2.23e-02
+l       | +0.0401         | 8.22e-02
+x       | -0.0389         | 5.25e-02
+g       | -0.0685         | 9.76e-02
+```
+
+A targeted audit of `bca_core/data/*.py` against BCKM `usdata.m` named four
+data-construction divergences ranked by expected impact: hours universe
+(PAYEMS×AWHNONAG mix-up), sales-tax source (FRED ASLSTAX state-only annual
+vs BCKM federal+state+local quarterly), population denominator (CNP16OV
+includes 65+ vs BCKM working-age), durables-stock approximation. This
+session closed two of them — sales tax and population.
+
+**Sales tax — BEA replaces ASLSTAX** ✅
+
+User provided a BEA API key. After two failed attempts to install
+`us-bea/beaapi` from GitHub (CodeArtifact auth, then `bdist_wheel` build
+error), wrote a thin wrapper instead.
+
+New file `bca_core/data/bea.py` (236 lines): `BeaDataFetcher` class with
+disk cache at `~/.bca_cache/bea/`, `_request()` (raw GET against
+`https://apps.bea.gov/api/data/`), `fetch_nipa_table()`,
+`fetch_fixed_assets_table()`, plus convenience
+`fetch_us_sales_tax(start, end)` returning the BCKM `usdata.m:39`
+aggregate:
+
+```
+rSTX = federal excise (NIPA T30200 line 5)
+     + state-local sales (T30300 line 7)
+     + state-local excise (T30300 line 8)
+```
+
+quarterly SAAR, in millions of $. Smoke-tested end-to-end: 140 quarters
+clean, 1980Q1=$101.6B → 2014Q4=$642.5B.
+
+`bca_core/data/pipeline.py` gained a `bea_api_key` arg and a
+`use_bea_sales_tax=True` flag; auto-fetches the BEA series and adds a
+`sales_tax_bea` column to `raw`. Falls back silently to ASLSTAX if the
+BEA key is missing or fails.
+
+`bca_core/data/adjustments.py` `subtract_sales_tax` prefers
+`sales_tax_bea` when present, else `sales_tax_state` (legacy). Both
+paths feed the same Y/C/X allocation downstream.
+
+`.env` gained `BEA_API_KEY=...` (gitignored, append-only via shell since
+the file is read-protected by user permissions).
+
+**Walk-down impact (post-BEA, pre-population):**
+
+```
+Channel | pre-BEA mean | post-BEA mean | change
+y       | +0.000       | +0.000        | —
+l       | +0.040       | +0.040        | unchanged (labor not touched)
+x       | -0.039       | -0.023        | -41%
+g       | -0.069       | -0.034        | -50%
+```
+
+LL barely moved (-727 nats; expected — the labor channel still dominates).
+
+**Population — working-age 15-64 replaces civilian 16+** ✅
+
+BCKM `usdata.m` uses `pop = (civilian noninstitutional 16+) - (65+) +
+armed forces`. FRED retired CNP65OV, so the cleanest available proxy is
+`LFWA64TTUSQ647N` (OECD MEI Working Age Population: Aged 15-64,
+quarterly NSA). 15-64 instead of 16-64, and excludes armed forces — but
+drops the rapidly growing 65+ cohort that CNP16OV included (that cohort
+doubled from 25M → 50M over 1980-2014 and was the dominant reason our
+per-capita aggregates drifted vs BCKM).
+
+`bca_core/data/fred.py`:
+- `working_age_pop`: `CNP16OV` → `LFWA64TTUSQ647N`
+- `fetch_raw` divides the new series by 1000 (LFWA64 is in persons,
+  CNP16OV was in thousands; downstream `to_real_per_capita` expects
+  thousands and was kept unchanged)
+
+**Walk-down impact (post-population, after BEA):**
+
+```
+Channel | pre-pop max | post-pop max | change
+y       | 2.01e-02    | 2.01e-02     | -10% vs pre-BEA
+l       | 7.61e-02    | 7.61e-02     |  -7% vs pre-BEA
+x       | 3.78e-02    | 3.78e-02     | -28% vs pre-BEA
+g       | 6.87e-02    | 6.87e-02     | -30% vs pre-BEA
+
+Variance ratios (ours/bckm):
+y: 1.32 → 1.11   x: 1.04 → 0.96   g: 1.19 → 1.15
+```
+
+Overall mean|diff| across 4 channels: 0.039 → 0.025 — a **36% improvement
+at the data layer** vs pre-BEA baseline. LL dropped 30 nats (1676 → 1646)
+because BCKM's published Sbar/P/Q were calibrated on *their* slightly
+different Y_raw — a partial data shift can lower LL while shrinking
+per-channel diffs.
+
+### Tests
+
+79/79 pass. The pre-existing `test_single_wedge_uses_realized_inactive_columns`
+failure (flagged in the previous session as pre-existing and unrelated to
+the transpose fix) was fixed by a separate spawned task during this session
+and the suite is green throughout.
+
+### Repo state at session end
+
+Modified (uncommitted):
+- `bca_core/data/fred.py` (working_age_pop series swap + unit conversion)
+- `bca_core/data/pipeline.py` (BEA fetcher integration)
+- `bca_core/data/adjustments.py` (`subtract_sales_tax` prefers BEA col)
+- `data/us_1980_2014_calgz.parquet` + `.meta.json` (rebuilt)
+- `tests/test_counterfactuals.py` (spawned-task fix)
+- `BCA/CLAUDE.md` (P-transpose canonical-module note from earlier today,
+  if not yet committed)
+
+New files:
+- `bca_core/data/bea.py` (BEA fetcher)
+- `figure_2B.png`, `figure_2C.png`, `figure_2D.png`, `figure_2E.png`
+  (BCKM-faithful Figure 2 set, from earlier today)
+
+### Hours fix — probed and held
+
+Tried the third planned data fix (hours universe) and discovered it's not
+a simple swap. BEA T6.9 (Hours Worked by Full-Time and Part-Time Employees,
+the canonical BCKM `hours.dat` source) is **annual only** on BEA's API and
+on FRED (`B4701C0A222NBEA`). FRED has no quarterly equivalent.
+
+Tested four candidate quarterly proxies against BCKM `Y_raw[:,2]` over
+1980Q1–2014Q4 (cycle correlation, mean-centered RMSE, max|diff| live):
+
+| Series                            | corr  | RMSE_centered | live max|diff| |
+|-----------------------------------|-------|---------------|----------------|
+| PAYEMS × AWHNONAG (current)       | 0.913 | 0.0189        | **7.6e-02**    |
+| HOANBS (nonfarm bus, all wkrs)    | 0.934 | 0.0228        | 9.8e-02        |
+| PRS85006013 (employment idx)      | 0.956 | 0.0161        | (untested)     |
+| PRS85006023 (avg wkly hrs idx)    | -0.012 | 0.1317       | (landmine)     |
+
+Counterintuitive winner: the current `PAYEMS × AWHNONAG` (Frankenstein
+universe — all nonfarm employees × prod-nonsup-private avg weekly hours)
+beats HOANBS on the live max|diff| despite having a worse universe match.
+HOANBS's amplitude is too high because it excludes farm + government
+(~12% of hours, lower-volatility) — switching to it raised the labor-
+channel max|diff| from 7.6e-02 to 9.8e-02 and the variance ratio from
+1.31 to 1.88. Reverted.
+
+Surprise from the probe: **`PRS85006023` (the legacy "fallback" path
+in `compute_labor_input`) correlates -0.01 with BCKM** — pure noise.
+That path was a landmine: any sub-sample old enough to miss AWHNONAG
+(< 1964) would silently get a labor series with no cycle information.
+
+Outcome: kept `PAYEMS × AWHNONAG` as the default but added `HOANBS` to
+`FRED_SERIES` as `nonfarm_business_hours` (fetched but unused-by-default
+column). Documented the empirical ranking in `compute_labor_input`'s
+docstring with the corr/RMSE table so future sessions don't repeat the
+swap. The truly correct universe (BLS total economy hours) is reachable
+only via annual BEA `B4701C0A222NBEA` interpolated to quarterly with
+`HOANBS` as the within-year distribution proxy — left as a follow-up
+since it's nontrivial and the gain over PAYEMS×AWHNONAG is uncertain.
+
+### Net Stage-1 improvement after this session
+
+```
+Channel | baseline mean|diff| | post-BEA+pop | improvement
+y       | 8.6e-03             | 6.8e-03      | -21%
+l       | 4.0e-02             | 3.5e-02      | -12%
+x       | 3.9e-02             | 2.3e-02      | -41%
+g       | 6.8e-02             | 3.5e-02      | -49%
+overall | 3.9e-02             | 2.5e-02      | -36%
+```
+
+LL at BCKM-θ: 1677 (baseline) → 1646 (post-fixes). Slight regression
+in the LL scalar is expected — BCKM's published Sbar/P/Q are calibrated
+on their data, and a partial-but-not-complete data shift toward theirs
+can lower LL even while shrinking the per-channel diffs. The right
+metric is `max|diff|` against `Y_raw`, which is monotone improving.
+
+### Exact next step
+
+1. Commit BEA + population fixes + HOANBS-as-fetched-column +
+   PRS85006023-landmine-warning + Diary entry as one logical unit:
+   "BCKM-faithful data construction: BEA sales tax, working-age
+   population, hours-source audit." Single feature, multiple closely-
+   coupled changes.
+2. (Pending future session) Build the BEA-annual-hours-interpolated-by-
+   HOANBS-quarterly construction. Steps:
+   - Fetch `B4701C0A222NBEA` annual (millions of hours, total economy)
+   - For each quarter q in year y: `quarterly[q] = annual[y] *
+     HOANBS[q] / mean(HOANBS over qs of year y) / 4`
+   - Verify cycle correlation against BCKM Y_raw[:,2]; expect ≥ 0.95
+   - Replace `compute_labor_input`'s default if it beats current.
+3. Eventually: redo bootstrap and final f-stats once Stage-1 reaches
+   max|diff| < 1e-2 across all four channels.
+4. Pending user sign-off (CLAUDE.md "Asking Before Deviating"):
+   `params.a` = 12.56 vs BCKM `adja` = 12.88 — candidate close on
+   the residual ~176-nat LL gap from the P-transpose session.
+
+---
+
+## Session: 2026-04-30 (afternoon) — Chained-real X/G attempt + revert
+
+### What happened
+
+Read BCA_info.md §4 and `usdata.m:30-56` more closely and noticed BCKM's
+matlab construction uses **chained-real components with their own implicit
+deflators** for X and G (not the single-GDPDEF-on-nominal path we had):
+
+```matlab
+X = rCD + rGPDI + rGI − rCD./(rCND+rCS+rCD).*rSTX
+G = rGC + rEX − rIM
+```
+
+where each `r*` is `nominal/own_deflator*100`. Implemented this as:
+- `bea.py`: added `fetch_us_real_breakdowns()` returning `real_pce_*`,
+  `real_gov_investment`, `pce_deflator` from NIPA T10105/T10109/T30904/T30905.
+- `fred.py`: added `real_gov_consumption: A955RX1Q020SBEA`,
+  `real_net_exports: NETEXC`, `real_gpdi: GPDIC1`. Switched
+  `working_age_pop` from quarterly NSA `LFWA64TTUSQ647N` to annual
+  `LFWA64TTUSA647N` + cubic-spline-to-quarterly per BCA_info.md §4.
+- `pipeline.py`/`adjustments.py`: added chained-real X path
+  (`reclassify_durables` → `subtract_sales_tax` with PCE-deflator
+   sub-deflation + chained-real allocation shares → `pipeline.py`
+   skips GDPDEF for x_adj/g_raw and only divides by population).
+
+### Why we reverted
+
+Element-wise check against `worktemp.mat Y_raw` was decisive — the
+chained-real X/G + annual-pop-spline package was a **5× regression** on
+the data layer:
+
+| Channel | High-water (pre-fix) | Post-chained-real | Δ      |
+|---------|----------------------|-------------------|--------|
+| y       | mean\|diff\| 6.8e-3, var 1.11 | 6.6e-3, 1.06 | ≈    |
+| l       | 3.5e-2, var 1.31     | **1.34e-1, 0.16** | 4×     |
+| x       | 2.3e-2, var 0.96     | **1.38e-1, 8.45** | 6×, var 9× |
+| g       | 3.5e-2, var 1.15     | **2.10e-1, 2.37** | 6×     |
+| overall | 0.025                | **0.122**         | **5×** |
+
+LL at BCKM-θ collapsed +1646 → +538 (−1108 nats). Converged MLE LL
+went +2200ish → +1868. Each individual change was internally motivated,
+but the package made every channel except y much further from BCKM's
+actual `Y_raw` than the diary's documented high-water-mark.
+
+User flagged the regression: "First, McGrattan was my advisor and she
+would always tell us to no use FRED data and go to the original source.
+So let's put in CLAUDE.md that we should use BEA and BLS sources before
+moving to FRED. ... I am sure the paper didn't use FRED data unless it
+needed to. Are you telling me that after using BEA/BLS data our fit got
+worse?" — and pointed at the diary as the source of truth on prior data
+match. Diary confirmed: high-water-mark **was** documented, today's
+afternoon work regressed past it. Reverted.
+
+The mistake on my side: I conflated "BCKM published spec" (what the matlab
+*says* it does, per `usdata.m`) with "BCKM ground truth" (what `worktemp.mat`
+actually contains). The element-wise `Y_raw` comparison is what gates whether
+a data change is right — not the matlab spec. Multiple reasonable-looking
+edits to chase the spec compounded into a large empirical regression.
+
+### What was reverted
+
+- `bca_core/data/bea.py`: removed `fetch_us_real_breakdowns()` (kept
+  `fetch_us_sales_tax`).
+- `bca_core/data/fred.py`: removed `real_gov_consumption`, `real_net_exports`,
+  `real_gpdi`, `pce_deflator`. Reverted `working_age_pop` to
+  `LFWA64TTUSQ647N` (quarterly). Removed annual-frequency detection
+  + cubic-spline interpolation logic from `fetch_raw`.
+- `bca_core/data/adjustments.py`: `reclassify_durables` back to nominal
+  (`gpdi + pce_durables`). `subtract_sales_tax` back to nominal with
+  GDPDEF deflation downstream. `compute_government_wedge` back to
+  `gov_consumption + net_exports` nominal. Kept the empirical
+  hours-universe ranking docstring + HOANBS fallback.
+- `bca_core/data/pipeline.py`: removed BEA breakdown fetch + chained-real
+  X/G branches. Kept BEA sales tax fetch.
+
+### What was kept (still BEA/BLS-faithful, still works)
+
+- `bea.py:fetch_us_sales_tax` (BCKM `usdata.m:39` rSTX = federal excise +
+  state-local sales + state-local excise from NIPA T30200/T30300).
+- BEA sales tax preferred over FRED ASLSTAX in `subtract_sales_tax`.
+- `working_age_pop = LFWA64TTUSQ647N` (quarterly OECD MEI 15-64) — the
+  diary high-water-mark population.
+- HOANBS in `FRED_SERIES` as fetched-but-not-default (keeps the
+  diagnostic universe-correct fallback for sub-1964 samples).
+- PRS85006023 landmine warning in `compute_labor_input` docstring.
+- Empirical hours-universe ranking probe table in docstring.
+
+### CLAUDE.md update
+
+Added a new **"Data sources — BEA/BLS first, FRED only as fallback"**
+section under Methodology Rules. Codifies McGrattan's working rule and
+documents the FRED chain-rebase truncation issue we hit today
+(PCDGCC96 / PCNDGC96 / PCESVC96 / A782RX1Q020SBEA all drop pre-2007 on
+FRED). Source preference: BEA NIPA → BLS series-level → OECD MEI → FRED.
+
+### Verification (post-revert)
+
+```
+python scripts/diag_worktemp_compare.py   →
+  Stage 1 (Y_raw element-wise vs BCKM):
+    y: mean|diff|=6.8e-3  var ratio=1.11
+    l: mean|diff|=3.5e-2  var ratio=1.31
+    x: mean|diff|=2.3e-2  var ratio=0.96
+    g: mean|diff|=3.5e-2  var ratio=1.15
+    overall mean|diff| = 0.025  ✓ matches diary high-water-mark
+  Stage 4 (LL at BCKM-θ): +1646.32  ✓ matches diary 1646
+```
+
+Auto-permutation surfaced an unrelated curiosity: BCKM's
+`worktemp.mat:Y_raw` column order is `[y, x, l, g]`, not `[y, l, x, g]`
+(our convention). The diagnostic now uses `cols=(0, 2, 1, 3)` to map
+BCKM → ours. Doesn't affect anything in the pipeline (we only ever read
+`bckm.obs.{yt,ht,xt,gt,ct}` by name and `bckm.wedges.*` by name), but
+worth noting if anyone hand-reads `Y_raw`.
+
+74/74 fast tests still pass.
+
+### Repo state at session end
+
+Modified (uncommitted):
+- `CLAUDE.md` (BEA/BLS-first rule added)
+- `Diary.md` (this entry)
+- `bca_core/data/fred.py` (revert + diary high-water-mark)
+- `bca_core/data/pipeline.py` (revert + keep BEA sales tax)
+- `bca_core/data/adjustments.py` (revert + keep hours-ranking docs)
+- `bca_core/data/bea.py` (drop `fetch_us_real_breakdowns`)
+- `data/us_1980_2014_calgz.{parquet,meta.json}` (rebuilt)
+- `tests/test_counterfactuals.py` (from earlier today, unrelated)
+
+### Exact next step
+
+1. Commit the revert + CLAUDE.md BEA/BLS-first rule + diary as one
+   logical unit: "Revert chained-real X/G; codify BEA/BLS-first rule".
+2. Stage-3 wedge mismatch (τ_l, τ_x at BCKM-θ) is the unfinished
+   investigation — same bug we documented in `modular-soaring-oasis.md`,
+   not data-related. The data revert restored Stage-1; Stage-3 lives in
+   `bckm_state_space` / `_steady_state_kalman` / `_rts` / `extract_wedges_bckm_style`.
+3. Labor-channel residual (max\|diff\|=7.6e-2) remains the largest
+   per-channel gap in Stage 1. The BEA-annual-hours-interpolated-by-
+   HOANBS-quarterly probe (item #2 in the previous session's exact-next-step
+   list) is still pending and is likely the next data-side win — but only
+   after element-wise verification against `Y_raw[:,1]` (BCKM x-column,
+   per the new column-ordering note above).
+
+---
+
+## Appendix: 2026-04-27 — Step 8 scratch notes (merged from orphan `~/Documents/Diary.md`)
+
+The following block was found in `/Users/pedrotanureveloso/Documents/Diary.md`
+(outside the BCA project folder) and is preserved here verbatim. The
+canonical writeup of the same session is at line 651 above
+(`## Session: 2026-04-27 — Step 8 — Read the actual BCKM Matlab and re-plan`);
+this scratch version has a few unique framings (the explicit
+`X0 = [log(ks); log(zs); tauls; tauxs; log(gs); 1]` observation, the
+"`phi0` is mechanical linearization correction, not statistical sample-mean
+offset" insight) worth keeping.
+
+### Session: 2026-04-27 — Step 8 — Reading the actual BCKM Matlab files
+
+Read the canonical BCKM Matlab pipeline (`matlab_reference/datamine.m`,
+`maketrend.m`, `calgz.m`, `mleqadj.m`, `kfilter.m`, `fstats3.m`, plus
+`runmleadj.m` and `initmle.m` from earlier in the session). Multiple
+methodological assumptions baked into our Steps 3–7 turn out to be wrong,
+including one that may invalidate every f-statistic comparison we've made
+so far.
+
+**Major discrepancies, by impact:**
+
+1. **F-statistics computed wrong.** `fstats3.m` defines BCKM Table 11 as
+   GR-window (2008Q1–2011Q4) inverse-MSE normalized to sum-to-1
+   (`f(1,i) = 1/sum((dly−dlyc(:,i)).^2)`, then row-normalize). Our
+   `phi_statistics` was full-sample variance decomposition. Apples to
+   oranges; every "φ_y[A]=0.02 vs target 0.16" comparison in Steps 5/6/7
+   was comparing the wrong things.
+2. **Sample is 1980Q1–2015Q1 (T=140), not 1948–2014.** `datamine.m` line
+   65: `t = 1980.25:0.25:2015`. Step 6's extension to 1948 was based on an
+   older `usdata.m` vintage that the production pipeline never invokes.
+3. **γ is data-estimated via `fsolve`, not calibrated.** `maketrend.m` /
+   `calgz.m`: `gzt = fsolve(@calgz, 0)` — γ chosen so detrended log y_pc
+   has zero mean over the MLE sample. CLAUDE.md's "calibrated 1.9%/yr, do
+   NOT data-estimate" rule was wrong relative to BCKM. The fsolve gives
+   ~0.0047/qtr ≈ 1.88%/yr in practice, but it's *derived*, not fixed.
+4. **Data is base-year-normalized to ~1 around 2008Q1.** `maketrend.m`:
+   `mled = [t, ypc/ypc(by)*(1+gzt)^by, ...]`. Everything except hours
+   divided by `ypc(2008Q1)` and scaled by `(1+gz)^bind`. Puts data on the
+   same units as model SS, which is why `initmle.m`'s level-based fsolve
+   residuals are dimensionally clean. Step 7's log-deviation fsolve gave
+   nonsense Sbar values precisely because we lacked this normalization.
+5. **State has 6 dimensions, not 5 — `phi0` is a mechanical linearization
+   correction, not a statistical sample-mean offset.** `mleqadj.m`
+   lines 160–161, 231–232:
+   ```
+   X0   = [log(ks); log(zs); tauls; tauxs; log(gs); 1];   % 6th = const 1
+   Y0   = [log(ys); log(xs); log(ls); log(gs)];
+   phi0 = Y0 - C*X0(1:5);
+   C    = [C, phi0];                                       % phi0 in 6th col
+   ```
+   `phi0` is the gap between log-linearized policy at SS and SS observables
+   — zero for an exact log-linearization, small but non-zero in practice.
+   It is **not** the statistical sample-mean offset we used in Step 3.
+   BCKM's `Sbar` absorbs the data-vs-model SS drift; `phi0` only absorbs
+   linearization residual.
+6. **Optimizer perturbation is multiplicative `x*pb` with `pb=0.99`,
+   `nps=50`** (`runmleadj.m`). We use `0.99 + 0.02*uniform` (additive,
+   centered at 1).
+7. **Initial P is `0.995*eye(4)`, not BCKM Table 8** (`mleqadj.m` line 28).
+   Table 8 is the *result*; warm-starting at it may bias the optimizer
+   into a different basin than BCKM lands in.
+8. **Spectral-radius bound is 0.995, not 1.005** (`mleqadj.m` line 134).
+   Stricter than ours. We had relaxed to 1.005 to accommodate τ_l diag ≈
+   1.001, but BCKM achieves that diagonal *without* violating spectral
+   radius on the matrix as a whole.
+9. **Q has 10 lower-tri entries, no extra zeros.** I was wrong in Step 7's
+   diary entry about the g-shock row being constrained to zeros — the
+   `ind` vector in `mleqadj.m` line 59 has all 10 lower-tri entries
+   active. The zeros in `x0c` warm-start were prior-run converged values,
+   not enforced constraints.
+
+**Step 8.1 result on the broken Step 7 option-2 config:**
+```
+F-statistics (BCKM Table 11, GR window 2008Q1–2011Q4):
+                y      l      x
+efficiency 0.0396 0.0380 0.5165
+labor      0.0283 0.8844 0.1624
+investment 0.3654 0.0481 0.0223
+government 0.5667 0.0296 0.2988
+```
+| stat   | full-sample | GR-window | BCKM target |
+|--------|-------------|-----------|-------------|
+| fY[A]   | 0.06 | 0.04 | 0.16 |
+| fY[τ_l] | 0.03 | 0.03 | 0.46 |
+| fY[τ_x] | 0.03 | **0.37** | **0.32** ✓ |
+| fY[g]   | 0.87 | 0.57 | — |
+
+Investment-wedge f-stat lands almost exactly on the BCKM target when
+computed on the right window — validates τ_x identification and confirms
+hypothesis #1 (apples-to-oranges) was real for one cell. Other three cells
+still way off; the run was the broken Step 7 option-2 config (Sbar pinned,
+sample 1948–2014, max|eig|=1.008 — non-stationary). Need rerun after 8.2+
+for a clean f-stat comparison.
+

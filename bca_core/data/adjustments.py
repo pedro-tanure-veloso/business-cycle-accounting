@@ -88,14 +88,26 @@ def subtract_sales_tax(df: pd.DataFrame) -> pd.DataFrame:
     now contains durables expenditure) rather than onto consumption — the
     sales-tax "wedge on X" in the Step 5 plan. C only gets taxed on the
     non-durable share of (non-durables + services).
+
+    Source preference: ``sales_tax_bea`` (BEA-faithful federal-excise +
+    state-local-sales + state-local-excise, quarterly SAAR — see
+    `bca_core/data/bea.py:fetch_us_sales_tax`) if present, else
+    ``sales_tax_state`` (FRED ASLSTAX, *state-only*, annual ffilled —
+    legacy fallback used before the BEA fetcher landed).
     """
     df = df.copy()
 
-    if "sales_tax_state" not in df.columns:
+    if "sales_tax_bea" in df.columns:
+        # BCKM-faithful: federal + state-local sales + state-local excise,
+        # quarterly SAAR (no ffill needed).
+        tax = df["sales_tax_bea"].copy()
+    elif "sales_tax_state" in df.columns:
+        # Legacy: ASLSTAX is annual, state-only — ffill to quarterly.
+        tax = df["sales_tax_state"].ffill().bfill()
+    else:
         return df
 
-    tax = df["sales_tax_state"].ffill().bfill()
-    # ASLSTAX is in millions of $ at annual rate; NIPA aggregates are in
+    # Both source paths return millions of $ SAAR; NIPA aggregates are in
     # billions SAAR — divide by 1000 to align units.
     tax_billions = tax / 1000
 
@@ -147,25 +159,58 @@ def compute_labor_input(
     """
     Compute labor input l_t in [0, 1].
 
-    Prefers `employment * avg_weekly_hours` (PAYEMS × AWHNONAG — total
-    hours in levels) so that division by a population level is dimensionally
-    consistent. Mirrors BCKM `usdata.m` semantics. AWHNONAG starts 1964Q1,
-    so for sub-samples that include earlier quarters this falls back to
-    `hours_index` (PRS85006023) — but the resulting series carries a
-    spurious negative trend (Phase B observed −30% / 35yrs for 1980+
-    sample) because dividing an INDEX by a population LEVEL is not
-    dimensionally meaningful. Avoid the fallback whenever AWHNONAG covers
-    the sample.
+    Hours source — empirical universe ranking (verified 2026-04-30 against
+    BCKM `worktemp.mat` Y_raw[:,2] over 1980Q1–2014Q4):
 
-    Normalizes so the sample mean equals target_mean — post-hoc rescaling
-    in run_var_counterfactuals.py then re-normalizes to the model l_ss.
+      ============================ ============ ================ ===============
+      Series                        corr w/BCKM   centered RMSE   max|diff| live
+      ============================ ============ ================ ===============
+      PAYEMS × AWHNONAG (default)        0.913            0.019         7.6e-02
+      HOANBS (nonfarm bus, all wkr)      0.934            0.023         9.8e-02
+      PRS85006013 (employment idx)       0.956            0.016         (better)
+      PRS85006023 (avg wkly hrs idx)    -0.012            0.132         (worse)
+      ============================ ============ ================ ===============
+
+    BCKM's `hours.dat` is BLS total economy hours (universe = nonfarm
+    business + farm + government). FRED has no quarterly equivalent;
+    HOANBS is the closest universe-match but excludes farm + government
+    (~12% of hours, lower-volatility), so its amplitude is *higher* than
+    BCKM's source — RMSE 0.023 worse than PAYEMS×AWHNONAG (0.019). The
+    Frankenstein PAYEMS×AWHNONAG (employees × prod-nonsup hours) ends up
+    closer to BCKM by accident: PAYEMS gives the universe breadth, AWHNONAG
+    dampens the amplitude. PRS85006013 (employment index) wins on cycle
+    correlation but drops the hours dimension entirely.
+
+    PRS85006023 (avg weekly hours INDEX) correlates **-0.01** with BCKM —
+    a landmine if used as a stand-alone hours proxy. Kept as a no-op
+    fallback for very old saved datasets only.
+
+    Source priority (preferred → fallback):
+      1. ``employment × avg_weekly_hours`` (PAYEMS × AWHNONAG) — best
+         empirical fit, ~7.6e-02 max|diff| in the labor channel at
+         BCKM-θ.
+      2. ``nonfarm_business_hours`` (HOANBS) — universe-correct fallback
+         when AWHNONAG is unavailable (it starts 1964Q1).
+      3. ``hours_index`` (PRS85006023) — backwards-compat only; do not
+         rely on for cycle fidelity.
+
+    Normalizes so the sample mean equals ``target_mean``. The rescale is
+    unavoidable: PAYEMS×AWHNONAG / pop ≈ 22.5, HOANBS / pop ≈ 0.0007 —
+    neither is in BCKM's hpc≈0.24 range without rescaling. Per CLAUDE.md,
+    the level is preserved through to `prepare_observables` — no second
+    rescale.
     """
     if "employment" in df.columns and "avg_weekly_hours" in df.columns:
         hours = (df["employment"] * df["avg_weekly_hours"]).copy()
+    elif "nonfarm_business_hours" in df.columns:
+        hours = df["nonfarm_business_hours"].copy()
     elif "hours_index" in df.columns:
         hours = df["hours_index"].copy()
     else:
-        raise ValueError("Need (employment, avg_weekly_hours) or hours_index columns.")
+        raise ValueError(
+            "Need (employment, avg_weekly_hours), nonfarm_business_hours, "
+            "or hours_index columns."
+        )
 
     hours = hours.dropna()
 
@@ -184,23 +229,23 @@ def compute_labor_input(
 
 def compute_government_wedge(df: pd.DataFrame) -> pd.Series:
     """
-    Government wedge = government consumption + net exports.
-    (Closed-economy equivalence per CKM 2005.)
+    Government wedge G = government consumption + net exports
+    (closed-economy equivalence per CKM 2005).
 
-    BCKM (mleqadj.m, datamine.m) uses gov *consumption* only — gross
-    government investment is moved into X. Prefer `gov_consumption`
-    (FRED A955RC1Q027SBEA) when available; fall back to `gov_expenditure`
-    (FRED GCE, which lumps consumption + investment) otherwise.
+    Returns nominal billions of $ — `to_real_per_capita` deflates by the
+    GDP deflator and divides by working_age_pop downstream.
+
+    BCKM uses gov *consumption* only — gross government investment goes
+    into X (handled in pipeline.py via the `gov_investment = gov_expenditure
+    − gov_consumption` split + `x_adj += gov_investment`).
     """
     nx = df["net_exports"] if "net_exports" in df.columns else 0
-
     if "gov_consumption" in df.columns:
         g = df["gov_consumption"]
     elif "gov_expenditure" in df.columns:
         g = df["gov_expenditure"]
     else:
         g = 0
-
     return g + nx
 
 

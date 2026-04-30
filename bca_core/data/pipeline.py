@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from ..params import CalibrationParams
+from .bea import BeaDataFetcher
 from .fred import FredDataFetcher
 from .adjustments import (
     reclassify_durables,
@@ -26,6 +27,8 @@ def build_us_dataset(
     start: str = "1980Q1",
     end: str = "2014Q4",
     fred_api_key: str | None = None,
+    bea_api_key: str | None = None,
+    use_bea_sales_tax: bool = True,
     params: CalibrationParams | None = None,
     detrend_method: str = "linear",
     labor_target_mean: float = 0.25,
@@ -50,6 +53,14 @@ def build_us_dataset(
           - If the file exists → load and return immediately (no API needed).
           - If the file does not exist → fetch, process, save, then return.
         When None → always fetch from FRED (original behaviour).
+    bea_api_key : optional BEA API key. When provided (or pulled from the
+        BEA_API_KEY env var) and ``use_bea_sales_tax=True``, the pipeline
+        replaces FRED ASLSTAX (state-only, annual) with the BCKM-faithful
+        BEA aggregate: federal excise (NIPA T30200 line 5) + state-local
+        sales (T30300 line 7) + state-local excise (T30300 line 8),
+        quarterly SAAR. Falls back to ASLSTAX if the BEA key is missing.
+    use_bea_sales_tax : if False, force the legacy ASLSTAX path even when
+        a BEA key is available. Useful for ablations.
     detrend_method : "linear" (OLS / fixed-slope), "hp", or "calgz"
         (BCKM `maketrend.m`/`calgz.m` style — slope chosen so detrended
         log mean is 0 with trend pinned at ``base_year_quarter``).
@@ -90,6 +101,25 @@ def build_us_dataset(
     fetch_start = "1947-01-01"
     fetch_end = "2024-12-31"
     raw = fetcher.fetch_raw(start=fetch_start, end=fetch_end)
+
+    # BEA-faithful sales tax (federal excise + state-local sales + state-local
+    # excise; BCKM `usdata.m:39` rSTX). Quarterly SAAR, replaces the FRED
+    # ASLSTAX state-only annual series. Silent fallback if no BEA key — the
+    # downstream subtract_sales_tax sees the legacy column and warns nothing.
+    if use_bea_sales_tax:
+        try:
+            bea = BeaDataFetcher(api_key=bea_api_key)
+            stx = bea.fetch_us_sales_tax(start="1947-01-01", end="2024-12-31")
+            # Reindex onto the FRED quarter grid; BEA only covers 1947+ for
+            # NIPA T30300 (state-local), and downstream sample window starts
+            # 1980Q1 by default — outside coverage stays NaN.
+            raw["sales_tax_bea"] = stx.reindex(raw.index)
+        except (ValueError, RuntimeError) as e:
+            # ValueError = no API key configured; RuntimeError = BEA returned
+            # an Error block. In both cases fall back to ASLSTAX silently —
+            # the legacy column is still in `raw`.
+            print(f"  [pipeline] BEA sales-tax fetch failed ({e!s}); "
+                  "falling back to FRED ASLSTAX.")
 
     # Split government expenditure (GCE) into consumption + gross investment.
     # BCKM (mleqadj.m): G = gov_consumption + net_exports;

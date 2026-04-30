@@ -14,9 +14,12 @@ import pandas as pd
 # Labor input is constructed in levels as PAYEMS × AWHNONAG (employment ×
 # avg weekly hours), divided by working_age_pop, mirroring BCKM `usdata.m`
 # semantics. AWHNONAG starts 1964Q1, which limits this construction to
-# samples ≥1964Q1; for earlier sub-samples `hours_index` (PRS85006023, an
-# index) is used as a fallback even though dividing it by a population
-# level introduces a unit mismatch (Phase B caught this; see compute_labor_input).
+# samples ≥1964Q1; HOANBS is kept as a universe-correct fallback for
+# pre-1964 sub-samples (its variance is higher than BCKM's source — it
+# excludes farm + government — but it correlates 0.93 with BCKM, vs −0.01
+# for the legacy PRS85006023 path which is the average-weekly-hours INDEX
+# and carries no cycle information). See `compute_labor_input` for the
+# empirical ranking.
 FRED_SERIES = {
     # National accounts (quarterly, SAAR, billions of nominal $)
     "gdp": "GDP",
@@ -25,17 +28,34 @@ FRED_SERIES = {
     "pce_services": "PCESV",            # PCE services (rCS)
     "gpdi": "GPDI",                     # gross private domestic investment
     "gov_expenditure": "GCE",           # government consumption & investment combined
-    "gov_consumption": "A955RC1Q027SBEA",  # government consumption only (no investment)
-    "net_exports": "NETEXP",            # net exports
+    "gov_consumption": "A955RC1Q027SBEA",  # nominal gov consumption (no investment)
+    "net_exports": "NETEXP",            # nominal net exports
     # Price level
     "gdp_deflator": "GDPDEF",          # GDP implicit price deflator (index, 2017=100)
     # Tax
-    "sales_tax_state": "ASLSTAX",       # state government sales tax revenue (annual)
+    "sales_tax_state": "ASLSTAX",       # state government sales tax revenue (annual; legacy fallback — pipeline prefers BEA when key available)
     # Population & labor
-    "working_age_pop": "CNP16OV",       # civilian non-institutional pop 16+ (1948+)
-    "hours_index": "PRS85006023",       # nonfarm business hours INDEX (1947+, fallback only)
-    "employment": "PAYEMS",             # total nonfarm payrolls (thousands, monthly, 1939+)
-    "avg_weekly_hours": "AWHNONAG",     # avg weekly hours, prod & nonsup employees (1964+)
+    #
+    # working_age_pop: BCKM `usdata.m` uses
+    #   pop = (civilian noninstitutional 16+) - (civilian noninstitutional 65+) + (armed forces)
+    # i.e. working-age civilian + armed forces. FRED retired CNP65OV, so the
+    # cleanest available proxy is OECD MEI Working Age Population (Aged 15-64),
+    # quarterly NSA. 15-64 instead of 16-64, and excludes armed forces — but
+    # drops the rapidly growing 65+ cohort that CNP16OV included (that cohort
+    # doubled from ~25M to ~50M over 1980-2014 and was the dominant reason
+    # our per-capita aggregates drifted vs BCKM; fixed 2026-04-30).
+    # Units: persons (not thousands like CNP16OV); fetch_raw normalizes to
+    # thousands to keep `to_real_per_capita`'s scaling unchanged.
+    "working_age_pop": "LFWA64TTUSQ647N",  # OECD MEI 15-64, quarterly NSA, persons
+    # nonfarm_business_hours: BLS Productivity & Costs Nonfarm Business Hours
+    # of All Workers, quarterly index (2017=100). Universe-correct fallback
+    # for AWHNONAG-missing sub-samples (HOANBS starts 1947Q1; AWHNONAG starts
+    # 1964Q1). Verified via cycle-correlation probe on 2026-04-30: HOANBS
+    # corr=0.93 with BCKM, PAYEMS×AWHNONAG corr=0.91, PRS85006023 corr=−0.01.
+    "nonfarm_business_hours": "HOANBS",  # quarterly index, 1947+, BLS
+    "employment": "PAYEMS",             # total nonfarm payrolls (default labor input)
+    "avg_weekly_hours": "AWHNONAG",     # avg weekly hours, prod-nonsup (default labor input; 1964+)
+    "hours_index": "PRS85006023",       # avg weekly hours INDEX (legacy; do NOT use as cycle proxy — corr −0.01 with BCKM)
 }
 
 
@@ -95,7 +115,7 @@ class FredDataFetcher:
             s = self._fetch_series(sid, start, end)
             s = s.dropna()
 
-            # Detect frequency: monthly series have > 4 obs per year typically
+            # Detect frequency: monthly series have > 4 obs per year typically.
             if len(s) > 0:
                 date_range = (s.index[-1] - s.index[0]).days
                 obs_per_year = len(s) / max(date_range / 365.25, 1)
@@ -116,5 +136,15 @@ class FredDataFetcher:
         # Align to quarterly periods
         df = df.resample("QS").first()
         df = df.dropna(how="all")
+
+        # Unit normalization: OECD MEI LFWA64TT… is in persons but legacy
+        # code (and CNP16OV, the prior series) expects thousands. Convert
+        # here so `to_real_per_capita`'s scaling stays correct without
+        # further changes. Match the LFWA64TT prefix so both the quarterly
+        # (LFWA64TTUSQ647N) and any future annual (LFWA64TTUSA647N) variants
+        # are handled.
+        working_age_id = FRED_SERIES.get("working_age_pop", "")
+        if "working_age_pop" in df.columns and working_age_id.startswith("LFWA64TT"):
+            df["working_age_pop"] = df["working_age_pop"] / 1_000.0
 
         return df
