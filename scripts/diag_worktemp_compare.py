@@ -172,16 +172,21 @@ def main():
     print(f"  Gap (ours − |bckm|)           = {res['log_likelihood'] - abs(bckm.mle.likelihood):+.4f}")
     print(f"  → expecting bug: ~1170-1500 nats below BCKM at identical θ")
 
-    # ─── Stage 3: Smoothed wedges ────────────────────────────────────────────
+    # ─── Stage 3a: Smoother-derived wedges ───────────────────────────────────
     print("\n" + "=" * 80)
-    print("[Stage 3]  Smoothed wedges at BCKM-θ (base-normalized at bind)")
+    print("[Stage 3a]  Smoother-derived wedges at BCKM-θ (base-normalized at bind)")
     print("=" * 80)
 
     smoothed = res["smoothed_states"]    # (T, 5) — [k_hat, A_hat, taul_hat, taux_hat, g_hat]
     bind = bckm.bind
 
-    # Convert our HAT smoothed state to LEVELS, then base-normalize at bind.
-    # State convention: A_hat = log(z) - log(z_ss),  taul_hat = taul - taul_ss, etc.
+    # Convert our HAT smoothed state to LEVELS, then apply BCKM's specific
+    # transforms (gwedges2.m:191-198):
+    #   w.zt    = (Z/Z[bind]) ** (1-θ)        — not just a ratio
+    #   w.tault = (1-τ_l) / (1-τ_l[bind])     — uses labor NON-wedge, opposite sign
+    #   w.tauxt = (1+τ_x[bind]) / (1+τ_x)     — INVERTED, uses (1+τ_x)
+    #   w.gt    = g / g[bind]                 — simple ratio
+    # State convention: A_hat = log(z) - log(z_ss), taul_hat = τ_l − τ_l_ss, etc.
     A_hat = smoothed[:, 1]
     taul_hat = smoothed[:, 2]
     taux_hat = smoothed[:, 3]
@@ -197,10 +202,12 @@ def main():
     taux_lvl = taux_hat + taux_ss
     g_lvl = np.exp(g_hat + log_g_ss)
 
-    # Base-normalize at bind so [bind] = 1.0
-    zt_ours = z_lvl / z_lvl[bind]
-    tault_ours = taul_lvl / taul_lvl[bind]
-    tauxt_ours = taux_lvl / taux_lvl[bind]
+    theta = params.alpha  # BCKM `theta` = capital share = our `alpha`
+
+    # Apply BCKM transforms to match `worktemp.w.{zt,tault,tauxt,gt}`
+    zt_ours = (z_lvl / z_lvl[bind]) ** (1.0 - theta)
+    tault_ours = (1.0 - taul_lvl) / (1.0 - taul_lvl[bind])
+    tauxt_ours = (1.0 + taux_lvl[bind]) / (1.0 + taux_lvl)
     gt_ours = g_lvl / g_lvl[bind]
 
     zt_b = bckm.wedges["zt"].values
@@ -226,11 +233,91 @@ def main():
               f"{tauxt_ours[t]:.4f}/{tauxt_b[t]:.4f}    "
               f"{gt_ours[t]:.4f}/{gt_b[t]:.4f}")
 
+    # ─── Stage 3b: Analytical wedges via extract_wedges_bckm_style ──────────
+    # gwedges2.m-faithful path. Uses observation matrix H (NOT smoother) +
+    # gwedges2.m algebra. This is the path BCKM's worktemp.mat actually
+    # populates (`tault`/`tauxt` are produced by gwedges2.m, not the filter).
+    print("\n" + "=" * 80)
+    print("[Stage 3b]  Analytical wedges (gwedges2.m / extract_wedges_bckm_style)")
+    print("=" * 80)
+
+    from bca_core.wedges import extract_wedges_bckm_style
+    H_bckm = res["H"]
+    obs_offset_wedge = res["obs_offset_wedge"]
+    print(f"  H matrix shape = {H_bckm.shape}; col convention = [k, z, τ_l, τ_x, g]")
+    print(f"  H[2] (x-equation row) = {np.array2string(H_bckm[2], precision=4)}")
+    print(f"    h_x[3] (τ_x divisor) = {H_bckm[2, 3]:+.6f}  (zero or sign-flip would explode τ_x)")
+    print(f"  obs_offset_wedge = {np.array2string(obs_offset_wedge, precision=4)}")
+
+    states_analytic = extract_wedges_bckm_style(
+        obs_hat, obs_offset_wedge, H_bckm, ss_new, params,
+    )
+    # states_analytic columns = [log_k_hat, log_z_hat, taul_hat (level dev),
+    #                            taux_hat (level dev), log_g_hat]
+    A_hat_an = states_analytic[:, 1]
+    taul_hat_an = states_analytic[:, 2]
+    taux_hat_an = states_analytic[:, 3]
+    g_hat_an = states_analytic[:, 4]
+
+    z_lvl_an = np.exp(A_hat_an + log_z_ss)
+    taul_lvl_an = taul_hat_an + taul_ss
+    taux_lvl_an = taux_hat_an + taux_ss
+    g_lvl_an = np.exp(g_hat_an + log_g_ss)
+
+    # Same BCKM transforms (gwedges2.m:191-198)
+    zt_ours_an = (z_lvl_an / z_lvl_an[bind]) ** (1.0 - theta)
+    tault_ours_an = (1.0 - taul_lvl_an) / (1.0 - taul_lvl_an[bind])
+    tauxt_ours_an = (1.0 + taux_lvl_an[bind]) / (1.0 + taux_lvl_an)
+    gt_ours_an = g_lvl_an / g_lvl_an[bind]
+
+    print(f"\n  Analytical level wedges base-normalized at bind={bind}:")
+    _print_diff("zt    (efficiency)",    zt_ours_an, zt_b)
+    _print_diff("tault (labor)",         tault_ours_an, tault_b)
+    _print_diff("tauxt (investment)",    tauxt_ours_an, tauxt_b)
+    _print_diff("gt    (government)",    gt_ours_an, gt_b)
+
+    print(f"\n  Sample rows (ours-analytical | bckm) at GR window:")
+    print(f"    {'date':12s}  {'zt':>14s}  {'tault':>14s}  {'tauxt':>14s}  {'gt':>14s}")
+    for label, t in [("2007Q4", bind - 1), ("2008Q1 bind", bind),
+                     ("2008Q4", bind + 3), ("2009Q3 trough", bind + 6),
+                     ("2010Q4", bind + 11)]:
+        print(f"    {label:13s}  "
+              f"{zt_ours_an[t]:.4f}/{zt_b[t]:.4f}    "
+              f"{tault_ours_an[t]:.4f}/{tault_b[t]:.4f}    "
+              f"{tauxt_ours_an[t]:.4f}/{tauxt_b[t]:.4f}    "
+              f"{gt_ours_an[t]:.4f}/{gt_b[t]:.4f}")
+
+    # ─── Stage 3c: Smoother-vs-analytical (which one's the bug?) ─────────────
+    print("\n" + "=" * 80)
+    print("[Stage 3c]  Smoother vs Analytical (which one matches BCKM?)")
+    print("=" * 80)
+    print(f"  {'channel':10s}  {'smoother mean|diff|':>22s}  {'analytic mean|diff|':>22s}  {'verdict':>16s}")
+    for name, sm, an, b in [
+        ("zt",    zt_ours,    zt_ours_an,    zt_b),
+        ("tault", tault_ours, tault_ours_an, tault_b),
+        ("tauxt", tauxt_ours, tauxt_ours_an, tauxt_b),
+        ("gt",    gt_ours,    gt_ours_an,    gt_b),
+    ]:
+        d_sm = float(np.mean(np.abs(sm - b)))
+        d_an = float(np.mean(np.abs(an - b)))
+        if d_an < d_sm * 0.5:
+            verdict = "ANALYTIC WINS"
+        elif d_sm < d_an * 0.5:
+            verdict = "SMOOTHER WINS"
+        else:
+            verdict = "tie"
+        print(f"  {name:10s}  {d_sm:>22.4e}  {d_an:>22.4e}  {verdict:>16s}")
+
     # ─── Summary verdict ─────────────────────────────────────────────────────
     print("\n" + "=" * 80)
     print("[Verdict]  Decision tree:")
     print("=" * 80)
     print("  Walk down the print order.  First stage with max|diff| > 1e-3 is the bug.")
+    print()
+    print("  KEY: the Stage 3a/3b mean|diff| should be on the SAME order as Stage 1's")
+    print("       (currently ~0.02-0.03). If wedge gap >> data gap, transforms are wrong.")
+    print("       BCKM stores w.zt=(z/z[bind])^(1-θ), w.tault=(1-τ_l)/(1-τ_l[bind]),")
+    print("       w.tauxt=(1+τ_x[bind])/(1+τ_x), w.gt=g/g[bind] — see gwedges2.m:191-198.")
     print()
     print("  Stage 1 (raw obs):  if differs, fix lives in `bca_core/data/pipeline.py`")
     print("                      or `prepare_observables` (column ordering, detrending).")
