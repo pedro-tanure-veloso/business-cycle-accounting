@@ -47,7 +47,23 @@ class BckmReference:
     obs: pd.DataFrame             # columns yt, ht, xt, gt, ct (base-normalized)
     wedges: pd.DataFrame          # columns zt, tault, tauxt, gt (base-normalized)
     components: pd.DataFrame      # mzy, mly, mxy, mgy, mzh, ..., mgc (24 cols)
-    Y_raw: np.ndarray             # (T, 6) raw observation matrix used by KF
+    Y_raw: np.ndarray             # (T, 6) raw observation matrix used by KF.
+                                  # Column order is BCKM-native, NOT our pipeline's:
+                                  #   col 0: y (output, growth-detrended log)
+                                  #   col 1: x (investment, growth-detrended log)
+                                  #   col 2: h (labor/hours, NOT growth-detrended;
+                                  #            constant trend per maketrend.m:18-20)
+                                  #   col 3: g (government, growth-detrended log)
+                                  #   col 4: c (real PCE, growth-detrended log)
+                                  #   col 5: c (implied = y-x-g, growth-detrended log)
+                                  # Cols 4 and 5 are eps-identical because BCKM's
+                                  # data construction enforces the accounting
+                                  # identity y ≈ x + g + c. Our pipeline emits
+                                  # 4 observables ordered [y, l, x, g], so to
+                                  # compare element-wise with Y_raw use the
+                                  # permutation (0, 2, 1, 3) — i.e. swap l↔x.
+                                  # Source: matlab_reference/maketrend.m lines
+                                  # 15-20 (mled cols 2..7).
     mle: BckmMle
     tables: dict[str, np.ndarray]  # pre-computed table II/III arrays
 
