@@ -341,6 +341,32 @@ FRED only when the original source has no equivalent.** BCKM's `usdata.m` does
 exactly this: every series in their construction is sourced from BEA NIPA
 tables or BLS series-level files, not aggregated FRED tickers.
 
+**Apparent OECD-vs-NIPA contradiction with the paper text — resolved.**
+`BCA_info.md` §4 says "data come mainly from OECD" — true, but specifically
+about the 24-country **cross-country** exercise (paper's Tables III/IV).
+For the **US-specific MLE block** (Tables 8/9/10/11, our validation target),
+McGrattan used NIPA + BLS instead. Three pieces of evidence pin this:
+1. `matlab_reference/usdata.m` loads `nipa115/116/119/32/33/394/395.dat`
+   (BEA NIPA Tables 1.1.5/1.1.6/1.1.9/3.2/3.3/3.9.4/3.9.5), `atab10d.dat`
+   and `btab100d.dat` (BEA Fixed Asset tables), `hours.dat` (BLS), and
+   `civpop.dat`/`armed.dat` (BLS Current Population Survey + DoD). No
+   OECD codes appear anywhere.
+2. `usdata.m:101` writes `worktemp.mat` directly. There is no
+   `oecddata.m` or any other US-data construction script in
+   `matlab_reference/`.
+3. `worktemp.mat`'s `(Sbar, P, Q)` plugged through our pipeline produces
+   f-stats matching Table 11 to ~0.01 in every channel — so `usdata.m`
+   IS what produced the paper's US headline tables.
+
+`BCA_info.md` §4 line 175 acknowledges this implicitly: "while the U.S.
+NIPA accounts have quarterly data on consumer durable expenditures for
+the 1980:1–2014:4 sample we use, the OECD has more limited data."
+
+Implication: do **not** redo the US data layer in OECD — it would
+diverge from `worktemp.mat:Y_raw` element-wise. If we ever extend BCA
+to other countries (Tables III/IV), we'll need a separate OECD pipeline,
+but that's out of scope until the US Table 11 replication is closed.
+
 Why this matters for replication:
 - FRED republishes BEA/BLS series but sometimes truncates them when BEA
   rebases the chain index (e.g. `PCDGCC96`, `PCNDGC96`, `PCESVC96`,
