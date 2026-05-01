@@ -70,6 +70,45 @@ is the durable memory.
 
 ### Findings (most recent first)
 
+- **2026-05-01 — x-channel BEA migration FAILS Stage-1 gate due to BEA
+  vintage drift; FRED-x is already an exceptionally tight match to BCKM
+  growth and is the right default. Don't migrate x to BEA.** Step 3 of
+  the migration plan: `x_source="bea"` flag plumbed in
+  (`bca_core/data/pipeline.py`); BEA branch reuses
+  `fetch_real_components` per `usdata.m:53`:
+  ``X = rCD + rGPDI + rGI − (rCD/(rCND+rCS+rCD))·rSTX``. Stage-1 gate
+  (`scripts/diag_gate_x_channel.py`, bind-anchored log-deviation form
+  to cancel detrending-anchor constants):
+  FRED mean|diff|=**0.0065**, BEA mean|diff|=**0.1535** — BEA is
+  **23× worse than FRED**. Component decomposition
+  (`scripts/diag_x_components.py`): our BEA rCD log-grew +1.55 nats
+  1980→2008 (≈+5.7%/yr nominal-real), rGPDI +1.02 nats (+3.6%/yr),
+  rGI +0.77 nats (+2.7%/yr). BCKM-implied total X growth over the
+  same window is +0.679 nats; ours is +1.06 nats — a ~14pp
+  cumulative excess. **Not a construction bug.** All five components
+  match BCKM `usdata.m:30-38,53` formulas exactly (recon
+  `scripts/diag_bea_fa_lines.py` + `bca_core/data/bea.py:354-357`
+  comments verify the modern T10105/T10106/T10109/T30904/T30905 line
+  mappings against BCKM's pre-quarterized .dat snapshots). The gap is
+  **BEA NIPA vintage drift**: BCKM ran 2014; the chain-real series
+  have been rebased and back-revised through 2018, 2023+
+  comprehensive revisions, shifting historical levels by 1-3% per
+  series and cumulating to ~14pp over 28 years. FRED-x's
+  single-deflator approach (`(GPDI + pce_durables + gov_inv)/GDPDEF`)
+  happens to cancel this drift cleanly because GDPDEF rebases and the
+  nominal numerator's historical revisions partially offset.
+  **Resolution**: keep `x_source="fred"` as default — already the
+  best gate result of any channel. Commit `x_source="bea"` as
+  diagnostic-only opt-in (parallel to g). The original Stage-1
+  walkdown's −0.023 x bias (`scripts/diag_worktemp_compare.py`) is
+  almost entirely a level offset, NOT a growth disagreement —
+  bind-anchored growth gap is just 0.0065 (FRED) and falls inside
+  numerical precision of BCKM's `maketrend.m:15` ypc(by) anchor.
+  79/79 fast tests still pass with FRED default. Implication for the
+  data-layer LL gap: **x is not a leverage point** — the residual gap
+  must live in g (still on FRED) and l (variance-ratio 1.31, also
+  FRED).
+
 - **2026-05-01 — y-channel BEA migration PASSES Stage-1 gate; y is not
   where the data-construction gap lives. x and g are.** Step 4 of the
   BEA NIPA migration is complete: `BeaDataFetcher.fetch_durables_components`

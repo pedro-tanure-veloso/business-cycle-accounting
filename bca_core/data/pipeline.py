@@ -37,6 +37,7 @@ def build_us_dataset(
     base_year_quarter: str | None = None,
     g_source: str = "fred",
     y_source: str = "fred",
+    x_source: str = "fred",
 ) -> tuple[pd.DataFrame, dict]:
     """
     Build the adjusted US dataset for BCA.
@@ -116,6 +117,23 @@ def build_us_dataset(
         Bypasses ``reclassify_durables`` and ``subtract_sales_tax`` for
         the y channel only — c/x/l/g unchanged. Requires a BEA API key
         (or warm cache).
+    x_source : "fred" (default, legacy) or "bea". When "bea", the
+        investment channel is reconstructed BCKM-faithful per
+        ``usdata.m:53``::
+
+            X = rCD + rGPDI + rGI − (rCD/(rCND+rCS+rCD))·rSTX_real
+
+        where rCD/rCND/rCS/rGPDI/rGI/pPCE all come from
+        :meth:`BeaDataFetcher.fetch_real_components` (chain-real
+        components per ``usdata.m:30-38``). The ``rCD`` term moves
+        consumer-durables expenditure flow into investment (BCA
+        convention: durables are investment, not consumption); the
+        last term subtracts the durables-share of sales tax (the
+        portion of rSTX falling on durables, treated as a sales-tax
+        wedge on investment). Bypasses the FRED-path
+        ``reclassify_durables`` (perpetual-inventory durables stock)
+        and the FRED ``gov_investment`` aggregate. Requires a BEA API
+        key (or warm cache).
 
     Returns
     -------
@@ -245,6 +263,49 @@ def build_us_dataset(
     elif y_source != "fred":
         raise ValueError(
             f"y_source must be 'fred' or 'bea', got {y_source!r}"
+        )
+
+    # ── BEA NIPA override for x channel (Step 3 of BEA migration) ────────
+    # BCKM `usdata.m:53`:
+    #     X = rCD + rGPDI + rGI − (rCD/(rCND+rCS+rCD))·rSTX
+    # where every component is real-2017-$. rCD / rCND / rCS come from
+    # nominal PCE / chain-deflator * 100 (NOT chain-real T10106 directly,
+    # because the chain-real subaggregates are non-additive — BCKM
+    # specifically uses the deflator-divided form per `usdata.m:30-32`).
+    # rGPDI is taken directly from T10106 line 7 (chain-real GPDI is
+    # a published top-line series, fine to use as-is). rGI is built
+    # the same way as rGC: nominal gov investment / pGI deflator * 100,
+    # because T30906 (real chained gov-investment) doesn't extend back
+    # before 2009 in some BEA snapshots.
+    #
+    # Replaces ``adj["x_real_pc"]`` only; y/c/g/l unchanged. Per-capita
+    # scaling identical to FRED path: panel in millions of $; pop in
+    # thousands → multiply by 1000.
+    if x_source == "bea":
+        bea = BeaDataFetcher(api_key=bea_api_key)
+        real_panel = bea.fetch_real_components(start_year=1980, end_year=2014)
+        stx_nom = bea.fetch_us_sales_tax(start="1980-01-01", end="2014-12-31")
+        # rSTX in real-2017-$ — divide nominal sales tax aggregate by
+        # PCE deflator (BCKM `nipa119(4,T)` = T10109 line 2). Same
+        # construction as the y branch above; not reused via a helper
+        # because the y branch may not have run.
+        rSTX_real = stx_nom / real_panel["pPCE"] * 100
+        rCD = real_panel["rCD"]
+        rCND = real_panel["rCND"]
+        rCS = real_panel["rCS"]
+        rGPDI = real_panel["rGPDI"]
+        rGI = real_panel["rGI"]
+        # Durables share of total non-services PCE; weights the rSTX
+        # subtraction so only the durables-portion of sales tax is
+        # subtracted from investment (the rest falls on consumption,
+        # subtracted from the c-channel by `subtract_sales_tax`).
+        cd_share = rCD / (rCND + rCS + rCD)
+        X_real_M = rCD + rGPDI + rGI - cd_share * rSTX_real
+        X_real_M = X_real_M.reindex(adj.index)
+        adj["x_real_pc"] = X_real_M * 1000.0 / adj["working_age_pop"]
+    elif x_source != "fred":
+        raise ValueError(
+            f"x_source must be 'fred' or 'bea', got {x_source!r}"
         )
 
     start_dt = pd.Timestamp(pd.Period(start, freq="Q").start_time)
