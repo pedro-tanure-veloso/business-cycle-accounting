@@ -80,7 +80,10 @@ from bca_core.constants import (
     SBAR_BCKM_TABLE8 as SBAR_BCKM,
 )
 
-PARQUET_PATH = Path(__file__).resolve().parent.parent / "data" / "us_1980_2014_calgz.parquet"
+PARQUET_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "bckm_replication" / "data" / "us_1980_2014_calgz.parquet"
+)
 
 
 pytestmark = pytest.mark.skipif(

@@ -5,7 +5,7 @@ BCKM's quarterly grid, and reports RMSE per series. Saves a 2x2 plot for
 visual inspection.
 
 Usage:
-    python scripts/compare_observables.py --data data/us_1980_2014_calgz.parquet
+    python scripts/compare_observables.py --data bckm_replication/data/us_1980_2014_calgz.parquet
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def base_normalize(series: pd.Series, base_period: pd.Period) -> pd.Series:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data", default="data/us_1980_2014_calgz.parquet")
+    parser.add_argument("--data", default="bckm_replication/data/us_1980_2014_calgz.parquet")
     parser.add_argument("--out", default="figure_observables_compare.png")
     args = parser.parse_args()
 

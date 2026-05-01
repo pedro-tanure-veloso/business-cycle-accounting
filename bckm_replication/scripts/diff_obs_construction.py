@@ -31,7 +31,7 @@ from bca_core.var_estimation import prepare_observables
 
 def main():
     # --- 1. Build BCKM Y[t] from the dumped CSV ---------------------------
-    bckm_raw = pd.read_csv("octave_output/bckm_obs_raw.csv")
+    bckm_raw = pd.read_csv("bckm_replication/octave_output/bckm_obs_raw.csv")
     # Columns: time, ypc, xpc, hpc, gpc, cpc
     gz = 0.004725592524
     T = len(bckm_raw)
@@ -58,7 +58,7 @@ def main():
     # --- 2. Build our obs_hat from the parquet ----------------------------
     df, _meta = build_us_dataset(
         start="1980Q1", end="2014Q4",
-        data_path="data/us_1980_2014_calgz.parquet",
+        data_path="bckm_replication/data/us_1980_2014_calgz.parquet",
         detrend_method="calgz", base_year_quarter="2008Q1",
     )
     g_share_data = float(df["g"].mean() / df["y"].mean())

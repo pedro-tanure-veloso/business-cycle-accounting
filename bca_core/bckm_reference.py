@@ -1,4 +1,4 @@
-"""Loader for the BCKM matlab reference (`matlab_reference/worktemp.mat`).
+"""Loader for the BCKM matlab reference (``bckm_replication/matlab_reference/worktemp.mat``).
 
 Provides numerical ground-truth for cross-validation: observables and
 smoothed wedges base-normalized at 2008Q1, the final MLE parameters, the
@@ -15,7 +15,10 @@ import pandas as pd
 import scipy.io as sio
 
 
-DEFAULT_MAT_PATH = Path(__file__).resolve().parent.parent / "matlab_reference" / "worktemp.mat"
+DEFAULT_MAT_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "bckm_replication" / "matlab_reference" / "worktemp.mat"
+)
 
 
 @dataclass(frozen=True)

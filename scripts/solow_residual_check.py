@@ -44,10 +44,16 @@ def perpetual_inventory(x: np.ndarray, k0: float, delta: float,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data", default="data/us_1980_2014_calgz.parquet")
+    parser.add_argument(
+        "--data",
+        default="bckm_replication/data/us_1980_2014_calgz.parquet",
+    )
     parser.add_argument("--dump", default=None,
                         help="Optional: MLE dump from --dump-mle for smoother overlay.")
-    parser.add_argument("--out", default="figure_solow_residual.png")
+    parser.add_argument(
+        "--out",
+        default="bckm_replication/figures/figure_solow_residual.png",
+    )
     args = parser.parse_args()
 
     print(f"Loading dataset {args.data} ...")

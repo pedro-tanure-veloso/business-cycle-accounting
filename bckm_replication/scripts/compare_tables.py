@@ -113,7 +113,7 @@ def report_block(title: str, ours: np.ndarray, bckm: np.ndarray,
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dump", default="data/mle_dump_phase_c.npz")
-    parser.add_argument("--data", default="data/us_1980_2014_calgz.parquet")
+    parser.add_argument("--data", default="bckm_replication/data/us_1980_2014_calgz.parquet")
     args = parser.parse_args()
 
     print(f"Loading MLE dump from {args.dump} ...")

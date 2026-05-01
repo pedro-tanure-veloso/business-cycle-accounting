@@ -154,7 +154,7 @@ def to_real_per_capita(df: pd.DataFrame, series_cols: list[str]) -> pd.DataFrame
 
 def compute_labor_input(
     df: pd.DataFrame,
-    target_mean: float = 0.24279,
+    target_mean: float | None = 0.24279,
 ) -> pd.Series:
     """
     Compute labor input l_t in [0, 1].
@@ -194,11 +194,17 @@ def compute_labor_input(
       3. ``hours_index`` (PRS85006023) — backwards-compat only; do not
          rely on for cycle fidelity.
 
-    Normalizes so the sample mean equals ``target_mean``. The rescale is
-    unavoidable: PAYEMS×AWHNONAG / pop ≈ 22.5, HOANBS / pop ≈ 0.0007 —
-    neither is in BCKM's hpc≈0.24 range without rescaling. Per CLAUDE.md,
-    the level is preserved through to `prepare_observables` — no second
-    rescale.
+    Normalizes so the (full-FRED-range) mean equals ``target_mean``.
+    Pass ``target_mean=None`` to skip the rescale entirely (the caller
+    receives raw hours-per-capita in the units PAYEMS×AWHNONAG/pop
+    produces — useful for non-BCKM-1980-2014 windows where anchoring
+    to BCKM's hpc level would inject a phantom level offset).
+
+    The rescale is needed for BCKM-faithful 1980-2014:
+    PAYEMS×AWHNONAG / pop ≈ 22.5, HOANBS / pop ≈ 0.0007 — neither is
+    in BCKM's hpc≈0.24 range without rescaling. Per CLAUDE.md, when
+    rescaled, the level is preserved through to `prepare_observables`
+    — no second rescale.
 
     target_mean=0.24279 source: BCKM's worktemp.mat Y_raw[:, 2] (the
     growth-detrended log-hours-per-capita BCKM's KF actually consumes)
@@ -238,8 +244,11 @@ def compute_labor_input(
     else:
         hours_pc = hours
 
-    # Normalize to target mean
-    labor = hours_pc * (target_mean / hours_pc.mean())
+    # Normalize to target mean (skip if caller opted out via None)
+    if target_mean is not None:
+        labor = hours_pc * (target_mean / hours_pc.mean())
+    else:
+        labor = hours_pc
 
     return labor
 
@@ -271,6 +280,7 @@ def remove_trend(
     method: str = "linear",
     fixed_slope: float | None = None,
     base_idx: int | None = None,
+    fit_idx_range: tuple[int, int] | None = None,
 ) -> tuple[pd.Series, dict]:
     """
     Remove trend from log of a series.
@@ -289,6 +299,16 @@ def remove_trend(
         Required for ``method="calgz"``. The fitted trend passes through
         ``log(series[base_idx])`` exactly, and the slope is the unique
         value that makes ``mean(log(detrended)) = 0`` simultaneously.
+    fit_idx_range : optional ``(start, end)`` 0-indexed inclusive window
+        within ``series`` to use **only** for slope estimation; the fitted
+        trend is then applied to the **full** series. Default ``None`` →
+        slope is fit on the full series (the BCKM-faithful behavior used
+        for the 1980Q1–2014Q4 replication). Useful for windows that
+        contain a structural anomaly (e.g. COVID 2020Q2): set
+        ``fit_idx_range=(0, idx_of_2019Q4)`` to fit slope on pre-COVID
+        data and extrapolate the trend through the COVID dip and recovery,
+        avoiding the upward tilt the anomaly would otherwise impart.
+        Only supported for ``method="calgz"``.
 
     Returns
     -------
@@ -298,6 +318,12 @@ def remove_trend(
     log_s = np.log(series.values)
     T = len(log_s)
     t = np.arange(T)
+
+    if fit_idx_range is not None and method != "calgz":
+        raise ValueError(
+            "fit_idx_range is only supported for method='calgz' "
+            f"(got method={method!r})."
+        )
 
     if method == "linear":
         if fixed_slope is not None:
@@ -316,26 +342,53 @@ def remove_trend(
         # which is closed-form (no fsolve needed):
         #   γ_q = (mean(log_s) − log_s[by]) / (mean(t) − by)
         # The intercept is then pinned by log(detrended[by]) = 0.
+        # When ``fit_idx_range`` is provided, the slope-defining mean is
+        # taken over the sub-window only, while the trend anchor remains
+        # at the full-series ``base_idx``. The math:
+        #   slope · (mean(t_subwindow) − base_idx)
+        #     = mean(log_s_subwindow) − log_s[base_idx]
+        # which reduces to the existing formula when subwindow = full
+        # series.
         if base_idx is None:
             raise ValueError("method='calgz' requires base_idx to be set.")
         if not (0 <= base_idx < T):
             raise ValueError(
                 f"base_idx={base_idx} out of range for series length {T}."
             )
-        denom = float(np.mean(t)) - float(base_idx)
+
+        if fit_idx_range is None:
+            log_s_fit = log_s
+            t_fit = t
+        else:
+            fit_start, fit_end = fit_idx_range
+            if not (0 <= fit_start <= fit_end < T):
+                raise ValueError(
+                    f"fit_idx_range={fit_idx_range} out of range for series "
+                    f"length {T} (need 0 <= start <= end < T)."
+                )
+            log_s_fit = log_s[fit_start : fit_end + 1]
+            t_fit = t[fit_start : fit_end + 1]
+
+        denom = float(np.mean(t_fit)) - float(base_idx)
         if abs(denom) < 1e-12:
             raise ValueError(
-                "calgz: base_idx coincides with the sample-mean t — slope is "
-                "undetermined. Choose a base period away from the midpoint."
+                "calgz: base_idx coincides with the slope-fit window mean t "
+                "— slope is undetermined. Choose a base period away from the "
+                "midpoint of the fit window."
             )
-        slope = float((np.mean(log_s) - log_s[base_idx]) / denom)
+        slope = float((np.mean(log_s_fit) - log_s[base_idx]) / denom)
         intercept = float(log_s[base_idx] - slope * base_idx)
+        # Trend is applied to the full series (t), even when fit on a
+        # sub-window — this is the "fit on pre-COVID, extrapolate forward"
+        # behavior.
         trend = intercept + slope * t
         detrended_log = log_s - trend
         trend_info = {
             "slope": slope, "intercept": intercept, "method": "calgz",
             "base_idx": base_idx,
         }
+        if fit_idx_range is not None:
+            trend_info["fit_idx_range"] = fit_idx_range
     elif method == "hp":
         cycle, trend_vals = hpfilter(log_s, lamb=1600)
         detrended_log = cycle

@@ -1,14 +1,16 @@
-"""Smoke test for ``scripts/diag_tx_counterfactual.py``.
+"""Smoke test for ``bckm_replication/scripts/diag_tx_counterfactual.py``.
 
-Skipped when ``data/us_1980_2014_calgz.parquet`` is missing — the script
-needs the full US dataset to evaluate at BCKM-θ. When the data is present,
-running ``main()`` is the high-level regression check that future refactors
-of ``solve_counterfactual`` / ``run_counterfactual`` do not reintroduce the
-2026-04-29 cf-fix bugs (the script asserts ``max diff`` between all-active
-CF policies and H is below 1e-8 in its own output).
+Skipped when ``bckm_replication/data/us_1980_2014_calgz.parquet`` is
+missing — the script needs the full US dataset to evaluate at BCKM-θ.
+When the data is present, running ``main()`` is the high-level
+regression check that future refactors of ``solve_counterfactual`` /
+``run_counterfactual`` do not reintroduce the 2026-04-29 cf-fix bugs
+(the script asserts ``max diff`` between all-active CF policies and H
+is below 1e-8 in its own output).
 """
 from __future__ import annotations
 
+import importlib.util
 import io
 import os
 import sys
@@ -18,7 +20,10 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DATA_PATH = REPO_ROOT / "data" / "us_1980_2014_calgz.parquet"
+DATA_PATH = REPO_ROOT / "bckm_replication" / "data" / "us_1980_2014_calgz.parquet"
+SCRIPT_PATH = (
+    REPO_ROOT / "bckm_replication" / "scripts" / "diag_tx_counterfactual.py"
+)
 
 
 @pytest.mark.skipif(
@@ -26,9 +31,14 @@ DATA_PATH = REPO_ROOT / "data" / "us_1980_2014_calgz.parquet"
     reason="US dataset not present (run scripts to build it first)",
 )
 def test_diag_tx_counterfactual_runs_without_error():
+    spec = importlib.util.spec_from_file_location(
+        "diag_tx_counterfactual", SCRIPT_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
     sys.path.insert(0, str(REPO_ROOT))
     try:
-        from scripts.diag_tx_counterfactual import main
+        spec.loader.exec_module(module)
+        main = module.main
     finally:
         sys.path.pop(0)
 

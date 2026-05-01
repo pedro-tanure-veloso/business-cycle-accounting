@@ -10,10 +10,11 @@ Estimation follows BCKM (2016) mleqadj.m:
 
 Usage:
     # First run — fetch from FRED and save processed data:
-    FRED_API_KEY=... python scripts/run_var_counterfactuals.py --save-data data/us_1980_2014.parquet
+    FRED_API_KEY=... python scripts/run_var_counterfactuals.py \
+        --save-data bckm_replication/data/us_1980_2014.parquet
 
     # Subsequent runs — use saved data, no API key needed:
-    python scripts/run_var_counterfactuals.py --data data/us_1980_2014.parquet
+    python scripts/run_var_counterfactuals.py --data bckm_replication/data/us_1980_2014.parquet
 """
 
 from __future__ import annotations

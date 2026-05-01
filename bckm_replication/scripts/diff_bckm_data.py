@@ -1,8 +1,8 @@
 """Diff BCKM's worktemp.mled against our parquet observables.
 
-Loads octave_output/bckm_mled.csv (columns from maketrend.m:14-16:
+Loads bckm_replication/octave_output/bckm_mled.csv (columns from maketrend.m:14-16:
 [t, y_norm, x_norm, hpc, g_norm, c_real_norm, c_implied_norm]) and
-data/us_1980_2014_calgz.parquet (columns: y, c, x, g, l). Both should
+bckm_replication/data/us_1980_2014_calgz.parquet (columns: y, c, x, g, l). Both should
 be detrended levels rebased so the base-quarter (2008Q1) value of y = 1.
 
 Reports:
@@ -23,7 +23,7 @@ def main():
     # not detrended levels. Convert to detrended levels by dividing by
     # (1+gz)^t — this is what mleqadj.m does in line 237-238 (and is the
     # same normalization our parquet uses: detrended_y[base_year] = 1).
-    bckm_raw = pd.read_csv("octave_output/bckm_mled.csv")
+    bckm_raw = pd.read_csv("bckm_replication/octave_output/bckm_mled.csv")
     bckm_raw.columns = ["t", "y", "x", "l", "g", "c_real", "c_implied"]
     gz = 0.004725592524  # from bckm_summary.txt
     T = len(bckm_raw)
@@ -38,7 +38,7 @@ def main():
         bckm[c] = v / v[base_idx]
     # Labor (h) carries no trend — leave as-is for compare against our l.
 
-    ours_raw = pd.read_parquet("data/us_1980_2014_calgz.parquet")
+    ours_raw = pd.read_parquet("bckm_replication/data/us_1980_2014_calgz.parquet")
     ours_raw = ours_raw.reset_index(drop=True)
 
     # Match BCKM's per-series base-year normalization so the comparison
@@ -54,8 +54,8 @@ def main():
 
     print("=" * 72)
     print(f"Compared T={len(bckm)} quarters")
-    print("BCKM:  octave_output/bckm_mled.csv (from maketrend.m, base 2008Q1)")
-    print("Ours:  data/us_1980_2014_calgz.parquet (calgz, base 2008Q1)")
+    print("BCKM:  bckm_replication/octave_output/bckm_mled.csv (from maketrend.m, base 2008Q1)")
+    print("Ours:  bckm_replication/data/us_1980_2014_calgz.parquet (calgz, base 2008Q1)")
     print("=" * 72)
 
     series_pairs = [

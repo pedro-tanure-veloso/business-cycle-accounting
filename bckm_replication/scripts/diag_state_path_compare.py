@@ -48,7 +48,7 @@ def _setup():
     bckm = load_bckm_reference()
     df, _ = build_us_dataset(
         start="1980Q1", end="2014Q4",
-        data_path="data/us_1980_2014_calgz.parquet",
+        data_path="bckm_replication/data/us_1980_2014_calgz.parquet",
         detrend_method="calgz", base_year_quarter="2008Q1",
     )
     g_share = float(df["g"].mean() / df["y"].mean())

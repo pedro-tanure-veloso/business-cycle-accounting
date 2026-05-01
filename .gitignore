@@ -16,12 +16,13 @@ __pycache__/
 
 # Pipeline dumps — regeneratable via run_var_counterfactuals.py --dump-mle
 data/mle_dump_*.npz
+bckm_replication/data/mle_dump_*.npz
 
 # Octave run logs — regeneratable; can run into 10s-100s of MB.
 # Keep the .mat result snapshots and CSV outputs in octave_output/;
 # exclude verbose run logs regardless of extension.
-octave_output/*.log
-octave_output/*_log.txt
+bckm_replication/octave_output/*.log
+bckm_replication/octave_output/*_log.txt
 
 # Jupyter
 .ipynb_checkpoints/

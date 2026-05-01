@@ -2,24 +2,88 @@
 
 ## Goal
 
-Build a **usable Business Cycle Accounting model for the US economy** that lets us analyze the US business cycle through the lens of four structural wedges: efficiency (A), labor (1−τ_l), investment (1+τ_x), and government (g).
+Build a **usable Business Cycle Accounting toolkit** that produces credible
+four-wedge decompositions — efficiency (A), labor (1−τ_l), investment
+(1+τ_x), government (g) — for **arbitrary country/period combinations**.
+The end deliverable is a three-layer web app (`bca_core` model +
+`bca_api` service + `bca_web` UI) where users pick a country and time
+window and get back a wedge decomposition + counterfactuals.
 
-The concrete validation target is correctly replicating the **Great Recession decomposition** — specifically the results in **`BCA/BCA_info.md` Section 7 (United States — MLE Estimates)**:
+### What "credible" means and how we validate it
+
+**Layer 1 — BCKM 2016 US 1980Q1–2014Q4 regression test.** The pipeline
+must reproduce the paper's headline results to a documented tolerance:
 
 - **Table 8** (P matrix): 4×4 VAR transition matrix, τ_l diagonal ≈ 1.001
 - **Table 9** (P₀ vector): [0.0140, 0.0008, 0.0129, −0.0137]
-- **Table 10** (Q matrix): lower-triangular Cholesky factor of V (V = Q·Q′); BCKM displays it with mirrored upper triangle but only the 10 lower-tri elements are free parameters
+- **Table 10** (Q matrix): lower-triangular Cholesky factor of V (V = Q·Q′)
 - **Table 11** (f-statistics): fYA=0.16, fYτL=0.46, fYτx=0.32
 
-Once these are matched, the model is trusted as correctly implemented and can be used for ongoing US economic analysis.
+**Status (2026-05-01):** at BCKM-θ on our df, f-stats match Table 11
+to ≤0.01 in every channel. The pipeline structure is correct (verified
+end-to-end, see Findings). The ~150-nat residual LL gap is concentrated
+in BEA NIPA vintage drift (chain-real series back-revised post-2018 to
+levels that differ ~14pp cumulatively from BCKM's 2014 vintage); every
+BEA-vs-FRED toggle on our window makes the gap **worse** (joint walkdown,
+2026-05-01 finding). FRED defaults are the production setting.
+
+This is the regression target — kept passing forever — not the live
+target. The 1980-2014 cached parquet
+(`bckm_replication/data/us_1980_2014_calgz.parquet`) and the
+BCKM-window tests (`tests/test_bckm_table12.py`, parts of
+`tests/test_bckm_reference.py`) pin this fidelity. Final replication
+wrap-up: `bckm_replication/REPORT.md`.
+
+**Layer 2 — narrative-prior smoke tests on other US windows.** Validate
+generalizability by running the pipeline on windows where we have strong
+qualitative priors (e.g. COVID 2010Q1–2023Q4 with bind=2019Q4: τ_l
+collapses 2020Q2; A spikes 2021 with record TFP; g elevated through
+ARPA). A "pass" is sign-direction agreement on the wedge decomposition
+under both full-window and pre-anomaly-fit detrending. This is the
+*current* live target (post-2026-05-01 pivot).
+
+**Layer 3 — cross-country (future).** OECD MEI data layer for the
+24-country Tables III/IV of the paper. Out of scope until US
+generalizability lands.
+
+### Scope of BCKM-replication-specific rules
+
+Several rules in this document — most prominently the
+"Follow BCKM exactly" methodology rule, the BCKM-anchored constants
+(`labor_target_mean=0.24279`, the BEA-branch
+`start_year=1980, end_year=2014` hardcodes in
+`bca_core/data/bea.py:195-273`), and the data-source priority
+("BEA/BLS first, FRED only as fallback") — apply to the **Layer 1
+regression** only. They are deliberate fidelity choices that make our
+1980-2014 output BCKM-faithful.
+
+For Layer 2 and Layer 3, the relevant defaults are:
+
+- **`labor_target_mean=None`** (raw hours-per-capita on the sample
+  window; BCKM-anchored 0.24279 is opt-in for the regression path).
+- **FRED defaults** for `y_source/x_source/g_source` (BEA branches are
+  diagnostic-only opt-in; their 1980-2014 hardcodes are out-of-scope
+  to remove until a separate migration sprint).
+- **Data-derived γ and n** (calgz fsolve and working-age-pop slope —
+  generic, no change needed).
+- **`mle_window`** parameter to fit the calgz slope on a sub-window
+  (e.g. pre-COVID) when the full sample contains a structural anomaly
+  that would distort the trend.
+
+When a Layer-2 or Layer-3 deliverable would benefit from violating a
+BCKM-replication rule (e.g. using an OECD-MEI population series instead
+of FRED `LFWA64TTUSQ647N`), the rule yields. The Layer-1 regression
+test is the gate: as long as the cached BCKM parquet still produces the
+pinned f-stats, the rule's purpose has been served.
 
 ## Primary Reference Materials
 
 1. **`BCA/BCA_info.md`** — paper summary with target parameter tables (Sections 1–7); primary spec
-2. **`BCA/matlab_reference/`** — original Matlab replication files from the paper; ground truth for methodology
+2. **`BCA/bckm_replication/matlab_reference/`** — original Matlab replication files from the paper; ground truth for methodology
 3. **`BCA/bca_paper.pdf`** — full paper PDF
+4. **`BCA/bckm_replication/REPORT.md`** — final BCKM 1980-2014 replication wrap-up
 
-**When implementing or changing anything, check the Matlab files first.** Key files in `matlab_reference/`:
+**When implementing or changing anything, check the Matlab files first.** Key files in `bckm_replication/matlab_reference/`:
 - `mleqadj.m` — Kalman-filter MLE estimation
 - `kfilter.m` — steady-state Kalman filter (DARE-based constant gain)
 - `datamine.m` — calibration parameters and data construction
@@ -457,12 +521,20 @@ is the durable memory.
 
 ## Methodology Rules
 
-### Follow BCKM exactly
-- If our approach differs from `mleqadj.m`, ask the user before proceeding
+### Follow BCKM exactly (Layer 1 regression scope)
+
+This rule applies to the **BCKM 1980Q1–2014Q4 US regression test**
+(see "Goal → Scope of BCKM-replication-specific rules"). Outside that
+window the rule yields to whatever is correct for the active country/
+period — model structure stays BCKM-faithful, but data-construction
+and labor-anchor choices are window-appropriate.
+
+- If our approach differs from `mleqadj.m` on the regression path, ask
+  the user before proceeding
 - Do not introduce approximations or shortcuts that are not in the paper
 - Document any unavoidable deviations clearly
 
-### Data sources — BEA / BLS first, FRED only as fallback
+### Data sources — BEA / BLS first, FRED only as fallback (Layer 1 scope)
 
 **McGrattan's working rule (passed down from advisor): always pull data from
 the original source — BEA NIPA, BLS Productivity & Costs, BLS CPS — and use
@@ -595,7 +667,7 @@ Verified by `scripts/diag_bckm_data_isolation.py`: at identical (Sbar, P, Q, dat
 - Skip the BCKM Table 77 warm-start
 - Rescale `df["l"]` to model `l_ss` before `prepare_observables` (see Labor normalization above — that rescale was the dominant LL-gap source at BCKM θ; raw labor is what BCKM feeds)
 
-Details on why these are wrong are in `REPORT.md` → "Things Not To Do".
+Details on why these are wrong are in `bckm_replication/REPORT.md` → "Things not to do".
 
 ## Asking Before Deviating
 

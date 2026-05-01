@@ -31,13 +31,14 @@ def build_us_dataset(
     use_bea_sales_tax: bool = True,
     params: CalibrationParams | None = None,
     detrend_method: str = "linear",
-    labor_target_mean: float = 0.24279,
+    labor_target_mean: float | None = None,
     data_path: str | Path | None = None,
     gamma_annual: float | None = None,
     base_year_quarter: str | None = None,
     g_source: str = "fred",
     y_source: str = "fred",
     x_source: str = "fred",
+    mle_window: tuple[str, str] | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """
     Build the adjusted US dataset for BCA.
@@ -67,6 +68,17 @@ def build_us_dataset(
     detrend_method : "linear" (OLS / fixed-slope), "hp", or "calgz"
         (BCKM `maketrend.m`/`calgz.m` style — slope chosen so detrended
         log mean is 0 with trend pinned at ``base_year_quarter``).
+    labor_target_mean : optional float. When ``None`` (default), the
+        labor series passes through as raw PAYEMS×AWHNONAG/pop with no
+        rescaling — its mean is whatever the data says on the active
+        sample window. When set to an explicit value (e.g. ``0.24279``
+        for the BCKM 1980Q1–2014Q4 regression path), rescales twice:
+        once at the full-FRED-range level inside
+        :func:`compute_labor_input`, then a second time within the
+        sample window so ``mean(l_sample) == labor_target_mean`` exactly.
+        The BCKM-anchored value 0.24279 is BCKM's hpc mean over
+        1980Q1–2014Q4 (``exp(worktemp.Y_raw[:,2]).mean()``); applying
+        it to a different window injects a phantom level offset.
     gamma_annual : if given (and method="linear"), detrend log(y) using this
         calibrated growth rate rather than OLS-estimating it. BCKM Table 77
         uses 1.9%/yr; ignored under method="calgz" since γ is data-fitted
@@ -134,6 +146,21 @@ def build_us_dataset(
         ``reclassify_durables`` (perpetual-inventory durables stock)
         and the FRED ``gov_investment`` aggregate. Requires a BEA API
         key (or warm cache).
+    mle_window : optional ``(start, end)`` quarter-string pair (e.g.
+        ``("2010Q1", "2019Q4")``) restricting the calgz slope fit to a
+        sub-window of the full sample. The fitted trend is then
+        extrapolated through the rest of the sample. Default ``None``
+        → slope is fit on the full sample (the BCKM-faithful behavior
+        used for the 1980Q1–2014Q4 replication). Useful when the full
+        sample contains a structural anomaly that would distort the
+        trend slope (e.g. COVID 2020Q2 −31% annualized output dip and
+        2021 record TFP rebound). Only supported under
+        ``detrend_method="calgz"``. The trend anchor
+        (``base_year_quarter``) does not need to lie inside
+        ``mle_window`` but typically should — for the COVID smoke test
+        we use ``mle_window=("2010Q1", "2019Q4")`` with
+        ``base_year_quarter="2019Q4"`` so the trend anchor is the last
+        point of the slope-fit window.
 
     Returns
     -------
@@ -316,13 +343,18 @@ def build_us_dataset(
 
     # Re-rescale labor over the sample window so mean(l_sample) ==
     # labor_target_mean exactly. ``compute_labor_input`` rescaled over the
-    # full 1947+ FRED range, but the labor_target_mean=0.24279 default is
-    # specifically BCKM's hpc mean over 1980Q1–2014Q4 (sample window). The
-    # full-range mean drifts ~+0.006 in log from the sample-window mean
-    # because pre-1980 hours-per-capita ran lower (different LFPR regime),
-    # so a single full-range rescale leaves a residual sample-window level
-    # offset. Re-applying within-sample makes the BCKM-faithful pin exact.
-    sample["l"] = sample["l"] * (labor_target_mean / sample["l"].mean())
+    # full 1947+ FRED range, but for BCKM 1980Q1–2014Q4 we want
+    # mean(l_sample) == 0.24279 (BCKM's hpc mean on the sample window
+    # — see ``compute_labor_input`` docstring). The full-range mean
+    # drifts ~+0.006 in log from the sample-window mean because
+    # pre-1980 hours-per-capita ran lower (different LFPR regime), so a
+    # single full-range rescale leaves a residual sample-window level
+    # offset. Re-applying within-sample makes the BCKM-faithful pin
+    # exact. When labor_target_mean is None (the new default for
+    # arbitrary windows), skip both rescales — the caller does not
+    # want a BCKM-anchored level injected into a non-BCKM window.
+    if labor_target_mean is not None:
+        sample["l"] = sample["l"] * (labor_target_mean / sample["l"].mean())
 
     pop = sample["working_age_pop"].dropna()
     if len(pop) > 4:
@@ -357,11 +389,35 @@ def build_us_dataset(
                 f"sample index range {sample.index[0]}..{sample.index[-1]}"
             ) from e
 
+    fit_idx_range: tuple[int, int] | None = None
+    if mle_window is not None:
+        if detrend_method != "calgz":
+            raise ValueError(
+                "mle_window is only supported under detrend_method='calgz' "
+                f"(got detrend_method={detrend_method!r})."
+            )
+        fit_start_dt = pd.Timestamp(pd.Period(mle_window[0], freq="Q").start_time)
+        fit_end_dt = pd.Timestamp(pd.Period(mle_window[1], freq="Q").start_time)
+        try:
+            fit_start_idx = int(sample.index.get_loc(fit_start_dt))
+            fit_end_idx = int(sample.index.get_loc(fit_end_dt))
+        except KeyError as e:
+            raise ValueError(
+                f"mle_window={mle_window} not contained in sample index "
+                f"range {sample.index[0]}..{sample.index[-1]}"
+            ) from e
+        if fit_start_idx > fit_end_idx:
+            raise ValueError(
+                f"mle_window start={mle_window[0]} is after end={mle_window[1]}."
+            )
+        fit_idx_range = (fit_start_idx, fit_end_idx)
+
     _, y_trend = remove_trend(
         sample["y_real_pc"],
         method=detrend_method,
         fixed_slope=fixed_slope_q,
         base_idx=base_idx,
+        fit_idx_range=fit_idx_range,
     )
     gamma_quarterly = y_trend["slope"]
     gamma_annual_used = (1 + gamma_quarterly) ** 4 - 1
@@ -377,6 +433,9 @@ def build_us_dataset(
     if base_idx is not None:
         metadata["base_idx"] = base_idx
         metadata["base_year_quarter"] = base_year_quarter
+    if fit_idx_range is not None:
+        metadata["mle_window"] = list(mle_window) if mle_window is not None else None
+        metadata["mle_fit_idx_range"] = list(fit_idx_range)
 
     T = len(sample)
     t = np.arange(T)
@@ -403,7 +462,7 @@ def build_us_dataset(
         result.to_parquet(data_path)
         scalar_meta = {
             k: v for k, v in metadata.items()
-            if isinstance(v, (int, float, str))
+            if isinstance(v, (int, float, str, bool, list))
         }
         with open(meta_path, "w") as f:
             json.dump(scalar_meta, f, indent=2)
