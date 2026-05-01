@@ -18,8 +18,9 @@ locked-in regression test that pins fidelity; new windows (e.g. COVID
   Table 11 to ≤ 0.01 in every channel at BCKM-θ on our dataset; full
   wrap-up in [`bckm_replication/REPORT.md`](bckm_replication/REPORT.md).
 - **Layer 2 — generalizability smoke tests**: active. COVID
-  2010Q1–2023Q4 is the current target (see
-  [Diary.md](Diary.md) for the live plan).
+  2010Q1–2023Q4 is the current target — see
+  [`COVID_PLAN.md`](COVID_PLAN.md) for the approved plan, and
+  [`Diary.md`](Diary.md) for session-by-session notes.
 - **Layer 3 — cross-country (OECD MEI Tables III/IV)**: future.
 
 ## Quick start
@@ -68,10 +69,12 @@ scripts/                    generic pipeline drivers (window-agnostic)
 
 bckm_replication/           BCKM 2016 US 1980-2014 ground-truth artifacts
   REPORT.md                 final replication wrap-up (closed 2026-05-01)
+  BCKM_RESULTS.md           paper Parts III & IV — regression-target tables
   BCKM_DIFF_GUIDE.md        element-wise diff guide vs worktemp.mat
   DATA_FORENSICS.md         BEA NIPA migration walkdown
   DIVERGENCE_ANALYSIS.md    earlier head-to-head analysis
   counterfactual-debugging-summary.md   CF-fix session record
+  bca_paper.pdf             full paper PDF
   matlab_reference/         BCKM 2016 matlab code (paper ground truth)
   octave_output/            octave dumps used as fixtures
   data/                     pinned parquets + bootstrap/sensitivity dumps
@@ -87,15 +90,22 @@ data/                       cache for new (Layer 2/3) datasets
 - [CLAUDE.md](CLAUDE.md) — working rules and methodology constraints
   (read before changing anything in `bca_core/`); also carries the
   append-only "Findings" journal
-- [BCA_info.md](BCA_info.md) — paper summary with target tables
+- [BCA_info.md](BCA_info.md) — paper summary, **live methodology**
+  (Parts I & II): prototype economy, accounting procedure, data and
+  calibration. Applies to any country/period the toolkit is run on
+- [COVID_PLAN.md](COVID_PLAN.md) — approved plan for the Layer-2
+  COVID 2010Q1–2023Q4 smoke test (current live target)
+- [Diary.md](Diary.md) — session-by-session log
 - [bckm_replication/REPORT.md](bckm_replication/REPORT.md) — final
   BCKM-replication wrap-up: bugs found and fixed, methodology
   decisions, residual issues
-- [Diary.md](Diary.md) — session-by-session log; current next steps
-  live here
+- [bckm_replication/BCKM_RESULTS.md](bckm_replication/BCKM_RESULTS.md)
+  — paper Parts III & IV (cross-country findings + US 1980-2014
+  empirical tables): the regression-test ground truth
 - [bca-web-app-instructions.md](bca-web-app-instructions.md) —
   eventual web-app spec (out of scope until Layer 2 lands)
-- [bca_paper.pdf](bca_paper.pdf) — full paper
+- [bckm_replication/bca_paper.pdf](bckm_replication/bca_paper.pdf) —
+  full paper
 
 ## Methodology in one screen
 
