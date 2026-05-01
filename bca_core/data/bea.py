@@ -96,30 +96,78 @@ class BeaDataFetcher:
     """
 
     def __init__(self, api_key: str | None = None, timeout: float = 30.0):
+        # Defer the API-key check to the first cache-miss, so the fetcher
+        # can be instantiated for purely offline use (reading cached JSON
+        # blobs from ~/.bca_cache/bea/). The reconnaissance / element-wise
+        # diagnostics don't need the key when the cache is already warm.
         self.api_key = api_key or os.environ.get("BEA_API_KEY")
-        if not self.api_key:
-            raise ValueError(
-                "BEA API key required. Set BEA_API_KEY env var or pass api_key. "
-                "Free key at https://apps.bea.gov/API/signup/"
-            )
         self.timeout = timeout
 
     # --------------------------------------------------------------------
     # low-level request
 
+    def _find_cached_response(
+        self, params: dict, max_age_days: int = 90
+    ) -> dict | None:
+        """Look for a cached BEA response matching ``params`` regardless of
+        which UserID was used at fetch time. Enables offline workflows where
+        the cache was warmed by a previous session whose API key isn't in
+        the current env. Returns ``None`` on no match.
+        """
+        target = {
+            "DATASETNAME": params.get("DatasetName", "").upper(),
+            "TABLENAME":   params.get("TableName", "").upper(),
+            "FREQUENCY":   params.get("Frequency", "").upper(),
+            "METHOD":      params.get("method", "").upper(),
+        }
+        requested_years = set((params.get("Year") or "").split(","))
+        for cache_file in _cache_dir().glob("*.json"):
+            if not _cache_is_fresh(cache_file, max_age_days=max_age_days):
+                continue
+            try:
+                with cache_file.open() as fh:
+                    data = json.load(fh)
+            except (OSError, json.JSONDecodeError):
+                continue
+            rps = (
+                data.get("BEAAPI", {}).get("Request", {}).get("RequestParam", [])
+            )
+            pmap = {
+                rp.get("ParameterName"): rp.get("ParameterValue")
+                for rp in rps
+                if isinstance(rp, dict)
+            }
+            if any(pmap.get(k, "").upper() != v for k, v in target.items() if v):
+                continue
+            cached_years = set((pmap.get("YEAR") or "").split(","))
+            if requested_years.issubset(cached_years):
+                return data
+        return None
+
     def _request(self, params: dict, max_age_days: int = 90) -> dict:
         """GET BEA endpoint with disk cache; returns parsed JSON dict.
 
+        Cache lookup is content-based (matches dataset/table/frequency/years),
+        so an API key that's *different* from the one used to warm the cache
+        still gets cache hits. Network is only contacted on a real cache miss.
+
         Raises:
+            ValueError: cache miss with no API key configured.
             RuntimeError: if BEA returns an Error block in BEAAPI.Results.
         """
+        cached = self._find_cached_response(params, max_age_days=max_age_days)
+        if cached is not None:
+            return cached
+
+        if not self.api_key:
+            raise ValueError(
+                "BEA API key required for cache miss. Set BEA_API_KEY env "
+                "var or pass api_key. Free key at "
+                "https://apps.bea.gov/API/signup/"
+            )
+
         full = {**params, "UserID": self.api_key, "ResultFormat": "JSON"}
         cache_path = _cache_dir() / f"{_params_key(full)}.json"
-
-        if _cache_is_fresh(cache_path, max_age_days=max_age_days):
-            with cache_path.open() as fh:
-                return json.load(fh)
-
         r = requests.get(BEA_API_BASE, params=full, timeout=self.timeout)
         r.raise_for_status()
         payload = r.json()
@@ -275,5 +323,107 @@ class BeaDataFetcher:
 
         # Trim to the requested window
         out = out[(out.index >= pd.Timestamp(start)) & (out.index <= pd.Timestamp(end))]
+        return out
+
+    # --------------------------------------------------------------------
+    # convenience: BCKM-faithful real-quantity NIPA panel
+
+    def fetch_real_components(
+        self,
+        start_year: int = 1980,
+        end_year: int = 2014,
+    ) -> dict[str, pd.Series]:
+        """BCKM-faithful real-quantity reconstruction from BEA NIPA.
+
+        Mirrors `usdata.m:27-39` series-by-series. BCKM .dat row indices
+        have non-uniform offsets vs current BEA layouts (`nipa116(3)`
+        = real GDP = T10106 line 1, but `nipa33(11)` = sl-excise = T30300
+        line 8, not 9), so all lines are picked by *description match*
+        against the BCKM variable's intent — verified against the recon
+        run of `scripts/diag_bea_nipa_lines.py`.
+
+        Returns dict keyed by BCKM's matlab variable names; each value is
+        a quarterly pd.Series indexed by quarter-start Timestamp.
+
+        | BCKM var | construction                       | BEA source            |
+        |----------|-----------------------------------|-----------------------|
+        | rGDP     | T10106 line 1 directly             | Real GDP              |
+        | rGPDI    | T10106 line 7 directly             | Real GPDI             |
+        | rEX      | T10106 line 16 directly            | Real Exports          |
+        | rIM      | T10106 line 19 directly            | Real Imports          |
+        | rCD      | T10105 line 4 / T10109 line 4 *100 | Real Durable Goods    |
+        | rCND     | T10105 line 5 / T10109 line 5 *100 | Real Nondurable Goods |
+        | rCS      | T10105 line 6 / T10109 line 6 *100 | Real Services         |
+        | rGC      | T30905 line 2 / T30904 line 2 *100 | Real Gov Consumption  |
+        | rGI      | T30905 line 3 / T30904 line 3 *100 | Real Gov Investment   |
+
+        Note: despite "Quantity Indexes" in the T30905 title, modern BEA
+        publishes that table in **current dollars** (UNIT_MULT=6,
+        METRIC_NAME='Current Dollars'). The BCKM formula
+        ``nipa395 / nipa394 * 100`` is therefore ``nominal / price_idx
+        * 100`` = real-2017-$ — equivalent up to chain-residuals to
+        T30906 (Real Chained $), and BCKM-faithful to ``usdata.m:37-38``.
+        | pCD      | T10109 line 4 directly             | Durable Goods deflator|
+        | pPCE     | T10109 line 2 directly             | PCE deflator          |
+
+        BCKM uses nominal/deflator for PCE components (CD, CND, CS) rather
+        than the chain-real T10106 lines, because chain-weighted
+        sub-aggregates carry a "Residual" mismatch that breaks the
+        sales-tax allocation in `usdata.m:53` (which divides by
+        rCND+rCS+rCD). Don't substitute T10106 chain-real for these.
+
+        Note: rGDP, rGPDI, rEX, rIM are taken from T10106 (chain-real)
+        directly — that's also what BCKM does.
+        """
+        kw = {"start_year": start_year, "end_year": end_year}
+
+        # Real chain-$ from T10106 (used directly per BCKM)
+        rGDP  = self.nipa_line_series("T10106", line=1, **kw)
+        rGPDI = self.nipa_line_series("T10106", line=7, **kw)
+        rEX   = self.nipa_line_series("T10106", line=16, **kw)
+        rIM   = self.nipa_line_series("T10106", line=19, **kw)
+
+        # Nominal $ + deflators → real PCE components (BCKM nipa115/nipa119)
+        nCD   = self.nipa_line_series("T10105", line=4, **kw)
+        nCND  = self.nipa_line_series("T10105", line=5, **kw)
+        nCS   = self.nipa_line_series("T10105", line=6, **kw)
+        pCD   = self.nipa_line_series("T10109", line=4, **kw)
+        pCND  = self.nipa_line_series("T10109", line=5, **kw)
+        pCS   = self.nipa_line_series("T10109", line=6, **kw)
+        rCD   = (nCD / pCD * 100).rename("rCD")
+        rCND  = (nCND / pCND * 100).rename("rCND")
+        rCS   = (nCS / pCS * 100).rename("rCS")
+
+        # Gov C/I real construction (BCKM usdata.m:37-38).
+        # T30904 = Fisher price indexes (UNIT_MULT=0, base 2017=100).
+        # T30905 = current dollars (UNIT_MULT=6) — despite the table's
+        # "Quantity Indexes" label, see fetch_real_components docstring.
+        pgC   = self.nipa_line_series("T30904", line=2, **kw)
+        nGC   = self.nipa_line_series("T30905", line=2, **kw)
+        pgI   = self.nipa_line_series("T30904", line=3, **kw)
+        nGI   = self.nipa_line_series("T30905", line=3, **kw)
+        rGC   = (nGC / pgC * 100).rename("rGC")
+        rGI   = (nGI / pgI * 100).rename("rGI")
+
+        # PCE deflator (used to deflate nominal rSTX in usdata.m:39)
+        pPCE  = self.nipa_line_series("T10109", line=2, **kw)
+        pPCE.name = "pPCE"
+        pCD.name = "pCD"
+
+        out = {
+            "rGDP": rGDP, "rGPDI": rGPDI, "rEX": rEX, "rIM": rIM,
+            "rCD": rCD, "rCND": rCND, "rCS": rCS,
+            "rGC": rGC, "rGI": rGI,
+            "pCD": pCD, "pPCE": pPCE,
+        }
+        # Cached payloads sometimes cover wider spans than requested
+        # (e.g. T10109 cache holds 1947-2024 even when request was for
+        # 1980-2014). Trim each series to the requested window so all
+        # outputs share a clean index and downstream alignment is trivial.
+        lo = pd.Timestamp(start_year, 1, 1)
+        hi = pd.Timestamp(end_year, 10, 1)  # Q4-start of end_year
+        for k, s in out.items():
+            s.name = k
+            out[k] = s[(s.index >= lo) & (s.index <= hi)]
         return out
 

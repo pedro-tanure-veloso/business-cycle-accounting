@@ -70,6 +70,28 @@ is the durable memory.
 
 ### Findings (most recent first)
 
+- **2026-05-01 — BEA NIPA migration is order-coupled at the bind ratio:
+  per-channel level gate against `bckm.Y_raw` cannot pass for g alone
+  while y stays on FRED.** Stage-1 element-wise comparison after Step 2
+  (g→BEA): BEA mean|diff|=0.2100 vs FRED 0.0345 vs gate 0.025 → **FAIL**.
+  Root cause traced to `matlab_reference/maketrend.m`: BCKM defines
+  `mled[:,k] = var_pc/ypc(bind)*(1+gzt)^by`, so `Y_raw[:,3] = log(g/y at
+  bind)` after detrending — the **level** of the g-observable depends on
+  both g and y constructions at 2008Q1. At 2008Q1: BEA chain-real g/y =
+  0.118 vs FRED nominal-deflated g/y = 0.097 vs BCKM 0.102. The ~$300B
+  gap between FRED's `NX_nominal/GDPDEF` and BEA's chain-real `rEX−rIM`
+  comes from terms-of-trade movement (2008 oil shock pushed pIM>pEX,
+  breaking the chain ≡ nominal÷GDPDEF identity). **The BEA construction
+  is BCKM-faithful per `usdata.m:34-35,56`; the gate failure is a
+  consistency artifact, not a bug.**
+  **Resolution (option d, user-approved 2026-05-01)**: keep
+  `g_source="fred"` as default so the f-stat baseline doesn't move;
+  expose `g_source="bea"` for the post-y joint-gate test. The
+  per-channel gate is **DEFERRED** to after y migrates (Step 4); only
+  then is the y-trend normalizer BCKM-faithful and the level-comparison
+  meaningful. Documented in `bca_core/data/pipeline.py` `g_source`
+  docstring. Pipeline behavior unchanged; 79/79 fast tests still pass.
+
 - **2026-04-30 — Optimizer investigation: BCKM-θ is essentially a critical
   point of our LL on BCKM data; the +11-nat residual gap decomposes
   cleanly into 6 nats of routine L-BFGS-B convergence + 5 nats of

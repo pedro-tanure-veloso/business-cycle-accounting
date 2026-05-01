@@ -35,6 +35,7 @@ def build_us_dataset(
     data_path: str | Path | None = None,
     gamma_annual: float | None = None,
     base_year_quarter: str | None = None,
+    g_source: str = "fred",
 ) -> tuple[pd.DataFrame, dict]:
     """
     Build the adjusted US dataset for BCA.
@@ -72,6 +73,30 @@ def build_us_dataset(
         Required for ``detrend_method="calgz"``. Anchors the trend so
         ``log(detrended_y[base_year_quarter]) = 0``. Matches BCKM
         ``datamine.m`` `bdate=2008.25`.
+    g_source : "fred" (default, legacy) or "bea". When "bea", the
+        government channel is reconstructed from BEA NIPA per BCKM
+        ``usdata.m:37-38,56``: ``G = rGC + rEX − rIM`` where each
+        component is real-2017-$ (chained-$ for rEX/rIM via T10106;
+        nominal/price-idx*100 for rGC via T30905/T30904). Bypasses
+        ``compute_government_wedge`` and the GDP-deflator deflation
+        for the g channel only — y/x/l unchanged. Requires a BEA API
+        key (or warm cache).
+
+        **Status (2026-05-01): infrastructure-only, hard gate DEFERRED.**
+        The BEA path is BCKM-faithful in isolation but currently FAILS
+        the per-channel level gate vs ``bckm.Y_raw[:,3]``
+        (mean|diff|=0.21 vs FRED 0.034). Root cause: BCKM's
+        ``maketrend.m`` defines ``Y_raw[:,3] = log(g_pc/y_pc) at bind``
+        — the level depends on **both** g and y constructions at
+        2008Q1. Migrating g while y stays on FRED produces a
+        mismatched ratio (BEA chain-real NX vs FRED-deflated NX
+        differ ~$300B at the 2008 oil shock; chain-real ≠ nominal÷
+        GDPDEF when terms-of-trade move). The gate can only be
+        evaluated after the y channel also migrates to BEA chain-real
+        (Step 4 of the migration plan; needs BEA Fixed Asset rKCD).
+        Until then, default ``g_source="fred"`` so the f-stat
+        baseline doesn't move; ``g_source="bea"`` is preserved for
+        the post-y joint-gate test.
 
     Returns
     -------
@@ -146,6 +171,30 @@ def build_us_dataset(
     adj["c_real_pc"] = adj["c_adj"]
     adj["x_real_pc"] = adj["x_adj"]
     adj["g_real_pc"] = adj["g_raw"]
+
+    # ── BEA NIPA override for g channel (Step 2 of BEA migration) ────────
+    # BCKM `usdata.m:56`: G = rGC + rEX − rIM, with each component built
+    # in *real* terms from its own deflator — not via a single GDP-deflator
+    # pass on a nominal sum (which is what the FRED path above does). This
+    # branch replaces ``adj["g_real_pc"]`` with the BCKM-faithful
+    # construction, leaving y/x/l unchanged. Per-capita scaling matches
+    # the FRED path: real-$ per person in 2017-base $ (BEA panel returns
+    # millions of $; pop is in thousands → multiply by 1000).
+    if g_source == "bea":
+        bea = BeaDataFetcher(api_key=bea_api_key)
+        # Pull the full BEA recon span; the rest of the pipeline (sample
+        # window, detrending) operates downstream.
+        panel = bea.fetch_real_components(start_year=1980, end_year=2014)
+        G_real_M = panel["rGC"] + panel["rEX"] - panel["rIM"]  # millions of real $
+        # Reindex onto adj's quarterly grid (raw FRED grid; pre-sample-slice).
+        G_real_M = G_real_M.reindex(adj.index)
+        # Per-capita: panel is in millions, working_age_pop in thousands.
+        # → real $ per person = G_M * 1e6 / (pop_thousand * 1e3) = G_M * 1000 / pop
+        adj["g_real_pc"] = G_real_M * 1000.0 / adj["working_age_pop"]
+    elif g_source != "fred":
+        raise ValueError(
+            f"g_source must be 'fred' or 'bea', got {g_source!r}"
+        )
 
     start_dt = pd.Timestamp(pd.Period(start, freq="Q").start_time)
     end_dt = pd.Timestamp(pd.Period(end, freq="Q").start_time)
