@@ -70,6 +70,50 @@ is the durable memory.
 
 ### Findings (most recent first)
 
+- **2026-05-01 — Joint BEA migration walkdown: every BEA toggle makes
+  the LL gap WORSE. FRED defaults are the best operating point.
+  The whole "BEA over FRED" priority is the wrong leverage point for
+  this dataset and time window.** `scripts/diag_worktemp_compare.py`
+  now takes `--y-source / --x-source / --g-source` flags. Walking the
+  full Cartesian gives the LL gap at BCKM-θ vs `worktemp.mle.likelihood`:
+
+  | config (y, x, g) | LL ours | gap (ours − \|bckm\|) | x bias | g bias |
+  |---|---|---|---|---|
+  | (fred, fred, fred) baseline | **+1719.66** | **−683** | −0.023 | −0.035 |
+  | (bea,  fred, fred)          | +1683.68    | −719  (−36)  | +0.046 | +0.034 |
+  | (bea,  fred, bea)           | +1173.42    | −1229 (−547) | +0.046 | +0.279 |
+  | (bea,  bea,  bea)           | −882.64     | −3286 (−2603)| −0.212 | +0.279 |
+
+  Three mechanisms explain the monotone-worse pattern:
+  1. **calgz trend coupling**: `gz` is fsolved against y_pc on the MLE
+     window. Switching y to BEA changes y_pc, which re-fits gz, which
+     is then applied to x and g detrending — flipping their bias signs
+     vs the BCKM target. The g and x channels carry no useful "BEA-
+     faithful" signal once the trend is anchored on a different y.
+  2. **BEA vintage drift**: chain-real BEA series have been back-revised
+     across the 2018+ comprehensive revisions, shifting historical
+     levels 1-3% per series and cumulating to ~14pp over 1980-2014
+     (see x-channel finding below). FRED's single-deflator approach
+     happens to cancel most of this drift.
+  3. **Bind-ratio dependency**: BCKM's `maketrend.m:15` anchors every
+     real series at `ypc(by)`, so the level-gate against `bckm.Y_raw`
+     depends on the y_pc(2008Q1) value — not just on the channel under
+     test. (Per the g-channel order-coupling finding below.)
+
+  **Decision (user-validated 2026-05-01)**: keep `{y,x,g}_source="fred"`
+  as the production default; preserve all three BEA branches as opt-in
+  ablation infrastructure (well-documented, gate-deferred). The BEA
+  migration is **complete** in the sense that BCKM-faithful constructions
+  are available for diagnostic A/B testing, but **not used** because
+  every toggle reduces fidelity to BCKM's `worktemp.mat` ground truth.
+  Implication for closing the residual data-layer LL gap: the leverage
+  is NOT in BEA-vs-FRED data sources. Most likely candidates remain:
+  labor/working-age-pop (var ratio 1.31, only channel still above 1.2),
+  detrending sub-conventions, and the off-by-one obs differencing
+  reflected in the 16.6-nat objective-only gap from 2026-04-30. The
+  basin-escape problem (Sbar drift away from BCKM's once optimization
+  starts) is the real bottleneck for f-stat replication.
+
 - **2026-05-01 — x-channel BEA migration FAILS Stage-1 gate due to BEA
   vintage drift; FRED-x is already an exceptionally tight match to BCKM
   growth and is the right default. Don't migrate x to BEA.** Step 3 of

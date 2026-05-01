@@ -15,6 +15,7 @@ Run from repo root:  python scripts/diag_worktemp_compare.py
 """
 from __future__ import annotations
 
+import argparse
 import itertools
 
 import numpy as np
@@ -71,8 +72,25 @@ def _try_column_permutations(ours_T4: np.ndarray, bckm_T6: np.ndarray) -> tuple[
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--y-source", choices=["fred", "bea"], default="fred",
+                        help="y-channel construction (default: fred)")
+    parser.add_argument("--x-source", choices=["fred", "bea"], default="fred",
+                        help="x-channel construction (default: fred)")
+    parser.add_argument("--g-source", choices=["fred", "bea"], default="fred",
+                        help="g-channel construction (default: fred)")
+    args = parser.parse_args()
+
+    # Bypass parquet cache when ANY source is non-default, since the cache
+    # is keyed on path not on source.
+    bypass_cache = (args.y_source != "fred"
+                    or args.x_source != "fred"
+                    or args.g_source != "fred")
+
     print("=" * 80)
     print("BCKM worktemp.mat element-wise diagnostic")
+    print(f"  y_source={args.y_source}  x_source={args.x_source}  "
+          f"g_source={args.g_source}")
     print("=" * 80)
 
     print("\n[Setup]")
@@ -86,8 +104,11 @@ def main():
 
     df, _meta = build_us_dataset(
         start="1980Q1", end="2014Q4",
-        data_path="data/us_1980_2014_calgz.parquet",
+        data_path=None if bypass_cache else "data/us_1980_2014_calgz.parquet",
         detrend_method="calgz", base_year_quarter="2008Q1",
+        y_source=args.y_source,
+        x_source=args.x_source,
+        g_source=args.g_source,
     )
     g_share = float(df["g"].mean() / df["y"].mean())
     print(f"  df rows = {len(df)}, g_share = {g_share:.4f}")
