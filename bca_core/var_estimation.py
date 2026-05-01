@@ -451,35 +451,40 @@ def estimate_var_mle(
         Q_proc = np.zeros((5, 5))
         Q_proc[1:, 1:] = Q_mat
 
-        # Two distinct obs_offsets, one per consumer:
+        # Single Sbar-dependent obs intercept (BCKM mleqadj.m:160-161,231).
         #
-        # 1. ``obs_offset_kf`` for the Kalman LL.  BCKM mleqadj.m:232
-        #    ``phi0 = Y(:,1) − C·X0(1:5)``.  Our state has unconditional
-        #    mean 0, so phi0 reduces to ``obs_hat[0, :]``.  This anchors
-        #    the obs equation to t=0 (innov(0)=0).
+        # BCKM uses absolute log coords: state X0 = [log ks, log zs, tauls,
+        # tauxs, log gs], obs Y0 = [log ys, log xs, log ls, log gs], and
+        # phi0 = Y0 − C·X0(1:5) is the obs-equation intercept that pins
+        # obs to Y0 at the SS state. phi0 IS Sbar-dependent (Y0 and X0
+        # both shift with Sbar through the per-call SS solve).
         #
-        # 2. ``obs_offset_wedge`` for ``extract_wedges_bckm_style``.  The
-        #    inversion needs ``dev = obs_hat − obs_offset = log(df) −
-        #    log(ss_new)`` elementwise so the policy inversion happens at
-        #    the linearization SS.  With ``prepare_observables(
-        #    center=False)`` now returning raw ``[log y, log l, log x,
-        #    log g]`` (Option A everywhere, BCKM mleqadj.m:237 convention),
-        #    the symmetric offset is just ``log(ss_new[var])``.
+        # We work in deviation coords (state has unconditional mean 0),
+        # so the SS-implied obs level is just Y0 = log(ss_new[var]) and
+        # the obs equation becomes
+        #     obs_t = obs_offset + H @ x_t + ε_t,   obs_offset = log(ss).
+        # At t=0, x_0 = 0 (mean), and innov_0 = obs_hat[0] − log(ss),
+        # which is non-zero and Sbar-dependent — exactly matching BCKM
+        # (their innov(1) = Ybar(1) − X0'·Cbar' is also non-zero at
+        # t=0 by construction).
         #
-        # Both produced here; downstream picks the right one.
-        # Symmetrized 2026-04-29: dropped the (x/y)_calib and (g/y)_calib
-        # divisions that paired with the old calibrated-ratio shift in
-        # `prepare_observables`.  Both shifts cancelled mathematically,
-        # but their presence coupled the obs definition to ss_calib in
-        # a way that drifted with `g_share` and was a constant source of
-        # confusion in diagnostics.
-        obs_offset_kf = obs_hat[0, :].copy()
+        # The pre-2026-04-30 path set ``obs_offset_kf = obs_hat[0, :]``
+        # to force innov(0)=0. That dropped the Sbar dependence from the
+        # KF intercept, which let log_g float free of g/y data fit and
+        # converged the optimizer to a data-independent attractor at
+        # log_g ≈ −1.2 instead of BCKM's −1.94. Verified by
+        # ``scripts/diag_ll_landscape.py`` (LL monotone-uphill 180 nats
+        # from BCKM-θ to ours, no barrier) and
+        # ``scripts/diag_mle_on_bckm_data.py`` (Sbar attractor
+        # data-independent). See CLAUDE.md "Debugging Findings"
+        # (2026-04-30).
         obs_offset_wedge = np.array([
             np.log(ss_new["y"]),
             np.log(ss_new["l"]),
             np.log(ss_new["x"]),
             np.log(ss_new["g"]),
         ])
+        obs_offset_kf = obs_offset_wedge.copy()
 
         return F, H, Q_proc, obs_offset_kf, obs_offset_wedge, ss_new
 

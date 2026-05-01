@@ -2150,6 +2150,176 @@ Modified (uncommitted):
 
 ---
 
+## Session: 2026-04-30 (evening) — phi0 fix landed + optimizer investigation closed
+
+### What happened
+
+Two pieces of work finished this evening, both directly attacking the
+"BCKM-θ on our pipeline disagrees with Table 11 by ~0.025–0.10 in every
+f-stat cell" residual problem from earlier in the day.
+
+#### 1. phi0 fix (`var_estimation.py:476-484`)
+
+**Patch:** replaced the static
+```python
+obs_offset_kf = obs_hat[0, :]   # constant in θ
+```
+with the Sbar-dependent
+```python
+obs_offset_wedge = log(ss_new[var])   # changes with Sbar through ss_new(Sbar)
+obs_offset_kf    = obs_offset_wedge
+```
+matching BCKM `mleqadj.m:231-232` `phi0 = Y0 − C·X0(1:5)` semantics
+(BCKM's intercept depends on Sbar through `X0`'s log-SS components).
+
+**Result on our `df`** (BCKM(P,Q) + our Sbar-fsolve seed):
+
+| scenario | LL_pre | LL_post | fstats_post (A, τ_l, τ_x, g) |
+|---|---|---|---|
+| BCKM-θ on our df               | +1645.97 | **+1719.66** | 0.151, 0.485, 0.306, 0.058 |
+| BCKM(P,Q) + OUR Sbar_init       | +1248.62 | **+1716.54** | **0.154, 0.469, 0.316, 0.060** |
+| Our converged MLE               | +1826.47 | +1825.64    | 0.128, 0.630, 0.181, 0.061 |
+
+Table 11 target: (0.16, 0.46, 0.32, 0.06). **Middle row matches to 0.01
+in every channel** — our pipeline at our Sbar-fsolve seed paired with
+BCKM Tables 8/10 reproduces Table 11 almost exactly. The phi0 hypothesis
+is confirmed and resolved.
+
+On BCKM `Y_raw`:
+- Sbar `log_g` moved from −1.218 (pre) to **−1.991 (post)**, finally
+  aligning with BCKM's published −1.935. The data-independent attractor
+  at log_g ≈ −1.2 we had been hunting since the morning **is gone**.
+- ‖ΔSbar‖∞ collapsed from 0.72 to **0.056**.
+- LL gap (ours converged vs BCKM-θ on BCKM data) dropped from +27 nats
+  to **+11 nats** — not zero, but a 60% reduction.
+
+All 79 fast tests still pass. No CLAUDE.md "Asking Before Deviating"
+items were touched (state-space form unchanged, penalty unchanged,
+Kalman path unchanged, theta vector unchanged).
+
+#### 2. Optimizer investigation (`scripts/diag_optimizer_basin_v2.py`)
+
+The +11-nat residual after the phi0 fix on BCKM data raised the
+question: is BCKM-θ a local maximum of our LL surface, or does our
+optimizer climb past it for a structural reason? Ran four checks at
+BCKM-θ on BCKM `Y_raw[:,[0,2,1,3]]`:
+
+| Stage | LL | max\|eig(P)\| | ‖ΔSbar‖∞ | ‖ΔP‖∞ | ‖ΔQ‖∞ |
+|---|---|---|---|---|---|
+| BCKM-θ (ref)              | +1887.73 | 0.9960 | — | — | — |
+| After penalized L-BFGS-B  | +1893.75 | 0.9952 | 7.6e-3 | 1.3e-3 | 1.6e-3 |
+| Full optimizer (cached)   | +1899.03 | 0.9950 | 5.6e-2 | 2.7e-2 | 3.0e-2 |
+
+- **Q1 (penalized walk):** 23 L-BFGS-B iterations from BCKM-θ → +6.02
+  nats with all four θ components drifting by ≤ 1.6e-3. This is
+  classic gradient noise / BCKM stopping their optimizer slightly
+  early — not a structural disagreement.
+- **Q2 (shrinkage gain):** the multi-restart + 50-iter
+  multiplicative-shrink loop (`pb=0.99, nps=50` per BCKM
+  `runmleadj.m`) adds another +5.28 nats but walks to a meaningfully
+  different basin (Sbar drift jumps 7×, P drift 20×, Q drift 19×).
+- **Q3 (Q sign-flip degeneracy):** all 16 lower-tri sign basins give
+  bit-identical LL (+1893.7474). Our walked Q is in BCKM's `++++`
+  basin (gap 1.58e-3 vs ≥ 1.5e-2 for any other sign basin). **Sign
+  flip is not the issue.**
+- **Q4 (per-quarter innovations):** RMSE differences ≤ 3e-4 across all
+  4 obs channels. The largest single-quarter improvement (1980Q1,
+  +0.037 nats) is the t=0 boundary artifact (we use
+  `obs[0]−log(ss)`; BCKM differences and uses `Y(2)−Y0` after
+  dropping the first observation). Remaining 139 quarters contribute
+  < 0.005 each.
+
+**First-attempt diagnostic was wrong** (`diag_optimizer_basin.py`):
+used the `eval_only` path inside L-BFGS-B, which bypasses the
+spectral-radius penalty in `_neg_ll_fast`. Optimizer walked to a
+non-stationary `max|eig(P)| = 1.0093` for a fictitious +12.66 nats.
+V2 reimplements the LL evaluator with explicit penalty matching
+`_neg_ll_fast` (`5e5·max(|eig(P)|−0.995, 0)² + 5e5·Σ(Sbar bound
+violations)²`) and uses `bckm_state_space` + `solve_discrete_are`
+directly to avoid `estimate_var_mle` setup overhead (Q1 finishes in
+5.3s vs 480s+ timeout for V1). Also added a complex-SS guard so the
+penalty drives infeasible-Sbar line searches back to feasibility
+without crashing on `(1+tauxs) < 0`.
+
+### Verdict
+
+The optimizer is structurally correct. Hunting structural bugs in the
+optimizer is **closed**. BCKM-θ is essentially a critical point of our
+LL surface on BCKM data; the +11-nat gap decomposes cleanly into:
+
+- **+6 nats of routine L-BFGS-B convergence** — BCKM stopped early
+- **+5 nats of shrinkage-induced basin drift** — BCKM-faithful per
+  `runmleadj.m`, but it does push us 5 nats / ~13pp of f-stat weight
+  away from BCKM's own published θ on BCKM's own data
+
+Both contributions are at or below the limit of what's distinguishable
+from numerical-fidelity noise (finite-difference Jacobians, off-by-one
+obs differencing).
+
+### Open methodological question (raised, not answered)
+
+Should we disable the multiplicative-shrink loop (`pb=0.99, nps=50`,
+`var_estimation.py:815-828`)? It's BCKM-faithful, but it pushes us to
+a basin that's 5 nats higher than BCKM-θ but 13pp of f-stat weight
+*away* from BCKM Table 11 on BCKM's own data. **User decision: keep it
+on for now** — BCKM uses it, and the LL gain is real. The methodological
+gap (BCKM-as-published vs BCKM-as-optimization-stops) is something to
+revisit later if Table 11 still misses by > 0.05 after the data fix.
+
+### Where the remaining gap lives
+
+Now that Track A (objective formulation) is closed, the residual gap is
+~150 nats of FRED-vs-BEA-NIPA data construction (Track B). That work is
+**BLOCKED** on the BEA NIPA hours/X/G migration — see the prior diary
+entry on the chained-real revert. Element-wise comparison against
+`worktemp.mat:Y_raw` is the gating signal for any data change.
+
+### Repo state at session end
+
+- Modified (uncommitted):
+  - `CLAUDE.md` (+50 lines: phi0 finding, optimizer investigation
+    finding, both in "Findings (most recent first)")
+  - `bca_core/var_estimation.py` (phi0 fix, lines 476-484)
+  - `wedges_us_1980_2014.png` (re-rendered after phi0 fix)
+- New files (untracked):
+  - `scripts/diag_optimizer_basin.py` — first attempt, kept as a
+    reference for "the eval_only path bypasses the penalty"
+  - `scripts/diag_optimizer_q1_penalized.py` — intermediate version
+  - `scripts/diag_optimizer_basin_v2.py` — final, working
+  - `scripts/diag_state_path_compare.py`,
+    `scripts/diag_capital_lom_labor.py`,
+    `scripts/diag_labor_amplitude.py`,
+    `scripts/diag_labor_x_cell.py`,
+    `scripts/diag_ll_landscape.py`,
+    `scripts/diag_mle_on_bckm_data.py`,
+    `scripts/diag_bckm_components_isolation.py` — earlier-in-day
+    investigations of the labor→x cell paradox, state-path agreement,
+    and the LL landscape walk between BCKM-θ and our θ
+  - `scripts/plot_figure_2*.py` — visualization scripts, kept for
+    later use
+  - `figure_2{B,C,D,E}_at_bckm_theta.png` — auxiliary plots
+- 4 commits ahead of `origin/main` from earlier-in-day work
+  (last commit: `346f209 Pin labor target_mean to BCKM's empirical
+  0.24279 (was 0.25)`)
+
+### Exact next step
+
+1. Commit the phi0 fix + optimizer investigation as one logical
+   unit: stage `CLAUDE.md`, `bca_core/var_estimation.py`,
+   `Diary.md` (this entry), and the diag/plot scripts that will
+   stay in `scripts/` as durable references. Push to `origin/main`.
+2. Run the canonical end-to-end pipeline (`scripts/eval_bckm_fstats.py`
+   on our `df`) and capture the f-stats + LL output. This is the
+   "is the post-fix state stable when not driven by a single
+   diagnostic" check.
+3. Resume the BEA NIPA hours/X/G migration (Track B). The data revert
+   from this afternoon left the BEA sales-tax fetch + the empirical
+   hours-ranking docstring in place; the next try should be small —
+   one channel at a time, gated by Stage-1 element-wise comparison
+   against `worktemp.mat:Y_raw`.
+
+---
+
 ## Appendix: 2026-04-27 — Step 8 scratch notes (merged from orphan `~/Documents/Diary.md`)
 
 The following block was found in `/Users/pedrotanureveloso/Documents/Diary.md`

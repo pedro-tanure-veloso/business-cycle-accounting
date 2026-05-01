@@ -29,6 +29,303 @@ Once these are matched, the model is trusted as correctly implemented and can be
 
 **NEVER read, modify, commit, or push anything inside `BCA/BCKM/`.** This folder contains the original Matlab replication files from the paper. It is reference-only and is excluded from version control via `.gitignore`. If you need to consult the Matlab methodology, read the files but do not stage or alter them in any way.
 
+## Loops — stop them when you report back
+
+When the user invokes `/loop` and you self-pace via `ScheduleWakeup`,
+**stop the loop the moment you report back to the user**, unless something
+specific is still running in the background that genuinely needs the next
+tick (a long-running fit, a CI build, a file watch). Concretely: at the end
+of any turn that delivers a substantive update to the user, **omit the
+`ScheduleWakeup` call** so no further wakeups fire.
+
+Why: the user is not always at the keyboard. A wakeup that fires while
+they're afk runs autonomously, makes decisions, and surprises them when
+they come back. That's bad. Loops are for "watch this background task";
+they are not a license for autonomous iteration during idle gaps.
+
+Operational rule: if you have nothing materially new to do without user
+input — e.g. you're awaiting approval on a fix, or no observable event has
+happened — **the loop ends now** and the user re-arms it later if they want
+another tick.
+
+If you scheduled a wakeup before realizing the user was afk and the wakeup
+fires while still pending: when it fires, recognize the conversation has
+returned to interactive use and DO NOT take further actions or
+reschedule — just confirm the loop is dead.
+
+## Debugging Findings — append-only journal
+
+**Working rule for Claude (you):** every time a debugging session establishes
+a non-trivial fact about this codebase or about BCKM — something that
+falsified a hypothesis, ruled out a suspect, fixed a sign/anchor/convention
+bug, or proved two quantities are (or are NOT) the same — **append it to this
+section before the session ends**. One bullet per finding. Format: short
+verdict, where it was verified (script + line / table-mat field), and what it
+rules out. These accumulate; do not delete or rewrite earlier entries unless
+a later finding directly invalidates them (in which case mark the old one
+`SUPERSEDED` and add the replacement below).
+
+The point: every iteration we lose facts to context compaction. This section
+is the durable memory.
+
+### Findings (most recent first)
+
+- **2026-04-30 — Optimizer investigation: BCKM-θ is essentially a critical
+  point of our LL on BCKM data; the +11-nat residual gap decomposes
+  cleanly into 6 nats of routine L-BFGS-B convergence + 5 nats of
+  shrinkage-induced basin drift. No structural bug.**
+  `scripts/diag_optimizer_basin_v2.py` runs four checks at BCKM-θ on
+  BCKM `Y_raw`:
+
+  | Stage | LL | max\|eig(P)\| | ‖Sbar−Sbar_BCKM‖∞ | ‖P−P_BCKM‖∞ | ‖Q−Q_BCKM‖∞ |
+  |---|---|---|---|---|---|
+  | BCKM-θ (ref)              | +1887.73 | 0.9960 | — | — | — |
+  | After penalized L-BFGS-B  | +1893.75 | 0.9952 | 7.6e-3 | 1.3e-3 | 1.6e-3 |
+  | Full optimizer (cached)   | +1899.03 | 0.9950 | 5.6e-2 | 2.7e-2 | 3.0e-2 |
+
+  • **Q1 (penalized walk)**: 23 L-BFGS-B iters from BCKM-θ → +6.02 nats.
+    All four θ components drift by ≤ 1.6e-3. This is gradient noise / BCKM
+    stopping early — not a structural disagreement.
+  • **Q2 (shrinkage gain)**: extra +5.28 nats from multi-restart + 50-iter
+    multiplicative-shrink loop. This walks to a meaningfully different
+    basin (Sbar drift jumps 7x, P drift 20x, Q drift 19x).
+  • **Q3 (Q sign flips)**: all 16 sign basins give bit-identical LL
+    (+1893.7474) and bit-identical penalty. Our walked Q is in the
+    `++++` basin — same as BCKM (gap 1.58e-3 in our basin, vs ≥ 1.5e-2
+    for any sign-flipped basin). **Sign flip is not the issue.**
+  • **Q4 (per-quarter innovations)**: per-channel RMSE differences are
+    ≤ 3e-4 across all 4 obs channels. Largest single-quarter improvement
+    (1980Q1) is +0.037 nats — driven by our t=0 boundary (innov[0] =
+    obs[0] − log(ss) is non-zero by construction; BCKM uses Y(2)−Y0
+    after differencing, dropping this point). Remaining 139 quarters
+    contribute < 0.005 each.
+
+  **Implications:**
+  1. The optimizer is structurally correct. BCKM-θ is ~6 nats below a
+     nearby penalized local max — typical optimizer-stopping noise.
+  2. The shrinkage loop (BCKM-faithful per `runmleadj.m`) finds a
+     different ~5-nat-better basin where weight shifts from τ_l to τ_x
+     in f-stats. This is at the limit of what's distinguishable from
+     numerical fidelity, given finite-difference Jacobians and the off-
+     by-one obs differencing convention.
+  3. **Hunting structural bugs in the optimizer is closed.** No deeper
+     fix lives there. The remaining ~150-nat data-construction gap on
+     our df (FRED-vs-BEA-NIPA) is the higher-leverage open issue.
+
+  Open methodological question for the user: should we disable the
+  multiplicative-shrink loop (`pb=0.99, nps=50` in `var_estimation.py:
+  815-828`)? It's BCKM-faithful but pushes us 5 nats / 13pp of f-stat
+  weight away from BCKM's published θ on BCKM's own data. Default:
+  keep it (BCKM uses it; the LL gain is real).
+
+- **2026-04-30 — phi0 fix landed: `obs_offset_kf = obs_offset_wedge`
+  reproduces BCKM Table 11 to ~0.01 with our Sbar warm-start.**
+  Patch in `var_estimation.py:476-484` replaces the static
+  `obs_offset_kf = obs_hat[0, :]` with the Sbar-dependent
+  `obs_offset_wedge = log(ss_new[var])`. All 79 fast tests still pass.
+  Pre-vs-post pivot table on our df:
+
+  | scenario | LL_pre | LL_post | fstats_post (A,τ_l,τ_x,g) |
+  |---|---|---|---|
+  | BCKM-θ on our df | +1645.97 | **+1719.66** | 0.151, 0.485, 0.306, 0.058 |
+  | BCKM(P,Q) + OUR Sbar_init | +1248.62 | **+1716.54** | **0.154, 0.469, 0.316, 0.060** |
+  | Our converged MLE | +1826.47 | +1825.64 | 0.128, 0.630, 0.181, 0.061 |
+
+  Table 11 target: (0.16, 0.46, 0.32, 0.06). The middle row matches to
+  **0.01** in every channel — i.e., when our Sbar-fsolve seed is paired
+  with BCKM's published (P, Q), our pipeline reproduces Table 11 almost
+  exactly. **The phi0 hypothesis is confirmed and resolved.**
+
+  On BCKM `Y_raw`:
+  - Sbar `log_g` moved from −1.218 (pre) to **−1.991 (post)**, matching
+    BCKM's −1.935 to 0.06. The data-independent attractor at
+    log_g ≈ −1.2 is **gone**.
+  - ‖ΔSbar‖∞ collapsed from 0.72 to **0.056**.
+  - LL gap (ours converged − BCKM-θ-on-BCKM-data) dropped from +27 to
+    **+11 nats**.
+
+  Residual problems after the fix:
+  1. Our optimizer still finds a (P, Q) basin ≈ +106 nats above BCKM-θ
+     on our df (was +180); the landscape walk now shows a barrier
+     (LL crashes to −1.7M around α=0.55–0.65, likely DARE failure in
+     interpolated θ — the path through θ-space is pathological even
+     though both endpoints are well-conditioned).
+  2. f-stats at our MLE-converged θ on our df are now (0.128, 0.630,
+     0.181, 0.061) — substantial improvement from (0.050, 0.877,
+     0.053, 0.021), but still not Table 11. Reshuffles in fY[τ_l] vs
+     fY[τ_x] are now driven by P/Q drift, not Sbar.
+  3. ~150-nat data-construction gap to BCKM `Y_raw` remains (BEA NIPA
+     todo, still BLOCKED).
+
+  Implication: the dominant Track A bug is fixed. Remaining work splits
+  into (a) understanding why our optimizer escapes BCKM's (P, Q) basin
+  on top of our (P, Q)-correct warm-start, and (b) the BEA NIPA data
+  switch.
+
+- **2026-04-30 — Basin gap is ~83% data-construction, ~17% objective.**
+  Two diagnostics together pin the cause:
+  1. `scripts/diag_ll_landscape.py` walks θ_bckm → θ_ours along the
+     convex line in θ-space, scoring our LL at 21 grid points.
+     **LL is monotone-increasing across all 20 steps**: from +1645.97
+     (BCKM-θ) to +1826.47 (our θ), Δ=+180 nats, no barrier. f-stats
+     degrade smoothly along the path: (0.151, 0.485, 0.306) → (0.050,
+     0.877, 0.053). Verdict: BCKM-θ is *not* a local max of our LL
+     surface — the optimizer correctly walks uphill on a smooth slope
+     to a different argmax. So we are **NOT in a "basin escape"
+     situation**; we are on a different objective function.
+  2. `scripts/diag_mle_on_bckm_data.py` runs our optimizer on BCKM's
+     `Y_raw` (permuted [0,2,1,3]) instead of our `df`. Result: LL
+     converges to +1898.64, beating BCKM's stored θ by **+27 nats on
+     BCKM's own data** (vs +180 nats on our df). f-stats jump from our
+     own-data converged (0.05, 0.88, 0.05, 0.02) to (0.115, 0.614,
+     0.235, 0.037) — clear directional move toward Table 11.
+  Decomposition: 180 − 27 = **~150 nats of the LL gap is the data
+  source** (FRED-vs-BEA-NIPA construction); **~27 nats is residual
+  objective-formulation difference** independent of data. Track B
+  (data) is the higher-leverage fix.
+
+- **2026-04-30 — Basin disagreement is concentrated in Sbar, especially
+  `log_g`. P and Q converge to BCKM.** When fed BCKM's `Y_raw`, our
+  optimizer lands at ‖ΔP‖∞ = 0.025 and ‖ΔQ‖∞ = 0.007 vs BCKM Tables
+  8/10 — close. But ‖ΔSbar‖∞ = **0.72**, dominated by log_g: ours
+  −1.22 (g/y ≈ 0.30) vs BCKM −1.94 (g/y ≈ 0.14, matching data). On our
+  `df` the converged log_g is also ≈ −1.21 — **so log_g ≈ −1.2 is a
+  data-independent attractor of our objective**, not a data-fit
+  artifact. Concrete suspect: `var_estimation.py:476` sets
+  `obs_offset_kf = obs_hat[0, :]` (constant in θ) where BCKM
+  `mleqadj.m:232` sets `phi0 = Y(:,1) − C·X0(1:5)` with X0 = SS state
+  in absolute coords — making BCKM's intercept Sbar-dependent through
+  C·X_ss. In Path A our state is mean-zero by construction so we set
+  C·X_ss = 0 and drop that term. If BCKM's X0 is non-zero in their
+  coords, our LL loses an Sbar-dependent term that pulls Sbar toward
+  data fit. **Highest-leverage Track A candidate** — verify next by
+  reading `mleqadj.m:225-235` and checking whether `Y0 = X0(1:5)` in
+  BCKM is zero or not at the linearization.
+
+- **2026-04-30 — At full BCKM-θ, our f-stats match Table 11 to ~0.01.
+  This SUPERSEDES the "structure is broken" framing.** Running
+  `scripts/eval_bckm_fstats.py` with `(SBAR_BCKM_TABLE8, P_BCKM_TABLE8,
+  QCHOL_BCKM_TABLE10)` from `bca_core/constants.py` produces
+  fY[A]=**0.1513**, fY[τ_l]=**0.4853**, fY[τ_x]=**0.3057**, fY[g]=0.0577
+  vs Table 11 target (0.16, 0.46, 0.32, —). Max cell gap ≈ 0.025.
+  LL at BCKM-θ = +1645.97 (our convention; BCKM-form ≈ +1131). Our MLE
+  converges to LL=+1826 with very different f-stats (fY[A]=0.05, fY[τ_l]=0.88,
+  fY[τ_x]=0.05) — i.e. the optimizer finds a higher-LL basin that disagrees
+  with BCKM's f-stat decomposition. **Diagnosis: pipeline structure is
+  correct at published θ; remaining problem is OPTIMIZER BASIN choice.**
+  The earlier diagnostic framing ("LL=+1233 vs BCKM +2706 ≈ 1500-nat gap")
+  conflated our LL convention with BCKM's `mle.likelihood` sign convention
+  (see the `mleqadj.m:257` finding below). Cached at `/tmp/fstats_clean.txt`
+  (2026-04-30 16:26). Implication: **stop hunting structural bugs at BCKM-θ;
+  the structure is fine. Hunt the basin instead** — multi-start strategy,
+  Q parameterization, or stationarity-penalty interaction with the optimizer.
+
+- **2026-04-30 — Open paradox in `bckm.components["mlx"]` regression:
+  +0.082 on k is structurally impossible from our LOM, but R²=1.0.**
+  OLS β = [+0.082, +0.286, −1.718, +0.348, +0.109] (rank=5, cond=14.9,
+  R²=1.000000). Our LOM gives [0.000, +0.368, −1.550, +0.457, +0.136].
+  Our and BCKM's algorithms both produce Δgammak=0 by construction, so
+  β[k]=+0.082 cannot come from either pipeline's `bckm_capital_lom`.
+  Best remaining hypotheses: (a) BCKM stored `mlx` was generated with a
+  different Y0 anchor than `gwedges2.m:21` claims, (b) BCKM applied an
+  additional row operation we haven't found, or (c) a numerical artifact
+  in the matlab CF loop that doesn't survive analytical scrutiny. Not
+  blocking — given the f-stat finding above, the labor→x cell mismatch
+  contributes <0.025 to the f-stat gap, well within the noise budget.
+
+- **2026-04-30 — `params.py:adj_cost_elasticity` has a wrong comment, but the
+  value is not the labor→x bug.** The comment claims "Calibrated to match
+  BCKM adja=12.88 (mleqadj.m, datamine.m)". BCKM's actual formula
+  (`bca_steady2.m:58`) is `adja = 0.25/(n + γ + δ)`, which gives ≈ 12.56 at
+  US growth rates, not 12.88. Setting `adj_cost_elasticity=0.25` would
+  reproduce BCKM's `a` exactly. Sweep over `{0.250, 0.256448, 0.260, 0.270,
+  0.280}` (a ∈ {12.56, 12.88, 13.06, 13.56, 14.06}) shows max|gap| in
+  `(C_lab − C_0)[x, :]` is monotone in `a` but stays ≥ 0.15 at all values
+  and never produces P_x[k] ≠ 0. The hypothesis "the labor→x gap is
+  miscalibrated `a`" is **falsified**. Comment is still wrong and should be
+  fixed. (`scripts/diag_capital_lom_labor.py` sweep block.)
+
+- **2026-04-30 — `worktemp.adjc` is a SWITCH, not a coefficient value.**
+  `datamine.m:54: worktemp.adjc = 2; %1 for no, 2 for BGG, 3 for 4*BGG`.
+  Briefly mistook `adjc=2` as `a=2` (vs our 12.88) — that was wrong; the
+  switch selects which formula `adja` is computed from. Always check the
+  comment in `datamine.m` before treating an `adjc/adjk/...` integer as a
+  parameter value.
+
+- **2026-04-30 — Our `bckm_capital_lom` matches `fixexpadj.m` line-for-line.**
+  Verified: `res_adjust` (bca_core/bckm_lom.py) ≡ `res_adjust2.m`
+  (Z indexing, As-pinning at lines 46-53, Newton iter on labor FOC, residual
+  formula); `bckm_capital_lom` (lines 198-266) ≡ `fixexpadj.m:50-74` (Gamma
+  quadratic + linear solve); `bckm_C_matrix:339` `C[1,:] =
+  [phixk,0,0,0,0] + phixkp*Gamma` ≡ `fixexpadj.m:106`. `a0, a1, a2`
+  partials are bit-identical across As ∈ {[0,1,0,0], [0,0,0,0], [1,1,1,1]}
+  → Δgammak = 0 by construction. Our LOM is structurally fine.
+
+- **2026-04-30 — Linearized state path matches BCKM's linearized state path
+  to machine precision.** `scripts/diag_state_path_compare.py`: log_k
+  matches exactly; log_g eps; log_z 3.65e-3; τ_l 1.11e-2; τ_x 2.18e-3.
+  Cross-check: applying BCKM's nonlinear formula `(1−Tault)/(1−Tault(Y0))`
+  to our extracted state reproduces `bckm.wedges["tault"]` to **4.44e-16**,
+  and `(Zt/Zt(Y0))^(1−θ)` reproduces `bckm.wedges["zt"]` to 1.84e-4. The
+  τ_l "1.1pp gap" is **pure linearization curvature**, not a state bug.
+  Conclusion: **CF math should use the linearized state, not `bckm.wedges`**;
+  state extraction is not the bug.
+
+- **2026-04-30 — `bckm.wedges` (from `worktemp.mat`) are NONLINEAR;
+  `Xt0` in `gwedges2.m:80` is LINEARIZED. Don't mix them.** Specifically
+  `gwedges2.m:70-77`: lowercase `lzt, tault, lkt, lgt` (LIN, used in
+  `Xt0 = [lkt, lzt, tault, tauxt, lgt, ones]` line 80, fed to `(C2−C0)*Xt0`)
+  vs capital `Zt, Tault` (NL, used only in published `w.zt`,
+  `w.tault` at lines 196-197). Direct subtraction of `bckm.wedges` from
+  our linearized states is apples-to-oranges. Use `Y_raw` + Cobb-Douglas
+  inversion to reconstruct the linearized series for any state-level
+  comparison.
+
+- **2026-04-30 — OLS β recovered in `diag_labor_x_cell.py` Layer 3 IS BCKM's
+  true `(C_lab − C_0)[x, :]`.** OLS of `bckm.components["mlx"]` (=
+  `exp(YMl(:,2) − YMl(Y0,2))*100`, x-component of bind-normalized labor CF;
+  per `gwedges2.m:171,205`) on bind-centered linearized states is rank-5
+  full-rank (cond=14.9, R²=1.000000, residual std 8e-6). β =
+  [+0.082, +0.286, −1.718, +0.348, +0.109] in (k, z, τ_l, τ_x, g) order.
+  Our derived `phixkp · (G_lab − G_zero)` =
+  [0.000, +0.368, −1.550, +0.457, +0.136]. The +0.082 entry on k is
+  **structurally impossible** for any LOM with Δgammak=0 — but our
+  algorithm and the `fixexpadj.m` algorithm both yield Δgammak=0. Open
+  paradox; suspect anchor/Y0 convention or a stored-vs-recomputed BCKM
+  components mismatch.
+
+- **2026-04-29 — Counterfactual decomposition is INCREMENTAL `(C_j − C_0)`,
+  not single-wedge `C_j`.** Already in main "Methodology Rules" section
+  above; logged here too because it was the dominant CF bug for several
+  sessions. Without the `−C_0` subtraction, the four single-wedge CFs
+  over-count the data drop (−10.92% sum vs data −7.48%) and the inverse-SSR
+  f-stat decomposition collapses onto whichever wedge tracks the no-wedge
+  baseline. Verified end-to-end in `tests/test_bckm_table12.py`.
+
+- **2026-04-29 — Y0 anchor is `bind` (2008Q1), NOT sample start.** Already
+  in main section; logged here because it caused multiple silent bugs
+  (`f_statistics_bckm` with anchor=0 collapsed pre-2008 drift into SSR;
+  Table 12 "peak" was being read as local argmax 2007Q4 instead of 2008Q1).
+
+- **2026-04-29 — Single canonical source for BCKM Table 8 / 9 / 10.**
+  `bca_core/constants.py` exports `P_BCKM_TABLE8`, `SBAR_BCKM_TABLE8`,
+  `QCHOL_BCKM_TABLE10` in code convention (verified element-wise to
+  octave_output to ≤4.3e-5). The paper prints P transposed; using paper
+  orientation as code orientation costs **501 nats of LL** at published θ.
+  Never re-transcribe Table 8 — always import from `constants.py`.
+
+- **2026-04-29 — Labor normalization: feed raw labor, do NOT rescale to
+  `l_ss`.** Already in main section; logged here because it was the
+  dominant LL-gap source at BCKM θ before the 2026-04-29 fix.
+
+- **2026-04-29 — `mle.likelihood` in `worktemp.mat` is `L`, not `−L`.**
+  BCKM `mleqadj.m:257` minimizes `L = 0.5(T·log|Ω| + tr(Ω⁻¹Σ_innov)) +
+  penalty`, no `n_obs·log(2π)`. Stored value is signed; at converged θ it's
+  negative (≈ −2402.88) because `T·log|Ω|` dominates. Our printed `ll_ours`
+  adds `0.5·T·n·log(2π) ≈ 514.6`. Always state the convention when quoting
+  an LL gap. Verified end-to-end in `scripts/diag_bckm_data_isolation.py`:
+  same-data, same-θ gap is **16.6 nats**, not 757.
+
 ## Methodology Rules
 
 ### Follow BCKM exactly
