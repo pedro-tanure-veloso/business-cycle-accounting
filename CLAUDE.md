@@ -70,6 +70,30 @@ is the durable memory.
 
 ### Findings (most recent first)
 
+- **2026-05-01 — y-channel BEA migration PASSES Stage-1 gate; y is not
+  where the data-construction gap lives. x and g are.** Step 4 of the
+  BEA NIPA migration is complete: `BeaDataFetcher.fetch_durables_components`
+  pulls FAAt101 line 15 (consumer-durables current-cost net stock,
+  year-end annual) and FAAt103 line 15 (current-cost depreciation, SAAR),
+  quarterizes log-linearly for the stock and constant-within-year for
+  the flow, and divides by the quarterly pCD deflator. Pipeline exposes
+  `y_source="fred"` (default, legacy) and `y_source="bea"` (BCKM-faithful
+  per `usdata.m:51`: `Y = rGDP − rSTX + 0.04·rKCD + rDCD`). Stage-1 gate
+  (`scripts/diag_gate_y_channel.py`) against `bckm.Y_raw[:,0]`:
+  FRED mean|diff|=**0.0068**, BEA mean|diff|=**0.0074** — both well
+  under the 0.025 gate. BEA is +0.0006 worse than FRED — basically a
+  wash; the y-channel data-construction differences between FRED and
+  BEA are second-order at the level we're measuring against BCKM.
+  79/79 fast tests still pass with FRED default. **Implication for
+  the data-layer gap**: the worktemp.mat walkdown
+  (`scripts/diag_worktemp_compare.py`, 2026-05-01) shows Stage-1
+  per-channel mean(ours − bckm) = (y: +0.000, l: −0.000, **x: −0.023,
+  g: −0.035**). y carries essentially zero bias — the ~666-nat data-layer
+  LL gap (per the 2026-04-30 LL-decomposition finding) is concentrated
+  in x and g. **The next leverage point is the x-channel migration**
+  (`usdata.m:53`: `X = rCD + rGPDI + rGI − (rCD/rCNDS)·rSTX`), then a
+  joint y+x+g gate.
+
 - **2026-05-01 — BEA NIPA migration is order-coupled at the bind ratio:
   per-channel level gate against `bckm.Y_raw` cannot pass for g alone
   while y stays on FRED.** Stage-1 element-wise comparison after Step 2

@@ -427,3 +427,148 @@ class BeaDataFetcher:
             out[k] = s[(s.index >= lo) & (s.index <= hi)]
         return out
 
+    # --------------------------------------------------------------------
+    # convenience: BCKM-faithful consumer durables stock + depreciation flow
+
+    def fetch_durables_components(
+        self,
+        start_year: int = 1980,
+        end_year: int = 2014,
+        index_template: pd.DatetimeIndex | None = None,
+    ) -> dict[str, pd.Series]:
+        """BCKM `usdata.m:42-45`: nominal stock + depreciation of consumer
+        durables, quarterized to match the rest of the panel.
+
+            nKCD  = btab100d(T,9)/1000;     # nominal stock, annual year-end
+            nDCD  = atab10d(T,27)/1000;     # nominal depreciation, annual flow
+            rKCD  = nKCD./pCD;
+            rDCD  = nDCD./pCD;
+
+        BCKM's `.dat` files were pre-quarterized custom snapshots; BEA
+        publishes Fixed Assets only annually, so we must quarterize here.
+
+        Modern BEA mapping (verified by ``scripts/diag_bea_fa_lines.py``):
+          - nKCD: FAAt101 line 15 ("Consumer durable goods", current-cost
+            net stock, year-end levels)
+          - nDCD: FAAt103 line 15 ("Consumer durable goods", current-cost
+            depreciation, annual flow at annual rate)
+
+        Quarterization conventions:
+          - Stock (nKCD): BEA annual stock is *year-end* (Dec 31). We
+            interpolate **log-linearly** between adjacent year-ends,
+            anchoring K(year y) at end-of-Q4 of year y. The Q1/Q2/Q3
+            estimates of year y interpolate from K(y-1) (end-of-Q4 prior
+            year) toward K(y). Implementation: cumulative quarterly
+            growth = (1/4)·[log K(y) − log K(y-1)] applied to Q1, Q2, Q3
+            rolling forward from end-of-prior-Q4.
+          - Flow (nDCD): BEA annual depreciation is the SAAR for the
+            year, so each quarter of year y carries D(y) at annual rate
+            (constant-within-year). This preserves the annual sum
+            convention BCKM operates in (`usdata.m:51` adds rDCD as a
+            SAAR to rGDP, also SAAR).
+
+        Returns dict with keys nKCD, nDCD, pCD, rKCD, rDCD — all quarterly
+        Series indexed by quarter-start Timestamp. Pre-1980 quarters of
+        the requested window are filled by carrying the earliest annual
+        value backward (rare; only matters if start_year is the first
+        BEA-published year).
+
+        Args:
+            index_template: if provided, the output is reindexed onto
+                this DatetimeIndex (so the returned series share index
+                with the FRED-derived adj DataFrame). When None, the
+                index is the natural quarterly grid for the requested
+                window.
+        """
+        # Pull annual nominal stock + depreciation from BEA Fixed Assets.
+        # Fetch one year before start_year so we have the K(y-1) anchor
+        # needed to interpolate Q1, Q2, Q3 of start_year. Fall back to
+        # carrying-forward if the API doesn't have that earlier year.
+        fa_start = max(start_year - 1, 1947)
+        nKCD_annual = self.fixed_assets_line_series(
+            "FAAt101", line=15, start_year=fa_start, end_year=end_year,
+        )
+        nDCD_annual = self.fixed_assets_line_series(
+            "FAAt103", line=15, start_year=fa_start, end_year=end_year,
+        )
+
+        # Build the quarterly grid for the requested window
+        qgrid = pd.date_range(
+            start=pd.Timestamp(start_year, 1, 1),
+            end=pd.Timestamp(end_year, 10, 1),
+            freq="QS",
+        )
+
+        # nKCD quarterization: log-linear between year-ends.
+        # Convention: annual K(y) = stock at end-of-Q4 of year y.
+        # For quarter q (1..4) of year y:
+        #   log K_q = log K(y-1) + (q/4) * [log K(y) - log K(y-1)]
+        # — end-of-Q1 sits 1/4 of the way along the log path from
+        # end-of-Q4 prior year to end-of-Q4 current year.
+        import numpy as np  # local import to avoid module-level addition
+        nKCD_q_vals = []
+        for ts in qgrid:
+            year = ts.year
+            quarter = (ts.month - 1) // 3 + 1
+            ts_prev = pd.Timestamp(year - 1, 1, 1)
+            ts_curr = pd.Timestamp(year, 1, 1)
+            k_prev = (
+                nKCD_annual.loc[ts_prev]
+                if ts_prev in nKCD_annual.index
+                else nKCD_annual.iloc[0]   # carry-back
+            )
+            k_curr = (
+                nKCD_annual.loc[ts_curr]
+                if ts_curr in nKCD_annual.index
+                else nKCD_annual.iloc[-1]  # carry-forward
+            )
+            frac = quarter / 4.0
+            nKCD_q_vals.append(
+                float(np.exp(np.log(k_prev) + frac * (np.log(k_curr) - np.log(k_prev))))
+            )
+        nKCD_q = pd.Series(nKCD_q_vals, index=qgrid)
+
+        # nDCD quarterization: constant-within-year (SAAR convention).
+        nDCD_q_vals = []
+        for ts in qgrid:
+            ts_curr = pd.Timestamp(ts.year, 1, 1)
+            v = (
+                nDCD_annual.loc[ts_curr]
+                if ts_curr in nDCD_annual.index
+                else nDCD_annual.iloc[0]
+            )
+            nDCD_q_vals.append(float(v))
+        nDCD_q = pd.Series(nDCD_q_vals, index=qgrid)
+
+        # BCKM's nKCD/nDCD are in `units / 1000` (see usdata.m:42-43).
+        # BEA Fixed Assets returns DataValue in millions of $; the matlab
+        # `.dat` snapshot was in millions, BCKM divides by 1000 to get
+        # billions. We keep MILLIONS here to match the rest of the panel
+        # (which also returns NIPA values in millions); downstream the
+        # division by `pCD` (quarterly deflator) preserves units cleanly.
+        # Don't divide by 1000 — that would mismatch the rest of the
+        # panel's units.
+        # (BCKM's /1000 is just because their .dat had thousands; their
+        # rGDP was also in billions so the scale matched on their side.)
+
+        # Real units: divide by pCD (quarterly durable-goods deflator).
+        pCD_q = self.nipa_line_series(
+            "T10109", line=4, start_year=start_year, end_year=end_year,
+        )
+        # Trim/reindex pCD to the qgrid (cache may carry wider span)
+        pCD_q = pCD_q.reindex(qgrid)
+        rKCD_q = (nKCD_q / pCD_q * 100).rename("rKCD")
+        rDCD_q = (nDCD_q / pCD_q * 100).rename("rDCD")
+
+        out = {
+            "nKCD": nKCD_q.rename("nKCD"),
+            "nDCD": nDCD_q.rename("nDCD"),
+            "pCD":  pCD_q.rename("pCD"),
+            "rKCD": rKCD_q,
+            "rDCD": rDCD_q,
+        }
+        if index_template is not None:
+            for k, s in out.items():
+                out[k] = s.reindex(index_template)
+        return out
+

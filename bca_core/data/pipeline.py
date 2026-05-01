@@ -36,6 +36,7 @@ def build_us_dataset(
     gamma_annual: float | None = None,
     base_year_quarter: str | None = None,
     g_source: str = "fred",
+    y_source: str = "fred",
 ) -> tuple[pd.DataFrame, dict]:
     """
     Build the adjusted US dataset for BCA.
@@ -97,6 +98,24 @@ def build_us_dataset(
         Until then, default ``g_source="fred"`` so the f-stat
         baseline doesn't move; ``g_source="bea"`` is preserved for
         the post-y joint-gate test.
+    y_source : "fred" (default, legacy) or "bea". When "bea", the output
+        channel is reconstructed BCKM-faithful per ``usdata.m:51``:
+
+            Y = rGDP − rSTX_real + 0.04·rKCD_real + rDCD_real
+
+        - ``rGDP`` from T10106 line 1 (chain-real-2017-$, BEA panel)
+        - ``rSTX_real`` = (federal excise + state-local sales + state-
+          local excise) / pPCE × 100 — real-2017-$ deflation by PCE
+          deflator (BCKM ``nipa119(4,T)`` = T10109 line 2).
+        - ``rKCD_real``, ``rDCD_real`` from
+          :meth:`BeaDataFetcher.fetch_durables_components` — annual
+          BEA Fixed Asset Tables FAAt101/103 line 15 ("Consumer durable
+          goods"), quarterized log-linearly for the stock and
+          constant-within-year for the depreciation flow.
+
+        Bypasses ``reclassify_durables`` and ``subtract_sales_tax`` for
+        the y channel only — c/x/l/g unchanged. Requires a BEA API key
+        (or warm cache).
 
     Returns
     -------
@@ -194,6 +213,38 @@ def build_us_dataset(
     elif g_source != "fred":
         raise ValueError(
             f"g_source must be 'fred' or 'bea', got {g_source!r}"
+        )
+
+    # ── BEA NIPA + Fixed Asset override for y channel (Step 4 of migration) ──
+    # BCKM `usdata.m:51`: Y = rGDP − rSTX + 0.04·rKCD + rDCD, where each
+    # component is in real-2017-$ (chain-real for rGDP, deflator-divided
+    # for the rest). Bypasses ``reclassify_durables`` (which builds its
+    # own perpetual-inventory stock from pce_durables) and
+    # ``subtract_sales_tax`` (which uses ASLSTAX or BEA aggregate, both
+    # already netted out of ``y_real_pc`` upstream). When y_source="bea",
+    # we replace ``y_real_pc`` entirely with the BCKM-faithful series.
+    if y_source == "bea":
+        bea = BeaDataFetcher(api_key=bea_api_key)
+        real_panel = bea.fetch_real_components(start_year=1980, end_year=2014)
+        dur_panel = bea.fetch_durables_components(start_year=1980, end_year=2014)
+        stx_nom = bea.fetch_us_sales_tax(start="1980-01-01", end="2014-12-31")
+        # rSTX in real-2017-$ — divide nominal sales tax aggregate by
+        # PCE deflator (BCKM `nipa119(4,T)` = T10109 line 2).
+        rSTX_real = stx_nom / real_panel["pPCE"] * 100
+        # BCKM Y formula in millions of real-2017-$ at SAAR
+        Y_real_M = (
+            real_panel["rGDP"]
+            - rSTX_real
+            + 0.04 * dur_panel["rKCD"]
+            + dur_panel["rDCD"]
+        )
+        Y_real_M = Y_real_M.reindex(adj.index)
+        # Per-capita scaling matches the FRED path: panel in millions,
+        # working_age_pop in thousands → multiply by 1000.
+        adj["y_real_pc"] = Y_real_M * 1000.0 / adj["working_age_pop"]
+    elif y_source != "fred":
+        raise ValueError(
+            f"y_source must be 'fred' or 'bea', got {y_source!r}"
         )
 
     start_dt = pd.Timestamp(pd.Period(start, freq="Q").start_time)
