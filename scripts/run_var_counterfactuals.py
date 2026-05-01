@@ -365,6 +365,7 @@ def main(
     ax.axhline(100, color="k", linewidth=0.5, linestyle=":")
     ax.set_title("Figure 2B — Output and wedges (US 2008–2014)")
     ax.set_ylabel("Index, 2008Q1 = 100")
+    ax.set_ylim(bottom=80)
     ax.legend(loc="best", fontsize=10)
     ax.grid(True, alpha=0.3)
     for tick in ax.get_xticklabels():
@@ -382,13 +383,13 @@ def main(
     }
     fig_specs = [
         ("y", "Figure 2C — Output components (US 2008–2014)",
-         "figure_2C.png", output_idx),
+         "figure_2C.png", output_idx, 85),
         ("l", "Figure 2D — Labor components (US 2008–2014)",
-         "figure_2D.png", labor_idx),
+         "figure_2D.png", labor_idx, 85),
         ("x", "Figure 2E — Investment components (US 2008–2014)",
-         "figure_2E.png", invest_idx),
+         "figure_2E.png", invest_idx, 60),
     ]
-    for var, title, fname, data_idx in fig_specs:
+    for var, title, fname, data_idx, ylim_bottom in fig_specs:
         fig, ax = plt.subplots(figsize=(9, 6))
         ax.plot(sub_dates, data_idx, "k-", linewidth=2.0, label="Data")
         for wname, (style, label) in component_styles.items():
@@ -397,6 +398,7 @@ def main(
         ax.axhline(100, color="k", linewidth=0.5, linestyle=":")
         ax.set_title(title)
         ax.set_ylabel("Index, 2008Q1 = 100")
+        ax.set_ylim(bottom=ylim_bottom)
         ax.legend(loc="best", fontsize=10)
         ax.grid(True, alpha=0.3)
         for tick in ax.get_xticklabels():
