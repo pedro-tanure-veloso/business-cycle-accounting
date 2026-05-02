@@ -7,41 +7,53 @@ structural wedges — efficiency (A), labor (1−τ_l), investment (1+τ_x),
 and government (g) — by Kalman-filter MLE on a VAR(1), with
 counterfactual simulations and Brinca-Iskrev-Loria-style f-statistics.
 
-The end deliverable is a toolkit for **arbitrary country/period
-combinations**. The BCKM 2016 US 1980Q1–2014Q4 replication is the
-locked-in regression test that pins fidelity; new windows (e.g. COVID
-2010Q1–2023Q4) and new countries are validated against narrative priors.
+The project goal is a usable BCA toolkit for **arbitrary US time
+windows**. The BCKM 2016 US 1980Q1–2014Q4 replication is the locked-in
+regression test that pins fidelity; new windows (e.g. COVID
+2010Q1–2023Q4) are validated against narrative priors.
+**Cross-country support is explicitly out of scope.**
 
 ## Status
 
-- **BCKM 2016 US 1980-2014 replication**: closed. f-statistics match
-  Table 11 to ≤ 0.01 in every channel at BCKM-θ on our dataset; full
-  wrap-up in [`bckm_replication/REPORT.md`](bckm_replication/REPORT.md).
-- **Layer 2 — generalizability smoke tests**: active. COVID
-  2010Q1–2023Q4 is the current target — see
-  [`COVID_PLAN.md`](COVID_PLAN.md) for the approved plan, and
-  [`Diary.md`](Diary.md) for session-by-session notes.
-- **Layer 3 — cross-country (OECD MEI Tables III/IV)**: future.
+- **Layer 1 — BCKM 2016 US 1980-2014 replication**: closed
+  (2026-05-01). f-statistics match Table 11 to ≤ 0.01 in every channel
+  at BCKM-θ on our dataset; full wrap-up in
+  [`bckm_replication/REPORT.md`](bckm_replication/REPORT.md).
+- **Layer 2 — generalizability validation (COVID 2010Q1–2023Q4)**:
+  passed (2026-05-02). 6/6 narrative-prior rubric checks pass under
+  both trend variants; labor wedge accounts for 49% / 77% of the
+  output / hours f-stat weight over the 2019Q4–2022Q4 window —
+  pipeline correctly identifies COVID as a primarily labor-driven
+  contraction with a counter-cyclical investment wedge. Side-by-side
+  COVID-vs-Great-Recession analysis in
+  [`covid_analysis/REPORT.md`](covid_analysis/REPORT.md).
+- **MLE result caching**: shipped (2026-05-02). Driver re-runs in
+  ~3 seconds with cached pickles; cold runs ~10–15 minutes.
+- **Layer 3 — cross-country**: explicitly out of scope.
 
 ## Quick start
 
 ```bash
-pip install -e ".[dev]"
+# Python 3.10+; create a venv to keep deps isolated
+python3.12 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
 
-# First run: fetch from FRED, save processed dataset
-FRED_API_KEY=... python scripts/run_var_counterfactuals.py \
-    --save-data bckm_replication/data/us_1980_2014.parquet
+# FRED API key required only for the first data fetch; cached after.
+# Get one at fred.stlouisfed.org/docs/api/api_key.html
+echo "FRED_API_KEY=your_key" > .env
 
-# Subsequent runs: use the saved parquet, no API key needed
-python scripts/run_var_counterfactuals.py \
-    --data bckm_replication/data/us_1980_2014.parquet
+# Run the BCKM 1980-2014 regression scripts (cached parquet committed)
+.venv/bin/python bckm_replication/scripts/eval_bckm_fstats.py
+
+# Run the COVID 2010-2023 smoke test (~3s with cached MLE pickles,
+# ~20 min for a fresh re-fit via --no-cache-mle)
+set -a && source .env && set +a
+.venv/bin/python covid_analysis/scripts/run_covid_analysis.py
 ```
 
-A FRED API key is only needed for the initial data fetch. Get one at
-[fred.stlouisfed.org/docs/api/api_key.html](https://fred.stlouisfed.org/docs/api/api_key.html).
 Cached series live in `~/.bca_cache/fred/`; the BCKM-replication
-parquets live in `bckm_replication/data/`; new datasets land in
-`data/`.
+parquets in `bckm_replication/data/`; COVID parquets and figures in
+`covid_analysis/`.
 
 ## Repository layout
 
@@ -54,12 +66,13 @@ bca_core/                   pure-Python computational core (no web deps)
   klein.py                  Klein (2000) QZ solver for linear RE models
   bckm_lom.py               BCKM-faithful capital LOM (fixexpadj.m)
   wedges.py                 Static wedge extraction from data
-  var_estimation.py         Kalman-filter MLE (BCKM mleqadj.m logic)
+  var_estimation.py         Kalman-filter MLE (BCKM mleqadj.m logic) + result caching
   counterfactuals.py        Wedge-alone simulations + f-statistics
   data/
-    fred.py                 FRED fetcher with disk caching
+    fred.py                 FRED fetcher with disk caching (incl. CPS / BLS labor)
     bea.py                  BEA NIPA + Fixed-Asset fetcher (diagnostic-only)
-    adjustments.py          Durables PIM, sales-tax, per-capita conversion, calgz detrending
+    adjustments.py          Durables PIM, sales-tax, per-capita, calgz detrending,
+                            BLS-faithful labor construction (employment_cps × hours)
     pipeline.py             End-to-end fetch → adjust → detrend (build_us_dataset)
 
 scripts/                    generic pipeline drivers (window-agnostic)
@@ -73,7 +86,6 @@ bckm_replication/           BCKM 2016 US 1980-2014 ground-truth artifacts
   BCKM_DIFF_GUIDE.md        element-wise diff guide vs worktemp.mat
   DATA_FORENSICS.md         BEA NIPA migration walkdown
   DIVERGENCE_ANALYSIS.md    earlier head-to-head analysis
-  counterfactual-debugging-summary.md   CF-fix session record
   bca_paper.pdf             full paper PDF
   matlab_reference/         BCKM 2016 matlab code (paper ground truth)
   octave_output/            octave dumps used as fixtures
@@ -81,8 +93,18 @@ bckm_replication/           BCKM 2016 US 1980-2014 ground-truth artifacts
   scripts/                  diag_*, eval_bckm_*, compare_*, plot_*, bootstrap_*, sensitivity_*
   figures/                  Figure 2A–E reproductions, Solow residual, etc.
 
-tests/                      pytest unit tests (79 tests; mostly window-agnostic)
-data/                       cache for new (Layer 2/3) datasets
+covid_analysis/             Layer 2 — COVID 2010Q1–2023Q4 smoke test
+  scripts/run_covid_analysis.py   one-shot driver (datasets → MLE → CFs → figures)
+  data/                     cached parquets + .meta.json + (gitignored) .mle.pkl
+  figures/                  figure_A/B/2C/2D/2E_covid.png + wedges_us_2010_2023.png
+                            (BCKM Part III style, both trend variants)
+  REPORT.md                 narrative results + COVID-vs-Great-Recession comparison
+  Diary.md                  session-by-session journal
+
+tests/                      pytest unit tests (91 tests)
+  test_bckm_*               BCKM 1980-2014 regression (marked @pytest.mark.bckm)
+  test_covid_analysis.py    COVID dataset shape + structural identities + smoke
+  test_*                    window-agnostic structural tests
 ```
 
 ## Documentation map
@@ -92,18 +114,24 @@ data/                       cache for new (Layer 2/3) datasets
   append-only "Findings" journal
 - [BCA_info.md](BCA_info.md) — paper summary, **live methodology**
   (Parts I & II): prototype economy, accounting procedure, data and
-  calibration. Applies to any country/period the toolkit is run on
-- [COVID_PLAN.md](COVID_PLAN.md) — approved plan for the Layer-2
-  COVID 2010Q1–2023Q4 smoke test (current live target)
-- [Diary.md](Diary.md) — session-by-session log
+  calibration. Applies to any US window the toolkit is run on
 - [bckm_replication/REPORT.md](bckm_replication/REPORT.md) — final
   BCKM-replication wrap-up: bugs found and fixed, methodology
   decisions, residual issues
 - [bckm_replication/BCKM_RESULTS.md](bckm_replication/BCKM_RESULTS.md)
   — paper Parts III & IV (cross-country findings + US 1980-2014
   empirical tables): the regression-test ground truth
+- [covid_analysis/REPORT.md](covid_analysis/REPORT.md) — COVID
+  smoke-test results and Part III-style comparison with the Great
+  Recession
+- [covid_analysis/Diary.md](covid_analysis/Diary.md) — Layer-2
+  session journal (append-only, persists across context resets)
+- [COVID_PLAN.md](COVID_PLAN.md) — original approved plan for the
+  COVID smoke test (now closed; superseded by `covid_analysis/REPORT.md`)
+- [Diary.md](Diary.md) — Layer-1 session log (BCKM replication era)
 - [bca-web-app-instructions.md](bca-web-app-instructions.md) —
-  eventual web-app spec (out of scope until Layer 2 lands)
+  eventual web-app spec (out of scope until Layer 2 lands; now
+  unblocked)
 - [bckm_replication/bca_paper.pdf](bckm_replication/bca_paper.pdf) —
   full paper
 
@@ -123,6 +151,9 @@ Rauch–Tung–Striebel smoother. Stationarity is enforced by a single
 spectral-radius soft penalty (`5e5 · max(|eig P| − 0.995, 0)²`,
 matching `mleqadj.m:134`). The Kalman filter uses the steady-state
 DARE-derived constant gain, recomputed at every objective evaluation.
+The full optimizer-result dict is content-addressed-cached as a
+pickle under `*.mle.pkl` (gitignored) so cold runs of ~10–15 minutes
+become re-runs of ~3 seconds when inputs are unchanged.
 
 Counterfactuals keep the full 4-D VAR for rational expectations and
 zero out *inactive* wedge columns in the structural equations. Capital
@@ -137,7 +168,10 @@ BCKM Table 1 values: `α = 1/3, ψ = 2.5, δ = 0.05/yr, β = 0.975/yr,
 σ = 1`. Growth rates are data-derived per call (calgz fsolve for `gz`,
 working-age-pop slope for `gn`). `g_share` is set from data
 (`mean(g) / mean(y)`); adjustment-cost coefficient `a` from BGG (1999)
-elasticity of q wrt x/k = 0.25.
+elasticity of q wrt x/k = 0.25. For non-BCKM windows the labor
+construction is anchored to the BCKM-empirical hours-per-capita mean
+0.24279 (model `ss["l"]` ≈ 0.29 vs raw FRED hours/pop ≈ 23 — the
+anchor avoids an 80× scale mismatch in the wedge extraction).
 
 ## Data
 
@@ -149,7 +183,14 @@ FRED defaults (with BEA branches as diagnostic-only opt-in — see
   `GDPDEF`
 - Sales tax: `ASLSTAX`
 - Population: `LFWA64TTUSQ647N` (working-age 15–64)
-- Hours / employment: `PAYEMS`, `AWHNONAG`, `PRS85006023`
+- Hours / employment:
+  - **BLS-faithful (preferred when available)**: `CE16OV`
+    (BLS LNS12000000, CPS civilian employment, ages 16+) and `AWHAETP`
+    (avg weekly hours, total private, all employees) — combined as
+    `employment × avg_weekly_hours × 13 weeks/qtr`, mirroring BCKM
+    `usdata.m:hours.dat`.
+  - **Legacy fallback**: `PAYEMS × AWHNONAG`, then `HOANBS`, then
+    `PRS85006023` index.
 
 Adjustments follow BCKM Section 4: durables reclassified from C to X
 via perpetual-inventory stock with a 4% imputed service flow added to
@@ -160,14 +201,20 @@ converted to per-working-age-capita; calgz-style trend removed from
 ## Tests
 
 ```bash
-pytest tests/ -v
+# Full suite (91 tests; some are slow — load parquet, run MLE)
+.venv/bin/python -m pytest tests/ -v
+
+# Fast suite — skip the long MLE-driven tests
+.venv/bin/python -m pytest tests/ -m "not slow" -q
+
+# Layer-2 work — also skip BCKM-1980-2014-specific regression tests
+.venv/bin/python -m pytest tests/ -m "not bckm and not slow" -q
 ```
 
-79 tests covering the model SS and log-linearization, the Klein solver,
-Kalman-filter behaviour, wedge extraction, counterfactual
-signs/decompositions, the BCKM Table 12 peak-trough decomposition pin,
-and the algebraic-identity invariants (T1–T7) on the cached
-1980-2014 parquet. Run them before reporting any change as done.
+Marker conventions:
+- `bckm` — tests pertinent only to the BCKM 1980Q1–2014Q4 regression
+  (load `worktemp.mat` or pin BCKM-published values).
+- `slow` — tests that load a parquet and run MLE (~10 min each).
 
 ## What this repo is not
 
@@ -177,8 +224,8 @@ and the algebraic-identity invariants (T1–T7) on the cached
 - This is the computational core only. A FastAPI service and a React
   front end are sketched in
   [bca-web-app-instructions.md](bca-web-app-instructions.md) but are
-  not implemented (premature until Layer 2 generalizability is
-  validated).
+  not implemented; the Layer-2 validation that gated them is now
+  complete, so the web layer is the next major milestone.
 
 ## References
 
