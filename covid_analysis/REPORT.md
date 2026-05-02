@@ -98,6 +98,171 @@ explained by efficiency + government, NOT by the investment wedge itself
 TFP shocks and fiscal stimulus rather than by frictions on capital
 goods directly.
 
+## Findings: COVID vs. the Great Recession
+
+*Following the style of Part III of `bckm_replication/BCKM_RESULTS.md`. The
+1980-2014 numbers below are BCKM's own published figures; the COVID-window
+numbers come from running the same pipeline on US data 2010Q1–2023Q4 with
+bind = 2019Q4 (NBER cycle peak), labor source LNS12000000 × AWHAETP, and
+calgz detrending. Both trend variants give nearly identical numbers, so
+only the full-window numbers are tabulated; pre-COVID-fit values agree to
+within 0.5 pp on every line.*
+
+### The COVID Recession in the United States
+
+In Figure A, we see that output and labor both fell sharply over a single
+quarter — output by about **9%** and labor by about **12%** between 2019Q4
+and 2020Q2 — while investment fell about **12%** at the trough. By 2022Q1,
+output and labor had returned to within a percentage point of their 2019Q4
+levels and investment was already 4% above pre-pandemic levels. The
+dispersion of recovery speeds across the three series is the most striking
+visual difference from the Great Recession (Part III, §"United States:
+Primarily a Labor Wedge Recession"), where output, labor, and investment
+remained 6%, 3%, and 8% below their 2008Q1 peaks even at the end of 2014.
+
+In Figure B, we see that the labor wedge collapsed dramatically — falling
+about **17%** from 2019Q4 to 2020Q2 — while the efficiency wedge fell only
+modestly (about **1%**). The investment wedge moved in the *opposite*
+direction from any postwar recession we have studied: 1/(1+τ_x) **rose**
+about **10%** at the trough, indicating that capital-investment frictions
+*loosened* during the height of COVID rather than tightened. This is
+consistent with the Federal Reserve's emergency liquidity facilities
+holding credit spreads down through 2020-2021 even as real activity
+collapsed.
+
+In Figure 2C, panel C, we see that the labor-only counterfactual hits 89
+at the 2020Q2 trough — i.e., if τ_l alone had moved exactly as it did and
+all other wedges had stayed at 2019Q4 levels, output would have fallen
+about **11%**, more than the actual **9%** decline. The labor wedge alone
+*overpredicts* the trough; the efficiency and investment wedges (both
+counter-cyclical at the trough) attenuate the labor-driven contraction.
+The investment-only and efficiency-only counterfactuals stay above 100
+almost everywhere in 2020-2022, in sharp contrast with the Great Recession
+where the investment-only path traces close to data through 2011.
+
+In Figure 2D, panel D (hours), the labor-only counterfactual reproduces
+the data trough almost exactly (86 vs. 89 in the data; the difference is
+absorbed by the small efficiency-wedge dip). The efficiency-only
+counterfactual stays within 2 pp of bind throughout — labor-augmenting
+TFP is essentially mechanical in this episode, as one would expect when
+the shock is regulatory (mandatory closures) rather than technological.
+
+In Figure 2E, panel E (investment), the labor-only counterfactual falls
+to **76** at the 2020Q2 trough — far below the actual 88. The labor-wedge
+shock alone implies investment should have fallen 24%; the much milder
+12% actual decline is what the investment-wedge loosening (panel B) buys
+back. This is the cleanest piece of evidence that COVID is *not* a single-
+wedge recession even though the labor wedge dominates the f-statistics.
+
+Overall, considering the period from 2019Q4 through 2022Q4, these results
+imply that the COVID recession in the United States should be thought of
+as **primarily a labor wedge recession with a counter-cyclical investment
+wedge**. The labor wedge's role is even more dominant than during the
+Great Recession (φ-weight on output **49%** vs BCKM's reported 46% for
+2008-2011), and the investment wedge plays the *opposite* sign of the
+2008 recession. Models of the COVID episode must yield a sharp, V-shaped
+labor wedge fluctuation paired with a counter-cyclical investment-wedge
+loosening; neither feature is salient in models built around the Great
+Recession.
+
+### Comparing the COVID Recession with the Great Recession
+
+The comparison runs through three lenses: the data themselves, the
+peak-to-trough wedge movements, and the φ-statistics. We use the BCKM
+1980-2014 published numbers as the Great Recession baseline; our own
+pipeline reproduces them to within 0.01 in every channel (see
+`bckm_replication/REPORT.md`).
+
+#### Peak-to-trough comparison
+
+| Series | Great Rec. (2008Q1 → 2009Q3) | COVID (2019Q4 → 2020Q2) |
+|---|---|---|
+| Output | −7% | **−9%** |
+| Labor | −7% | **−12%** |
+| Investment | −23% | −12% |
+| Efficiency wedge | −1% | **−1%** |
+| Labor wedge (1−τ_l) | **−8%** | **−17%** |
+| Investment wedge 1/(1+τ_x) | **−9%** | **+10%** *(loosened)* |
+| Trough → return to bind (output) | not reached by 2014Q4 | 2022Q1 (~1.5 years) |
+
+Three differences stand out:
+
+1. **The COVID labor-wedge collapse was about twice as deep** as in 2008
+   (−17% vs −8%) and resolved an order of magnitude faster (1.5 years to
+   bind vs. unresolved by 2014Q4 in BCKM's window). The depth fits the
+   regulatory-shutdown narrative; the speed reflects that the shutdown
+   itself was lifted, while 2008 reflected a slow, demand-side collapse.
+
+2. **The COVID investment wedge moved opposite the 2008 wedge.** In 2008
+   the investment wedge tightened by 9 pp; in COVID it loosened by about
+   10 pp. We read this as the Federal Reserve's monetary response (zero
+   rates, asset-purchase facilities, market-functioning interventions)
+   compensating for the real shock to capital formation. In a frictionless
+   benchmark, COVID-2020 looks like a *pure labor shock with a partially
+   offsetting credit boost* — a configuration that simply does not appear
+   in the 1948–2014 sample.
+
+3. **The investment data fall was much shallower** in COVID (−12% vs −23%
+   in 2008). This is *consistent* with the wedge story: in 2008 both the
+   labor-wedge contraction (−8% direct labor effect) and the
+   investment-wedge tightening (−9%) pushed investment down; in COVID the
+   labor wedge alone would have pushed investment to ~76 (panel E), and
+   the loosened investment wedge buys back the difference to the actual
+   88 trough.
+
+#### φ-statistics comparison (output)
+
+| | Efficiency | Labor | Investment | Government |
+|---|---|---|---|---|
+| Great Recession (BCKM 2008Q1–2011Q4) | 0.16 | **0.46** | 0.32 | 0.06 |
+| COVID Recession (2019Q4–2022Q4) | 0.16 | **0.49** | 0.13 | 0.22 |
+
+Two patterns:
+
+1. **The labor wedge is more dominant in COVID** (49% vs 46%) — the
+   pipeline confirms what the figures show visually. The COVID labor
+   collapse is not just bigger in level terms; it is also a sharper,
+   less-anticipated transition than the 2008 contraction.
+
+2. **The investment wedge weight collapsed from 32% → 13%** between
+   episodes. In 2008, the investment-wedge component of output tracked
+   data closely (low SSR → high φ); in COVID, the investment wedge moved
+   counter-cyclically and the investment-only counterfactual sits *above*
+   100 throughout the trough, contributing a *high* SSR against the data
+   path. Mathematically the φ falls; economically, "the investment wedge
+   accounts for less of the COVID downturn" should be read as "in 2020,
+   the investment wedge was working against the recession, not for it."
+
+3. **The government wedge weight rose from 6% → 22%.** This is a real
+   feature of the COVID episode but should be read carefully. BCKM's g =
+   `gov_consumption + net_exports`. The 2020 *consumption* component of
+   that aggregate did rise (CARES Act expanded gov purchases), but the
+   *net-exports* component swung sharply negative (massive 2020Q2 import
+   recovery against a slower export rebound). The government-wedge
+   component of output is therefore picking up a mix of fiscal expansion
+   and trade-balance dynamics; ARPA-style transfer payments are *not* in
+   this aggregate (they enter via household consumption), so the +22%
+   weight is *not* a measure of fiscal stimulus on output, and should be
+   interpreted accordingly.
+
+#### Summary
+
+The 2008 recession is, in the BCKM decomposition, a labor-wedge recession
+with a meaningful secondary investment-wedge story. The COVID recession is
+a *more extreme* labor-wedge recession with the investment wedge running
+*backwards* compared to 2008. The two episodes share a primary driver but
+differ in (i) the magnitude and recovery speed of the labor wedge, (ii)
+the sign of the investment wedge, (iii) the depth of investment data
+fall, and (iv) the importance of the government channel.
+
+The BCKM model framework — labor-augmenting TFP plus separable wedges —
+generalizes cleanly from the 2008 episode to the 2020 episode without
+re-calibration. The wedges it identifies in COVID match the qualitative
+narrative supplied by BLS productivity reports, NBER recession dates, and
+contemporary Fed monetary-policy actions. This is the strongest piece of
+external evidence that the pipeline is structurally sound on out-of-sample
+US windows.
+
 ## Counterfactual decomposition (figure_2C — Output components)
 
 The black "Data" line drops to 91 at 2020Q2 and recovers above 100 by

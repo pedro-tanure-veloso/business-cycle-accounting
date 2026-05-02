@@ -285,6 +285,104 @@ def plot_wedges(df, states, res, label_short):
     return out
 
 
+def plot_data_panel_A(df, label_short):
+    """Figure A — Output, Labor, and Investment over the COVID window.
+
+    Mirrors BCKM ``figure_2A.png`` style (US 2008-2014): black solid
+    output, dash-dotted labor, dashed investment; all normalized to
+    100 at 2019Q4. Window: 2019Q1–2023Q4 to give a quarter of pre-COVID
+    context, matching the way Figure 2A includes 2008Q1 in its window.
+    """
+    bind_idx = find_idx(df.index, 2019, 4)
+    if bind_idx is None:
+        print("  Cannot plot Figure A: 2019Q4 missing")
+        return
+
+    start_idx = find_idx(df.index, 2019, 1) or bind_idx
+    end_idx   = find_idx(df.index, 2023, 4) or len(df) - 1
+    mask = np.arange(start_idx, end_idx + 1)
+    sub_dates = df.index[mask]
+
+    y_idx = 100.0 * df["y"].iloc[mask].to_numpy() / df["y"].iloc[bind_idx]
+    l_idx = 100.0 * df["l"].iloc[mask].to_numpy() / df["l"].iloc[bind_idx]
+    x_idx = 100.0 * df["x"].iloc[mask].to_numpy() / df["x"].iloc[bind_idx]
+
+    fig, ax = plt.subplots(figsize=(11, 6.5))
+    ax.plot(sub_dates, y_idx, "k-",  linewidth=2.2, label="Output")
+    ax.plot(sub_dates, l_idx, "k-.", linewidth=2.0, label="Labor")
+    ax.plot(sub_dates, x_idx, "k--", linewidth=2.0, label="Investment")
+    ax.axhline(100, color="gray", linewidth=0.5, linestyle=":")
+    add_recessions(ax)
+    ax.set_title(f"Output, Labor, and Investment for the United States, "
+                 f"2019Q4–2023Q4 [{label_short}]", fontsize=12)
+    ax.set_ylabel("Index (2019Q4 = 100)")
+    ax.set_ylim(bottom=60, top=110)
+    ax.legend(loc="lower right", fontsize=11)
+    ax.grid(True, alpha=0.3)
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(45)
+    plt.tight_layout()
+    suffix = "_preCOVID" if "pre" in label_short else ""
+    out = str(FIG_DIR / f"figure_A_covid{suffix}.png")
+    plt.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {out}")
+
+
+def plot_data_and_wedges_panel_B(df, states, res, label_short):
+    """Figure B — Output and the three wedges over the COVID window.
+
+    Mirrors BCKM ``figure_2B.png`` style: black solid output, blue dashed
+    efficiency, green dash-dotted labor, magenta dotted (1+τ_x)⁻¹ — all
+    normalized to 100 at 2019Q4.
+    """
+    bind_idx = find_idx(df.index, 2019, 4)
+    if bind_idx is None:
+        print("  Cannot plot Figure B: 2019Q4 missing")
+        return
+
+    start_idx = find_idx(df.index, 2019, 1) or bind_idx
+    end_idx   = find_idx(df.index, 2023, 4) or len(df) - 1
+    mask = np.arange(start_idx, end_idx + 1)
+    sub_dates = df.index[mask]
+
+    ss_new = res["ss_new"]
+    taul_ss = ss_new.get("taul", 0.0)
+    taux_ss = ss_new.get("taux", 0.0)
+
+    bind_local = bind_idx - start_idx
+    lz   = states[mask, 1]
+    taul = states[mask, 2]
+    taux = states[mask, 3]
+
+    y_idx = 100.0 * df["y"].iloc[mask].to_numpy() / df["y"].iloc[bind_idx]
+    eff_idx  = 100.0 * np.exp(lz - lz[bind_local])
+    labw_idx = 100.0 * ((1 - taul_ss) - taul) / ((1 - taul_ss) - taul[bind_local])
+    invw_idx = 100.0 * ((1 + taux_ss) + taux[bind_local]) / ((1 + taux_ss) + taux)
+
+    fig, ax = plt.subplots(figsize=(11, 6.5))
+    ax.plot(sub_dates, y_idx,    "k-",  linewidth=2.2, label="Output")
+    ax.plot(sub_dates, eff_idx,  "b--", linewidth=1.8, label=r"Efficiency wedge ($z_t$)")
+    ax.plot(sub_dates, labw_idx, "g-.", linewidth=1.8, label=r"Labor wedge $(1-\tau_{l,t})$")
+    ax.plot(sub_dates, invw_idx, "m:",  linewidth=2.2, label=r"Investment wedge $1/(1+\tau_{x,t})$")
+    ax.axhline(100, color="gray", linewidth=0.5, linestyle=":")
+    add_recessions(ax)
+    ax.set_title(f"Figure B — Output and wedges (US 2019Q4–2023Q4) [{label_short}]",
+                 fontsize=12)
+    ax.set_ylabel("Index, 2019Q4 = 100")
+    ax.set_ylim(bottom=80, top=110)
+    ax.legend(loc="lower right", fontsize=10)
+    ax.grid(True, alpha=0.3)
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(45)
+    plt.tight_layout()
+    suffix = "_preCOVID" if "pre" in label_short else ""
+    out = str(FIG_DIR / f"figure_B_covid{suffix}.png")
+    plt.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {out}")
+
+
 def plot_cf_decomposition(df, data_hat, cfs, label_short):
     """Figures 2B/2C/2D/2E — per-wedge CF decompositions over COVID window."""
     bind_idx = find_idx(df.index, 2019, 4)
@@ -296,20 +394,23 @@ def plot_cf_decomposition(df, data_hat, cfs, label_short):
     mask = np.arange(bind_idx, end_idx + 1)
     sub_dates = df.index[mask]
 
+    # BCKM Part III convention: focus on the three production-side wedges
+    # (efficiency, labor, investment); the government component is
+    # discussed separately. See bckm_replication/figures/figure_2C.png
+    # for the published exemplar.
     component_styles = {
         "efficiency":  ("b--", "Efficiency only"),
         "labor":       ("g-.", "Labor only"),
         "investment":  ("m:",  "Investment only"),
-        "government":  ("r-",  "Government only"),
     }
 
     suffix = "_preCOVID" if "pre" in label_short else ""
     fig_specs = [
-        ("y", f"Output components [{label_short}] — 2019Q4=100",
+        ("y", f"Figure 2C — Output components (US 2019Q4–2023Q4) [{label_short}]",
          f"figure_2C_covid{suffix}.png", "y", 80),
-        ("l", f"Hours components [{label_short}] — 2019Q4=100",
+        ("l", f"Figure 2D — Labor components (US 2019Q4–2023Q4) [{label_short}]",
          f"figure_2D_covid{suffix}.png", "l", 80),
-        ("x", f"Investment components [{label_short}] — 2019Q4=100",
+        ("x", f"Figure 2E — Investment components (US 2019Q4–2023Q4) [{label_short}]",
          f"figure_2E_covid{suffix}.png", "x", 40),
     ]
     for var, title, fname, data_key, ylim_bottom in fig_specs:
@@ -369,6 +470,8 @@ def main():
     print_wedge_table(df_full, states_full, res_full, "full-window calgz")
     fstats_full = print_fstats(df_full, data_hat_full, cfs_full, "full-window")
     plot_wedges(df_full, states_full, res_full, "full-window")
+    plot_data_panel_A(df_full, "full-window")
+    plot_data_and_wedges_panel_B(df_full, states_full, res_full, "full-window")
     plot_cf_decomposition(df_full, data_hat_full, cfs_full, "full-window")
 
     # ── Dataset B: pre-COVID-fit trend ────────────────────────────────────
@@ -384,6 +487,8 @@ def main():
     print_wedge_table(df_pre, states_pre, res_pre, "pre-COVID-fit")
     fstats_pre = print_fstats(df_pre, data_hat_pre, cfs_pre, "pre-COVID-fit")
     plot_wedges(df_pre, states_pre, res_pre, "pre-COVID-fit")
+    plot_data_panel_A(df_pre, "pre-COVID-fit")
+    plot_data_and_wedges_panel_B(df_pre, states_pre, res_pre, "pre-COVID-fit")
     plot_cf_decomposition(df_pre, data_hat_pre, cfs_pre, "pre-COVID-fit")
 
     # ── Narrative-prior rubric ────────────────────────────────────────────
