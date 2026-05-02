@@ -7,6 +7,12 @@ Observables are [y_hat, l_hat, x_hat, g_hat].
 
 from __future__ import annotations
 
+import hashlib
+import logging
+import os
+import pickle
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from statsmodels.tsa.statespace.mlemodel import MLEModel
@@ -16,6 +22,150 @@ from .model import PrototypeModel
 from .klein import klein_solve, BlancharKahnError
 from .bckm_lom import bckm_state_space
 from .constants import P_BCKM_TABLE8, QCHOL_BCKM_TABLE10, SBAR_BCKM_TABLE8
+
+_logger = logging.getLogger(__name__)
+
+# Keys we expect ``estimate_var_mle`` to populate in its return dict. Used
+# to validate cache pickles before trusting them — a cache file missing
+# any of these is treated as stale and recomputed. (``P_0`` is only on
+# the main return path, not the ``eval_only`` short-circuit, so it's not
+# part of the minimum schema.)
+_MLE_CACHE_REQUIRED_KEYS = frozenset({
+    "Sbar", "P", "Q", "V", "smoothed_states", "log_likelihood",
+    "ss_new", "obs_offset", "obs_offset_kf", "obs_offset_wedge", "F", "H",
+})
+
+
+def _mle_cache_key(
+    obs_hat: np.ndarray,
+    proto: "PrototypeModel",
+    n_restarts: int,
+    data_means: np.ndarray | None,
+    eval_only: tuple | None,
+    kwargs: dict,
+) -> str:
+    """Content-addressed sha256 (hex-truncated to 16 chars) of MLE inputs.
+
+    Captures everything that influences the optimizer's return value:
+    observables, calibration params, restart count, fsolve seed inputs,
+    diagnostic short-circuit, and any extra kwargs the caller passed
+    (e.g. ``warm_start`` tuples). NumPy arrays are hashed via ``tobytes()``
+    so bit-identical content always produces the same key.
+    """
+    h = hashlib.sha256()
+    obs_arr = np.ascontiguousarray(np.asarray(obs_hat, dtype=np.float64))
+    h.update(b"obs:")
+    h.update(str(obs_arr.shape).encode())
+    h.update(obs_arr.tobytes())
+
+    # CalibrationParams is a dataclass → repr() is deterministic and
+    # captures the fields that flow into proto.steady_state() / log_lin.
+    h.update(b"|params:")
+    h.update(repr(getattr(proto, "p", None)).encode())
+
+    h.update(b"|n_restarts:")
+    h.update(repr(int(n_restarts)).encode())
+
+    h.update(b"|data_means:")
+    if data_means is None:
+        h.update(b"None")
+    else:
+        dm = np.ascontiguousarray(np.asarray(data_means, dtype=np.float64))
+        h.update(dm.tobytes())
+
+    h.update(b"|eval_only:")
+    if eval_only is None:
+        h.update(b"None")
+    else:
+        for a in eval_only:
+            arr = np.ascontiguousarray(np.asarray(a, dtype=np.float64))
+            h.update(arr.tobytes())
+            h.update(b";")
+
+    # Stable encoding of remaining kwargs. Sort by key so dict ordering
+    # doesn't break the hash; numpy arrays go through tobytes(), every-
+    # thing else through repr().
+    h.update(b"|kwargs:")
+    for key in sorted(kwargs):
+        h.update(repr(key).encode())
+        h.update(b"=")
+        v = kwargs[key]
+        if isinstance(v, np.ndarray):
+            h.update(b"ndarray")
+            h.update(str(v.shape).encode())
+            h.update(np.ascontiguousarray(v.astype(np.float64)).tobytes())
+        elif isinstance(v, (tuple, list)) and any(
+            isinstance(x, np.ndarray) for x in v
+        ):
+            h.update(b"seq[")
+            for x in v:
+                if isinstance(x, np.ndarray):
+                    h.update(str(x.shape).encode())
+                    h.update(
+                        np.ascontiguousarray(x.astype(np.float64)).tobytes()
+                    )
+                else:
+                    h.update(repr(x).encode())
+                h.update(b";")
+            h.update(b"]")
+        else:
+            h.update(repr(v).encode())
+        h.update(b"|")
+
+    return h.hexdigest()[:16]
+
+
+def _resolve_mle_cache_file(
+    cache_path: str | os.PathLike | Path | None,
+    key: str,
+) -> Path | None:
+    """Translate a user-supplied ``cache_path`` into a concrete file path.
+
+    Heuristic:
+    - ``None`` → ``None`` (caching disabled).
+    - Existing directory, or trailing separator, or no suffix at all
+      (looks like a dir name) → ``<cache_path>/mle_<key>.pkl``.
+    - Anything else with a suffix (``.pkl`` etc.) → use as-is. The caller
+      takes responsibility for invalidation when inputs change.
+    """
+    if cache_path is None:
+        return None
+    p = Path(cache_path)
+    looks_like_dir = (
+        p.is_dir()
+        or str(cache_path).endswith(("/", os.sep))
+        or p.suffix == ""
+    )
+    if looks_like_dir:
+        return p / f"mle_{key}.pkl"
+    return p
+
+
+def _load_mle_cache(path: Path) -> dict | None:
+    """Read and validate a cached MLE result. Returns None on any error."""
+    try:
+        with open(path, "rb") as fh:
+            obj = pickle.load(fh)
+    except Exception as exc:
+        _logger.warning("MLE cache: unreadable file %s (%s); recomputing.",
+                        path, exc)
+        return None
+    if not isinstance(obj, dict) or not _MLE_CACHE_REQUIRED_KEYS.issubset(obj):
+        _logger.warning("MLE cache: schema mismatch in %s; recomputing.", path)
+        return None
+    return obj
+
+
+def _save_mle_cache(path: Path, res: dict) -> None:
+    """Atomically pickle ``res`` to ``path`` (write to .tmp, then rename)."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        with open(tmp, "wb") as fh:
+            pickle.dump(res, fh, protocol=pickle.HIGHEST_PROTOCOL)
+        os.replace(tmp, path)
+    except Exception as exc:
+        _logger.warning("MLE cache: failed to write %s (%s).", path, exc)
 
 
 def prepare_observables(
@@ -322,6 +472,8 @@ def estimate_var_mle(
     P_0_ols: np.ndarray | None = None,
     data_means: np.ndarray | None = None,
     eval_only: tuple | None = None,
+    *,
+    cache_path: str | os.PathLike | Path | None = None,
     **kwargs,
 ) -> dict:
     """
@@ -365,6 +517,22 @@ def estimate_var_mle(
     equation: ``E[obs_t] = obs_offset(Sbar)``.
     """
     from scipy.optimize import minimize as _minimize
+
+    # ── Result cache (content-addressed) ──────────────────────────────────
+    # First, hash the inputs that determine the optimizer's output. Then
+    # resolve ``cache_path`` to a concrete file: directory → ``mle_<key>.pkl``
+    # inside it, file path → use directly. On a cache hit, return the
+    # pickled dict immediately and skip the optimizer entirely.
+    _cache_key = _mle_cache_key(
+        obs_hat, proto, n_restarts, data_means, eval_only, kwargs,
+    )
+    _cache_file = _resolve_mle_cache_file(cache_path, _cache_key)
+    if _cache_file is not None and _cache_file.exists():
+        _hit = _load_mle_cache(_cache_file)
+        if _hit is not None:
+            if verbose:
+                print(f"  MLE cache hit: {_cache_file}")
+            return _hit
 
     T, n_obs = obs_hat.shape
     N_P = 30  # 4 (Sbar) + 16 (P) + 10 (Q lower-tri)
@@ -734,7 +902,7 @@ def estimate_var_mle(
         )
         x_f, P_f, x_p, P_p, ll_e = _kf_full(F_e, H_e, Qproc_e, off_kf_e)
         smoothed_e = _rts(x_f, P_f, x_p, P_p, F_e)
-        return {
+        _eval_res = {
             "Sbar": Sbar_e, "P": P_e, "Q": Qchol_e,
             "V": Qchol_e @ Qchol_e.T,
             "log_likelihood": ll_e,
@@ -745,6 +913,9 @@ def estimate_var_mle(
             "obs_offset_wedge": off_w_e,
             "F": F_e, "H": H_e,
         }
+        if _cache_file is not None:
+            _save_mle_cache(_cache_file, _eval_res)
+        return _eval_res
 
     # ── Warm-starts (BCKM runmleadj.m / mleqadj.m architecture) ─────────
     # Path A: Sbar lives in BCKM raw coordinates and parameterizes the
@@ -841,7 +1012,7 @@ def estimate_var_mle(
     # compatibility (callers like run_var_counterfactuals.py print it).
     P_0_implied = np.zeros(4)
 
-    return {
+    _final_res = {
         "P_0": P_0_implied,
         "Sbar": Sbar,
         "P": P_var,
@@ -856,6 +1027,9 @@ def estimate_var_mle(
         "F": F_f,
         "H": H_f,
     }
+    if _cache_file is not None:
+        _save_mle_cache(_cache_file, _final_res)
+    return _final_res
 
 
 def estimate_var(

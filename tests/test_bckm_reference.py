@@ -14,10 +14,13 @@ import pytest
 from bca_core.bckm_reference import load_bckm_reference, DEFAULT_MAT_PATH
 
 
-pytestmark = pytest.mark.skipif(
-    not DEFAULT_MAT_PATH.exists(),
-    reason=f"{DEFAULT_MAT_PATH} not present",
-)
+pytestmark = [
+    pytest.mark.bckm,
+    pytest.mark.skipif(
+        not DEFAULT_MAT_PATH.exists(),
+        reason=f"{DEFAULT_MAT_PATH} not present",
+    ),
+]
 
 
 @pytest.fixture(scope="module")

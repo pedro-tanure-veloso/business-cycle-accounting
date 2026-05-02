@@ -26,6 +26,7 @@ SCRIPT_PATH = (
 )
 
 
+@pytest.mark.bckm
 @pytest.mark.skipif(
     not DATA_PATH.exists(),
     reason="US dataset not present (run scripts to build it first)",

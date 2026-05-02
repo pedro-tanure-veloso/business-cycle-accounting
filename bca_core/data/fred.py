@@ -56,6 +56,17 @@ FRED_SERIES = {
     "employment": "PAYEMS",             # total nonfarm payrolls (default labor input)
     "avg_weekly_hours": "AWHNONAG",     # avg weekly hours, prod-nonsup (default labor input; 1964+)
     "hours_index": "PRS85006023",       # avg weekly hours INDEX (legacy; do NOT use as cycle proxy — corr −0.01 with BCKM)
+    # BLS-faithful labor construction (BCKM `usdata.m` `hours.dat` analogue):
+    # CPS civilian employment level (CE16OV / BLS code LNS12000000, monthly,
+    # ages 16+) × avg weekly hours, total private (AWHAETP, monthly) ×
+    # 13 weeks/qtr gives quarterly aggregate hours that mirrors BCKM's
+    # `hours.dat` universe more closely than PAYEMS×AWHNONAG (which
+    # restricts to production & non-supervisory employees). When both
+    # columns are present, `compute_labor_input` prefers this
+    # construction. Note: FRED publishes CE16OV under that ticker, but
+    # the underlying BLS series ID is LNS12000000.
+    "employment_cps": "CE16OV",         # CPS civilian employment level, ages 16+, monthly (BLS LNS12000000)
+    "avg_weekly_hours_total": "AWHAETP",  # avg weekly hours, total private, all employees, monthly (BLS)
 }
 
 

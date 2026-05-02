@@ -186,12 +186,20 @@ def compute_labor_input(
     fallback for very old saved datasets only.
 
     Source priority (preferred → fallback):
-      1. ``employment × avg_weekly_hours`` (PAYEMS × AWHNONAG) — best
-         empirical fit, ~7.6e-02 max|diff| in the labor channel at
-         BCKM-θ.
-      2. ``nonfarm_business_hours`` (HOANBS) — universe-correct fallback
+      1. ``employment_cps × avg_weekly_hours_total`` (LNS12000000 ×
+         AWHAETP, both monthly via FRED) — BLS-faithful BCKM
+         ``usdata.m`` `hours.dat` analogue. CPS civilian employment
+         (ages 16+) × avg weekly hours of all employees, total private,
+         scaled by ``weeks_per_quarter = 13``. Highest priority when
+         both columns are present; mirrors BCKM's total-economy hours
+         universe more closely than PAYEMS×AWHNONAG.
+      2. ``employment × avg_weekly_hours`` (PAYEMS × AWHNONAG) —
+         legacy default. PAYEMS is total nonfarm; AWHNONAG is
+         prod-nonsup hours, so this is a Frankenstein but ends up
+         empirically close to BCKM (corr 0.91, RMSE 0.019).
+      3. ``nonfarm_business_hours`` (HOANBS) — universe-correct fallback
          when AWHNONAG is unavailable (it starts 1964Q1).
-      3. ``hours_index`` (PRS85006023) — backwards-compat only; do not
+      4. ``hours_index`` (PRS85006023) — backwards-compat only; do not
          rely on for cycle fidelity.
 
     Normalizes so the (full-FRED-range) mean equals ``target_mean``.
@@ -223,7 +231,21 @@ def compute_labor_input(
     without a BLS fetcher (see compute_labor_input call site for the
     series-source ranking).
     """
-    if "employment" in df.columns and "avg_weekly_hours" in df.columns:
+    weeks_per_quarter = 13.0
+    if (
+        "employment_cps" in df.columns
+        and "avg_weekly_hours_total" in df.columns
+        and df["employment_cps"].notna().any()
+        and df["avg_weekly_hours_total"].notna().any()
+    ):
+        # BLS-faithful: CPS employment × avg weekly hours of all employees ×
+        # weeks/quarter (BCKM `usdata.m` `hours.dat` analogue).
+        hours = (
+            df["employment_cps"]
+            * df["avg_weekly_hours_total"]
+            * weeks_per_quarter
+        ).copy()
+    elif "employment" in df.columns and "avg_weekly_hours" in df.columns:
         hours = (df["employment"] * df["avg_weekly_hours"]).copy()
     elif "nonfarm_business_hours" in df.columns:
         hours = df["nonfarm_business_hours"].copy()
@@ -231,7 +253,8 @@ def compute_labor_input(
         hours = df["hours_index"].copy()
     else:
         raise ValueError(
-            "Need (employment, avg_weekly_hours), nonfarm_business_hours, "
+            "Need (employment_cps, avg_weekly_hours_total), "
+            "(employment, avg_weekly_hours), nonfarm_business_hours, "
             "or hours_index columns."
         )
 

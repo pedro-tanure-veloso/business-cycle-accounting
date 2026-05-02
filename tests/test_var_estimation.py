@@ -157,3 +157,68 @@ class TestBckmThetaEvaluation:
             assert key in res["ss_new"]
             assert np.isfinite(res["ss_new"][key])
             assert res["ss_new"][key] > 0
+
+
+class TestMleResultCache:
+    """Content-addressed pickle cache for ``estimate_var_mle`` results.
+
+    Goal: re-running the optimizer with identical inputs returns the
+    cached pickle in <1s and produces a numerically identical dict.
+    Routes through ``eval_only`` (cheap, deterministic) so the test
+    runs in the fast suite.
+    """
+
+    def test_eval_only_cache_round_trip(self, model, tmp_path):
+        rng = np.random.default_rng(7)
+        obs = 1e-3 * rng.standard_normal((40, 4))
+
+        # First call: cache miss, writes pickle.
+        cache_dir = tmp_path / "mle_cache"
+        res1 = estimate_var_mle(
+            obs, model,
+            eval_only=(SBAR_BCKM, P_BCKM, QCHOL_BCKM),
+            cache_path=cache_dir,
+        )
+        cached_files = list(cache_dir.glob("mle_*.pkl"))
+        assert len(cached_files) == 1, \
+            f"Expected one pickle in {cache_dir}, found {cached_files}"
+
+        # Second call: cache hit. Returned dict must match field-by-field.
+        res2 = estimate_var_mle(
+            obs, model,
+            eval_only=(SBAR_BCKM, P_BCKM, QCHOL_BCKM),
+            cache_path=cache_dir,
+        )
+        assert res1.keys() == res2.keys()
+        for k in res1:
+            v1, v2 = res1[k], res2[k]
+            if isinstance(v1, np.ndarray):
+                np.testing.assert_array_equal(v1, v2, err_msg=f"key={k}")
+            elif isinstance(v1, dict):
+                assert v1.keys() == v2.keys()
+                for kk in v1:
+                    if isinstance(v1[kk], np.ndarray):
+                        np.testing.assert_array_equal(v1[kk], v2[kk])
+                    else:
+                        assert v1[kk] == v2[kk]
+            else:
+                assert v1 == v2, f"key={k}: {v1} != {v2}"
+
+    def test_cache_invalidates_on_input_change(self, model, tmp_path):
+        rng = np.random.default_rng(11)
+        obs_a = 1e-3 * rng.standard_normal((40, 4))
+        obs_b = 1e-3 * rng.standard_normal((40, 4))  # different draw
+
+        cache_dir = tmp_path / "mle_cache"
+        estimate_var_mle(
+            obs_a, model, eval_only=(SBAR_BCKM, P_BCKM, QCHOL_BCKM),
+            cache_path=cache_dir,
+        )
+        estimate_var_mle(
+            obs_b, model, eval_only=(SBAR_BCKM, P_BCKM, QCHOL_BCKM),
+            cache_path=cache_dir,
+        )
+        # Two distinct hash keys → two pickle files.
+        cached_files = list(cache_dir.glob("mle_*.pkl"))
+        assert len(cached_files) == 2, \
+            f"Expected two pickles for two distinct obs arrays, found {cached_files}"

@@ -1,0 +1,18 @@
+{
+  "n_annual": 0.0031000560099165853,
+  "n_quarterly": 0.0007741146582423072,
+  "gamma_annual": 0.022458955380944667,
+  "gamma_quarterly": 0.005568061021342976,
+  "gamma_calibrated": false,
+  "detrend_method": "calgz",
+  "base_idx": 39,
+  "base_year_quarter": "2019Q4",
+  "mle_window": [
+    "2010Q1",
+    "2019Q4"
+  ],
+  "mle_fit_idx_range": [
+    0,
+    39
+  ]
+}

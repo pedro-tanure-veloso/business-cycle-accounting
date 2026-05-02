@@ -31,4 +31,5 @@ include = ["bca_core*"]
 testpaths = ["tests"]
 markers = [
     "slow: tests that load the US data parquet and run the MLE/CF pipeline (skip in fast CI with `pytest -m 'not slow'`)",
+    "bckm: tests exclusively pertinent to the BCKM 1980Q1-2014Q4 replication regression (skip on Layer 2 work with `pytest -m 'not bckm'`)",
 ]

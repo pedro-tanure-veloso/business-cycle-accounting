@@ -18,6 +18,10 @@ __pycache__/
 data/mle_dump_*.npz
 bckm_replication/data/mle_dump_*.npz
 
+# MLE result caches — content-addressed pickles of estimate_var_mle output.
+# Reproducible from data + θ; no need to version them.
+*.mle.pkl
+
 # Octave run logs — regeneratable; can run into 10s-100s of MB.
 # Keep the .mat result snapshots and CSV outputs in octave_output/;
 # exclude verbose run logs regardless of extension.
@@ -30,3 +34,7 @@ bckm_replication/octave_output/*_log.txt
 # Local secrets — never commit
 .env
 .env.*
+
+# Local virtualenvs and stray Claude tooling state
+.venv/
+.claire/
