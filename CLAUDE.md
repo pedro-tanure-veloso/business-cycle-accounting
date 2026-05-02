@@ -689,3 +689,17 @@ When you reach ~90% of your context window, write your progress to `Diary.md` wi
 - Exact next step (file, function, what to change)
 
 This ensures continuity across context resets.
+
+### Layer 2 diary: `covid_analysis/Diary.md`
+
+**`covid_analysis/Diary.md`** is the session journal for all Layer 2 work
+(COVID-era smoke test and any subsequent non-BCKM window work). Append a
+dated entry at the end of every session that makes meaningful progress on
+this work. The entry should record: what was done, what is in progress,
+what is blocked, and the exact next step.
+
+**Commit `covid_analysis/Diary.md` whenever you append to it.** Treat it
+as durable memory that persists across context resets — the same way
+`CLAUDE.md`'s Findings section works for the BCKM replication. Do not let
+a session end without a Diary entry and a commit if anything material
+happened.
