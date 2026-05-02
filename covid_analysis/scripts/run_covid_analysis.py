@@ -20,6 +20,7 @@ Outputs (written to covid_analysis/figures/):
 """
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -52,6 +53,12 @@ FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 FULL_PARQUET     = str(DATA_DIR / "us_2010_2023_calgz.parquet")
 PRECOVID_PARQUET = str(DATA_DIR / "us_2010_2023_calgz_preCOVID.parquet")
+
+# MLE result caches — content-addressed pickles of the optimizer output.
+# First run writes them; subsequent runs return in <1s if inputs match.
+# Pass --no-cache-mle to bypass and force a re-fit.
+FULL_MLE_CACHE     = DATA_DIR / "us_2010_2023_calgz.mle.pkl"
+PRECOVID_MLE_CACHE = DATA_DIR / "us_2010_2023_calgz_preCOVID.mle.pkl"
 
 # COVID-era NBER recessions for shading
 import pandas as _pd
@@ -116,8 +123,13 @@ def load_or_build(path, mle_window=None):
 
 # ── pipeline ──────────────────────────────────────────────────────────────────
 
-def run_pipeline(df, meta, label):
-    """Full BCA pipeline: observables → MLE → wedges → counterfactuals."""
+def run_pipeline(df, meta, label, mle_cache_path=None):
+    """Full BCA pipeline: observables → MLE → wedges → counterfactuals.
+
+    ``mle_cache_path`` is forwarded to ``estimate_var_mle`` so the
+    optimizer's full result dict is pickled on first run and reloaded on
+    subsequent runs with identical inputs. Pass ``None`` to disable.
+    """
     print(f"\n  [{label}] Running BCA pipeline...")
 
     g_share = float(df["g"].mean() / df["y"].mean())
@@ -141,6 +153,7 @@ def run_pipeline(df, meta, label):
     res = estimate_var_mle(
         obs_hat, proto, verbose=False, data_means=data_means,
         warm_start=(SBAR_BCKM, P_BCKM, QCHOL_BCKM),
+        cache_path=mle_cache_path,
     )
     print(f"  [{label}] LL = {res['log_likelihood']:+.4f}")
 
@@ -325,9 +338,22 @@ def plot_cf_decomposition(df, data_hat, cfs, label_short):
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--no-cache-mle",
+        action="store_true",
+        help="Disable the MLE result cache and re-run the optimizer from "
+             "scratch (default: use cached pickles in covid_analysis/data/).",
+    )
+    args = parser.parse_args()
+    full_mle_cache     = None if args.no_cache_mle else FULL_MLE_CACHE
+    precovid_mle_cache = None if args.no_cache_mle else PRECOVID_MLE_CACHE
+
     print("=" * 65)
     print("COVID-era BCA Smoke Test  (US 2010Q1–2023Q4, bind=2019Q4)")
     print("=" * 65)
+    if args.no_cache_mle:
+        print("MLE cache: DISABLED (--no-cache-mle)")
 
     # ── Dataset A: full-window calgz ──────────────────────────────────────
     print("\n[A] Full-window calgz")
@@ -335,7 +361,7 @@ def main():
 
     (params_full, proto_full, ss_full, res_full,
      states_full, obs_hat_full, data_hat_full, cfs_full) = run_pipeline(
-        df_full, meta_full, "full-window"
+        df_full, meta_full, "full-window", mle_cache_path=full_mle_cache,
     )
     # Attach obs_hat to res for plot helper
     res_full["obs_hat"] = obs_hat_full
@@ -351,7 +377,7 @@ def main():
 
     (params_pre, proto_pre, ss_pre, res_pre,
      states_pre, obs_hat_pre, data_hat_pre, cfs_pre) = run_pipeline(
-        df_pre, meta_pre, "pre-COVID-fit"
+        df_pre, meta_pre, "pre-COVID-fit", mle_cache_path=precovid_mle_cache,
     )
     res_pre["obs_hat"] = obs_hat_pre
 

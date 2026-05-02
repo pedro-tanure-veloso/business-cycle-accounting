@@ -154,3 +154,78 @@ web app target is US-only. The 2021 TFP undershoot investigation is
 also dropped; it's documentation, not a blocker.
 
 Active queue: (a) MLE result caching, (b) BLS-source labor data.
+
+---
+
+## 2026-05-02 — Both queue items shipped
+
+### What landed
+1. **MLE result caching** (`bca_core/var_estimation.py`) — content-
+   addressed pickle of the full optimizer result dict. Hash includes
+   obs_hat, calibration params, n_restarts, data_means, eval_only, and
+   all extra kwargs (warm_start tuple is captured this way). Atomic
+   write via `.tmp` + rename. Schema validation on load (cache miss
+   on any unpickling error or missing key, no crash). Driver script
+   takes a `--no-cache-mle` flag for force re-run. Cache files
+   gitignored as `*.mle.pkl`.
+
+   **Empirical impact**: full driver run was ~22 minutes (two MLE
+   passes from scratch). With cache hits: **2.9 seconds**. ~450×
+   speedup on iteration. Confirmed: `tests/test_var_estimation.py::
+   TestMleResultCache` exercises round-trip + invalidation-on-input-
+   change in <2s.
+
+   Bug discovered while writing tests: `_resolve_mle_cache_file` was
+   only treating `cache_path` as a directory if it ALREADY existed as
+   a dir — passing a non-existent dir got mis-routed as a file path.
+   Fixed: now also treats trailing-separator paths and paths with no
+   suffix as directories.
+
+2. **BLS-faithful labor construction** (`bca_core/data/fred.py` +
+   `bca_core/data/adjustments.py`). Added two new FRED tickers
+   mirroring BLS series:
+   - `CE16OV` (BLS LNS12000000) — CPS civilian employment level, ages
+     16+, monthly. Read into df as `employment_cps`.
+   - `AWHAETP` — avg weekly hours, total private, all employees,
+     monthly. Read into df as `avg_weekly_hours_total`.
+
+   `compute_labor_input` now prefers `employment_cps × avg_weekly_hours_total
+   × 13 weeks/qtr` when both columns are present, falling back to the
+   legacy `PAYEMS × AWHNONAG` path otherwise. The 1980-2014 BCKM
+   regression parquet doesn't have the new columns, so it goes through
+   the legacy path and the f-stat regression still passes (tested:
+   79/79 fast tests).
+
+### Numerical impact (BLS labor sharpens every signal)
+
+| Reference | Prior | 2026-05-01 | 2026-05-02 | Δ |
+|---|---|---|---|---|
+| 2020Q2 τ_l drop | strongly negative | −13.91% | **−16.70%** | sharper |
+| 2020Q2 A small | mechanical | −3.08% | **−1.02%** | cleaner |
+| 2021Q4 A spike | above bind | +0.97% | **+2.03%** | closer to BLS +3.2% |
+| 2023Q4 τ_l recovered | ≈ bind | +3.60% | +1.32% | tighter |
+
+Labor wedge f-stat weight on hours rose from 74% → **77%**; on output
+from 47% → **49%**. The pipeline is now identifying COVID even more
+unambiguously as a labor-channel shock, with the 2021 TFP signal
+moving from "directionally correct but muted" to "still under BLS but
+a meaningful 2pp positive deviation".
+
+### Tests
+- 79/79 fast tests pass (added 2 new tests for MLE cache).
+- 60/60 Layer-2 fast tests pass (`-m "not bckm and not slow"`).
+- The 5 dataset tests + 3 structural identity tests on COVID data
+  still pass (parquets rebuilt with BLS labor; structural identities
+  are window-agnostic so no regressions).
+
+### Open
+- Driver smoke test (`test_driver_exits_cleanly`) is now <30s on cached
+  parquets+MLE — no longer needs the `slow` marker. Defer the unmarking
+  to a follow-up rather than do it in this commit.
+- Should reproduce the rebuild on a fresh machine (delete `*.mle.pkl`,
+  fresh FRED fetch) at some point to make sure the BLS columns survive
+  a from-scratch construction.
+
+### Exact next step
+Whatever the user wants next. Pipeline is in a good state — fast
+iteration, sharper signals, clean test suite.

@@ -1,7 +1,8 @@
 # COVID Analysis Report — US 2010Q1–2023Q4
 
-> **Status**: First pass complete (2026-05-01). Verdict: **PASS** — pipeline
-> qualitatively reproduces narrative priors under both trend variants.
+> **Status**: Second pass complete (2026-05-02) with BLS-faithful labor
+> data + MLE result caching. Verdict: **PASS** — pipeline qualitatively
+> reproduces narrative priors under both trend variants.
 
 ## Setup
 
@@ -12,20 +13,35 @@
 | Trend variant A | Full-window calgz (γ_annual = 2.36%) |
 | Trend variant B | Pre-COVID-fit (slope on 2010Q1–2019Q4, γ_annual = 2.25%) |
 | Data source | FRED defaults |
+| Labor construction | **CPS employment × avg weekly hours total × 13 weeks/qtr** (LNS12000000 × AWHAETP — BLS-faithful, BCKM `usdata.m` `hours.dat` analogue) |
 | Labor anchor | `labor_target_mean=0.24279` (BCKM-empirical hours/pop) |
 | Optimizer | L-BFGS-B warm-started from BCKM Tables 8/10 |
-| Converged LL | +704.01 (full-window) / +703.54 (pre-COVID-fit) |
+| MLE caching | Content-addressed pickle in `covid_analysis/data/*.mle.pkl`. Cache hit: ~3s. Cache miss: ~12 min/variant. |
 
 ## Narrative-prior rubric — relative to 2019Q4 bind
 
 | Reference | Prior | Full-window Δ | Pre-COVID-fit Δ | Pass? |
 |---|---|---|---|---|
-| 2020Q2 | τ_l strongly negative | **−13.91%** | **−13.90%** | ✓ |
-| 2020Q2 | A small/mechanical | −3.08% | −3.01% | ✓ |
+| 2020Q2 | τ_l strongly negative | **−16.70%** | **−16.68%** | ✓ |
+| 2020Q2 | A small/mechanical | −1.02% | −0.95% | ✓ |
 | 2020Q2 | g elevated (CARES) | +3.37% | +3.43% | ✓ |
-| 2021Q4 | A above pre-COVID | +0.97% | +1.25% | ✓ |
-| 2023Q4 | τ_l recovered | +3.60% | +3.60% | ✓ |
-| 2023Q4 | A near baseline | −4.94% | −4.43% | ✓ |
+| 2021Q4 | A above pre-COVID | **+2.03%** | **+2.31%** | ✓ |
+| 2023Q4 | τ_l recovered | +1.32% | +1.32% | ✓ |
+| 2023Q4 | A near baseline | −2.90% | −2.37% | ✓ |
+
+**vs. 2026-05-01 first-pass (PAYEMS×AWHNONAG labor):** the BLS-faithful
+labor construction sharpens nearly every signal:
+- 2020Q2 τ_l drop: −13.9% → **−16.7%** (closer to BLS hours-worked
+  decline of −18.5% reported in BLS Productivity & Costs).
+- 2021Q4 A spike: +1.0% → **+2.0%** (closer to BLS +3.2% TFP).
+- 2020Q2 A mechanical: −3.1% → **−1.0%** (cleaner output-vs-hours
+  cancellation).
+- 2023Q4 baseline-recovery numbers tighter overall.
+
+The improvement comes from CPS employment (LNS12000000) being the
+universe BCKM's `hours.dat` actually targets — total civilian
+employment, not just nonfarm payrolls — and AWHAETP being all-employees
+hours instead of production-and-nonsupervisory-only.
 
 **Both trend variants give nearly identical numerical results** — the calgz
 slope is robust to whether COVID-era observations are included in the fit
@@ -35,23 +51,23 @@ trend estimate.
 
 ## Wedge values at reference quarters
 
-### Full-window calgz
+### Full-window calgz (BLS-faithful labor)
 
 | Quarter | exp(log_z) | (1−τ_l) | (1+τ_x) | exp(log_g) |
 |---|---|---|---|---|
-| 2019Q4 (bind) | 0.8178 | 0.7937 | 1.0137 | 0.8212 |
-| 2020Q2 (trough) | 0.7926 | 0.6833 | 0.9138 | 0.8489 |
-| 2021Q4 (recovery) | 0.8258 | 0.8081 | 1.0014 | 0.7193 |
-| 2023Q4 (norm) | 0.7774 | 0.8223 | 0.9869 | 0.7459 |
+| 2019Q4 (bind) | 0.8452 | 0.7964 | 1.0119 | 0.8353 |
+| 2020Q2 (trough) | 0.8371 | 0.6633 | 0.9118 | 0.8635 |
+| 2021Q4 (recovery) | 0.8624 | 0.8013 | 1.0009 | 0.7322 |
+| 2023Q4 (norm) | 0.8207 | 0.8069 | 0.9854 | 0.7610 |
 
-### Pre-COVID-fit trend
+### Pre-COVID-fit trend (BLS-faithful labor)
 
 | Quarter | exp(log_z) | (1−τ_l) | (1+τ_x) | exp(log_g) |
 |---|---|---|---|---|
-| 2019Q4 (bind) | 0.8303 | 0.7936 | 1.0151 | 0.8312 |
-| 2020Q2 (trough) | 0.8053 | 0.6833 | 0.9153 | 0.8597 |
-| 2021Q4 (recovery) | 0.8407 | 0.8080 | 1.0026 | 0.7297 |
-| 2023Q4 (norm) | 0.7935 | 0.8222 | 0.9895 | 0.7584 |
+| 2019Q4 (bind) | 0.8452 | 0.7964 | 1.0119 | 0.8353 |
+| 2020Q2 (trough) | 0.8371 | 0.6636 | 0.9116 | 0.8639 |
+| 2021Q4 (recovery) | 0.8647 | 0.8019 | 1.0004 | 0.7332 |
+| 2023Q4 (norm) | 0.8252 | 0.8070 | 0.9859 | 0.7621 |
 
 The persistent ~0.8 absolute level for `exp(log_z)` reflects an SS
 calibration offset between the model and 2010-2023 data — only relative
@@ -59,24 +75,24 @@ changes from bind are meaningful for cyclical interpretation.
 
 ## F-statistics (window: 2019Q4–2022Q4)
 
-### Full-window
+### Full-window (BLS-faithful labor)
 
 | Var | Efficiency | Labor | Investment | Government |
 |---|---|---|---|---|
-| y | 0.21 | **0.47** | 0.11 | 0.21 |
-| l | 0.09 | **0.74** | 0.06 | 0.11 |
-| x | 0.43 | 0.12 | 0.10 | 0.34 |
+| y | 0.16 | **0.49** | 0.13 | 0.22 |
+| l | 0.07 | **0.77** | 0.05 | 0.11 |
+| x | 0.36 | 0.12 | 0.13 | 0.40 |
 
-### Pre-COVID-fit
+### Pre-COVID-fit (BLS-faithful labor)
 
 | Var | Efficiency | Labor | Investment | Government |
 |---|---|---|---|---|
-| y | 0.21 | **0.48** | 0.11 | 0.20 |
-| l | 0.09 | **0.74** | 0.06 | 0.11 |
-| x | 0.46 | 0.12 | 0.10 | 0.33 |
+| y | 0.16 | **0.49** | 0.12 | 0.22 |
+| l | 0.07 | **0.77** | 0.05 | 0.11 |
+| x | 0.38 | 0.12 | 0.11 | 0.39 |
 
-**Labor wedge dominates the COVID output and hours dynamics** (47% / 74%
-of f-stat weight respectively). The investment channel is mostly
+**Labor wedge dominates the COVID output and hours dynamics** (49% / 77%
+of f-stat weight respectively — *up* from 47% / 74% under PAYEMS×AWHNONAG). The investment channel is mostly
 explained by efficiency + government, NOT by the investment wedge itself
 — suggesting that capital-formation in 2020-2022 was driven mainly by
 TFP shocks and fiscal stimulus rather than by frictions on capital
