@@ -111,15 +111,36 @@ the COVID output trough.
    calibration drift. Worth a follow-up comparison to BLS labor
    productivity.
 
-### What is in progress / blocked
-- Test suite run pending (was about to launch when monitor fired).
-- Nothing blocked.
+### Test results
+- **5/5 `TestCovidDatasets`** pass — shape, bind, y-at-bind ≈ 1
+- **3/3 `TestCovidStructuralIdentities`** pass — incremental sum ≈
+  data, CF additivity, f-stat row sums = 1.0. (MLE on 2010-2023 with
+  warm-start takes ~11 min.)
+- **2 `TestCovidSmokeOutputs`** skipped (slow — full driver re-run
+  takes 20+ min).
+- **60/60** Layer-2 fast tests pass (`pytest -m "not bckm and not slow"`).
+- **79/79** original BCKM regression tests still pass — no regressions.
+
+The structural algebraic identities hold on the new window: the
+pipeline is structurally sound for arbitrary US periods, not just
+1980-2014. This is the actual Layer-2 evidence we wanted.
 
 ### Exact next step
-1. `pytest tests/test_covid_analysis.py -m "not slow" -v` — fast
-   tests (dataset shape + structural identities) should pass on the
-   cached parquets.
-2. `pytest tests/ -m "not bckm and not slow"` — full Layer-2 fast
-   suite.
-3. Commit the actual-results REPORT.md + this Diary entry + script
-   fixes.
+*(Session goals achieved. Open follow-ups, in order of value:)*
+
+1. **Investigate 2021 TFP undershoot.** Compare A wedge against BLS
+   labor productivity and BLS multifactor productivity for the
+   2010-2023 window. Likely candidates: (a) γ_annual=2.36% calibration
+   captures part of the 2021 boom as trend; (b) labor-augmenting z is
+   structurally smaller than Hicks-neutral TFP. Useful diagnostic
+   would be re-running with γ_annual fixed to 1.9% (BCKM 1980-2014
+   value) and seeing if the 2021 A spike grows.
+2. **MLE result caching.** Each driver run takes 20+ min because the
+   MLE is recomputed from scratch. Add a `--cache-mle` flag that
+   pickles the converged θ alongside the parquet, so iteration on
+   plotting/reporting is fast.
+3. **Add BLS-source labor data** to the FRED defaults (LNS12000000
+   employment-level + AWHAETP avg weekly hours), so the labor channel
+   is constructed BCKM-faithfully (`employment * avg_weekly_hours`)
+   rather than via FRED's pre-aggregated indices. This is the next
+   data-source improvement once Layer-2 is stable.
