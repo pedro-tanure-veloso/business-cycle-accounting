@@ -1,0 +1,10 @@
+{
+  "n_annual": 0.0031000560099165853,
+  "n_quarterly": 0.0007741146582423072,
+  "gamma_annual": 0.02361111275269656,
+  "gamma_quarterly": 0.005851222363269577,
+  "gamma_calibrated": false,
+  "detrend_method": "calgz",
+  "base_idx": 39,
+  "base_year_quarter": "2019Q4"
+}

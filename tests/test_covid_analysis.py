@@ -36,7 +36,7 @@ def full_dataset():
         start="2010Q1", end="2023Q4",
         detrend_method="calgz",
         base_year_quarter="2019Q4",
-        labor_target_mean=None,
+        labor_target_mean=0.24279,
         data_path=str(FULL_PARQUET),
     )
     return df, meta
@@ -49,7 +49,7 @@ def precovid_dataset():
         start="2010Q1", end="2023Q4",
         detrend_method="calgz",
         base_year_quarter="2019Q4",
-        labor_target_mean=None,
+        labor_target_mean=0.24279,
         mle_window=("2010Q1", "2019Q4"),
         data_path=str(PRECOVID_PARQUET),
     )

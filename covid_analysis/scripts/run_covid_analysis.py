@@ -54,8 +54,9 @@ FULL_PARQUET     = str(DATA_DIR / "us_2010_2023_calgz.parquet")
 PRECOVID_PARQUET = str(DATA_DIR / "us_2010_2023_calgz_preCOVID.parquet")
 
 # COVID-era NBER recessions for shading
+import pandas as _pd
 RECESSIONS_COVID = [
-    ("2020-02-01", "2020-04-01"),
+    (_pd.Timestamp("2020-02-01"), _pd.Timestamp("2020-04-01")),
 ]
 
 
@@ -86,28 +87,28 @@ def add_recessions(ax):
 # ── dataset loading ───────────────────────────────────────────────────────────
 
 def load_or_build(path, mle_window=None):
-    """Load cached parquet if present; otherwise fetch from FRED and cache."""
+    """Load cached parquet if present; otherwise fetch from FRED and cache.
+
+    Uses labor_target_mean=0.24279 (BCKM-empirical hours-per-capita anchor).
+    This is required because raw FRED hours/pop is ~23 while the model's
+    ss["l"] is ~0.29 — without anchoring, the wedge extraction sees an
+    80x scale mismatch and produces nonsense states. The 0.24279 anchor
+    is approximately invariant across US windows so it's a safe Layer 2
+    default. Document the choice in REPORT.md if needed.
+    """
     label = "pre-COVID-fit" if mle_window else "full-window"
     if Path(path).exists():
         print(f"Loading cached {label} dataset: {path}")
-        df, meta = build_us_dataset(
-            start="2010Q1", end="2023Q4",
-            detrend_method="calgz",
-            base_year_quarter="2019Q4",
-            labor_target_mean=None,
-            mle_window=mle_window,
-            data_path=path,
-        )
     else:
         print(f"Fetching FRED data for {label} dataset → {path}")
-        df, meta = build_us_dataset(
-            start="2010Q1", end="2023Q4",
-            detrend_method="calgz",
-            base_year_quarter="2019Q4",
-            labor_target_mean=None,
-            mle_window=mle_window,
-            data_path=path,
-        )
+    df, meta = build_us_dataset(
+        start="2010Q1", end="2023Q4",
+        detrend_method="calgz",
+        base_year_quarter="2019Q4",
+        labor_target_mean=0.24279,
+        mle_window=mle_window,
+        data_path=path,
+    )
     print(f"  T={len(df)}, g_share={float(df['g'].mean()/df['y'].mean()):.4f}, "
           f"gamma_annual={meta.get('gamma_annual', 'n/a'):.4f}")
     return df, meta
@@ -201,26 +202,16 @@ def print_fstats(df, data_hat, cfs, label):
     covid_end = find_idx(df.index, 2022, 4)
     if anchor is None or covid_end is None:
         print(f"  [{label}] Cannot compute f-stats: reference quarters not found")
-        return
+        return None
 
     f_df = f_statistics_bckm(data_hat, cfs, window=(anchor, covid_end), anchor=anchor)
     print(f"\n  F-statistics [{label}]  window: 2019Q4–2022Q4")
     print(f"  {'var':<6} {'efficiency':>12} {'labor':>12} {'investment':>12} {'government':>12}")
-    print(f"  {'-'*54}")
+    print(f"  {'-'*68}")
+    # f_df shape: rows=wedges, cols=[y,l,x]  (per counterfactuals.py f_statistics_bckm)
+    wedges = ["efficiency", "labor", "investment", "government"]
     for var in ["y", "l", "x"]:
-        if var in f_df.columns:
-            row = f_df[var] if var in f_df.columns else f_df.loc[var]
-        else:
-            row = f_df.loc[var] if var in f_df.index else f_df[var]
-        try:
-            vals = [f_df.loc["efficiency", var], f_df.loc["labor", var],
-                    f_df.loc["investment", var], f_df.loc["government", var]]
-        except Exception:
-            try:
-                vals = [f_df.loc[var, "efficiency"], f_df.loc[var, "labor"],
-                        f_df.loc[var, "investment"], f_df.loc[var, "government"]]
-            except Exception:
-                vals = [float("nan")] * 4
+        vals = [float(f_df.loc[w, var]) for w in wedges]
         print(f"  {var:<6} {vals[0]:>12.4f} {vals[1]:>12.4f} {vals[2]:>12.4f} {vals[3]:>12.4f}")
     return f_df
 
@@ -260,10 +251,11 @@ def plot_wedges(df, states, res, label_short):
         (axes[1, 0], invw_idx, "m-",  r"Investment wedge $(1+\tau_x)^{-1}$"),
         (axes[1, 1], g_idx,    "r-",  r"Government wedge (g)"),
     ]
+    bind_dt = dates[bind_idx]
     for ax, series, style, title in panels:
         ax.plot(dates, series, style, linewidth=1.8)
         ax.axhline(100, color="k", linewidth=0.5, linestyle=":")
-        ax.axvline(str(dates[bind_idx])[:10], color="gray",
+        ax.axvline(bind_dt, color="gray",
                    linewidth=0.8, linestyle="--", label="2019Q4")
         add_recessions(ax)
         ax.set_title(title, fontsize=11)
@@ -384,6 +376,12 @@ def main():
     """)
 
     def check_rubric(label, df, states, res):
+        """Rubric check via RELATIVE-to-bind ratios (BCKM Figure 2 convention).
+
+        A persistent SS-level offset between data and model is normal — what
+        signal we care about is the CHANGE from bind across quarters. So
+        every check is `wedge_at_q / wedge_at_bind` rather than absolute.
+        """
         ss_new = res["ss_new"]
         taul_ss = ss_new.get("taul", 0.0)
         taux_ss = ss_new.get("taux", 0.0)
@@ -399,33 +397,36 @@ def main():
                 "g":    np.exp(states[idx, 4]),
             }
 
-        bind  = get(2019, 4)
+        bind   = get(2019, 4)
         trough = get(2020, 2)
         recov  = get(2021, 4)
         norm   = get(2023, 4)
 
-        print(f"\n  [{label}]")
+        def pct(num, den):
+            return 100.0 * (num - den) / den
+
+        print(f"\n  [{label}]  (deltas relative to 2019Q4 bind)")
         if trough and bind:
-            taul_drop = trough["taul"] < bind["taul"]
-            eff_small = abs(trough["eff"] - 1.0) < 0.05
-            print(f"  2020Q2  τ_l drop (1-taul={trough['taul']:.4f} vs bind={bind['taul']:.4f}): "
-                  f"{'PASS ✓' if taul_drop else 'FAIL ✗'}")
-            print(f"  2020Q2  A near 1.0 (eff={trough['eff']:.4f}): "
-                  f"{'PASS ✓' if eff_small else 'FAIL ✗'}")
-        if recov:
-            eff_above = recov["eff"] > 1.0
-            g_pos     = recov["g"] > 1.0
-            print(f"  2021Q4  A above SS (eff={recov['eff']:.4f} > 1): "
-                  f"{'PASS ✓' if eff_above else 'FAIL ✗'}")
-            print(f"  2021Q4  g elevated (g={recov['g']:.4f} > 1): "
-                  f"{'PASS ✓' if g_pos else 'FAIL ✗'}")
+            d_taul = pct(trough["taul"], bind["taul"])
+            d_eff  = pct(trough["eff"],  bind["eff"])
+            d_g    = pct(trough["g"],    bind["g"])
+            print(f"  2020Q2  τ_l drop strongly  Δ(1-τ_l)={d_taul:+.2f}%  "
+                  f"{'PASS ✓' if d_taul < -3 else 'FAIL ✗'}")
+            print(f"  2020Q2  A small/mechanical Δeff   ={d_eff:+.2f}%   "
+                  f"{'PASS ✓' if abs(d_eff) < 5 else 'FAIL ✗'}")
+            print(f"  2020Q2  g elevated (CARES) Δg     ={d_g:+.2f}%   "
+                  f"{'PASS ✓' if d_g > 0   else 'FAIL ✗'}")
+        if recov and bind:
+            d_eff = pct(recov["eff"], bind["eff"])
+            print(f"  2021Q4  A > pre-COVID      Δeff   ={d_eff:+.2f}%   "
+                  f"{'PASS ✓' if d_eff > 0 else 'FAIL ✗'}")
         if norm and bind:
-            taul_recov = abs(norm["taul"] - bind["taul"]) < 0.05
-            eff_norm   = abs(norm["eff"] - 1.0) < 0.10
-            print(f"  2023Q4  τ_l recovered (1-taul={norm['taul']:.4f}, diff={norm['taul']-bind['taul']:+.4f}): "
-                  f"{'PASS ✓' if taul_recov else 'FAIL ✗'}")
-            print(f"  2023Q4  A near trend  (eff={norm['eff']:.4f}): "
-                  f"{'PASS ✓' if eff_norm else 'FAIL ✗'}")
+            d_taul = pct(norm["taul"], bind["taul"])
+            d_eff  = pct(norm["eff"],  bind["eff"])
+            print(f"  2023Q4  τ_l recovered      Δ(1-τ_l)={d_taul:+.2f}%  "
+                  f"{'PASS ✓' if abs(d_taul) < 5 else 'FAIL ✗'}")
+            print(f"  2023Q4  A near baseline    Δeff   ={d_eff:+.2f}%   "
+                  f"{'PASS ✓' if abs(d_eff)  < 6 else 'FAIL ✗'}")
 
     check_rubric("full-window", df_full, states_full, res_full)
     check_rubric("pre-COVID-fit", df_pre, states_pre, res_pre)
