@@ -144,3 +144,13 @@ pipeline is structurally sound for arbitrary US periods, not just
    is constructed BCKM-faithfully (`employment * avg_weekly_hours`)
    rather than via FRED's pre-aggregated indices. This is the next
    data-source improvement once Layer-2 is stable.
+
+### 2026-05-01 — Scope confirmation (user)
+
+Cross-country support is **explicitly out of scope** in the short run.
+All "arbitrary country" / "OECD MEI" / "Layer 3" language across the
+project docs has been scrubbed (see the corresponding commit). The
+web app target is US-only. The 2021 TFP undershoot investigation is
+also dropped; it's documentation, not a blocker.
+
+Active queue: (a) MLE result caching, (b) BLS-source labor data.

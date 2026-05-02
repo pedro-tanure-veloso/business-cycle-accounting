@@ -4,10 +4,11 @@
 
 Build a **usable Business Cycle Accounting toolkit** that produces credible
 four-wedge decompositions — efficiency (A), labor (1−τ_l), investment
-(1+τ_x), government (g) — for **arbitrary country/period combinations**.
-The end deliverable is a three-layer web app (`bca_core` model +
-`bca_api` service + `bca_web` UI) where users pick a country and time
-window and get back a wedge decomposition + counterfactuals.
+(1+τ_x), government (g) — for **arbitrary US time windows**. The end
+deliverable is a three-layer web app (`bca_core` model + `bca_api` service
++ `bca_web` UI) where users pick a US time window and get back a wedge
+decomposition + counterfactuals. **Cross-country support is explicitly out
+of scope (2026-05-01).**
 
 ### What "credible" means and how we validate it
 
@@ -42,9 +43,9 @@ ARPA). A "pass" is sign-direction agreement on the wedge decomposition
 under both full-window and pre-anomaly-fit detrending. This is the
 *current* live target (post-2026-05-01 pivot).
 
-**Layer 3 — cross-country (future).** OECD MEI data layer for the
-24-country Tables III/IV of the paper. Out of scope until US
-generalizability lands.
+**Layer 3 — cross-country: explicitly out of scope (2026-05-01).** OECD
+MEI / OECD-NA data layers, the 24-country Tables III/IV exercise, and any
+non-US extension are deferred indefinitely. The web app target is US-only.
 
 ### Scope of BCKM-replication-specific rules
 
@@ -57,10 +58,14 @@ Several rules in this document — most prominently the
 regression** only. They are deliberate fidelity choices that make our
 1980-2014 output BCKM-faithful.
 
-For Layer 2 and Layer 3, the relevant defaults are:
+For Layer 2 (other US windows), the relevant defaults are:
 
-- **`labor_target_mean=None`** (raw hours-per-capita on the sample
-  window; BCKM-anchored 0.24279 is opt-in for the regression path).
+- **`labor_target_mean=0.24279`** — required because the model's
+  `ss["l"] ≈ 0.29` and raw FRED hours/pop is ~23, an 80× scale
+  mismatch that breaks wedge extraction. The BCKM-empirical anchor
+  is approximately invariant across US windows and is the safe
+  Layer-2 default. (The earlier "raw labor" hint in this section was
+  superseded 2026-05-01 after the COVID smoke test surfaced the bug.)
 - **FRED defaults** for `y_source/x_source/g_source` (BEA branches are
   diagnostic-only opt-in; their 1980-2014 hardcodes are out-of-scope
   to remove until a separate migration sprint).
@@ -70,9 +75,8 @@ For Layer 2 and Layer 3, the relevant defaults are:
   (e.g. pre-COVID) when the full sample contains a structural anomaly
   that would distort the trend.
 
-When a Layer-2 or Layer-3 deliverable would benefit from violating a
-BCKM-replication rule (e.g. using an OECD-MEI population series instead
-of FRED `LFWA64TTUSQ647N`), the rule yields. The Layer-1 regression
+When a Layer-2 deliverable would benefit from violating a
+BCKM-replication rule, the rule yields. The Layer-1 regression
 test is the gate: as long as the cached BCKM parquet still produces the
 pinned f-stats, the rule's purpose has been served.
 
@@ -585,9 +589,7 @@ Concrete order of preference for each US series we need:
    `bca_core/data/bea.py` already implements `BeaDataFetcher` with disk cache.
 2. **BLS series-level files** for hours, employment, productivity (BLS
    `Productivity & Costs` releases, `CES` employment, `CPS` labor force).
-3. **OECD MEI** for working-age population (the BCKM-canonical universe is
-   gone from BLS post-2014; OECD MEI 15-64 is the cleanest current proxy).
-4. **FRED** only if 1–3 don't carry the series, AND only after verifying the
+3. **FRED** only if 1–2 don't carry the series, AND only after verifying the
    FRED ticker has full history (not truncated at a chain-rebase boundary).
 
 When a FRED-default series is being used as a stand-in for a BEA/BLS source,

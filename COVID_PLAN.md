@@ -28,7 +28,7 @@ drifts away from BCKM's Sbar attractor), intellectually interesting but
 not on the critical path for the project's actual goal.
 
 The reframed goal (user-validated 2026-05-01): **confidence that our code
-produces credible BCA decompositions for arbitrary country/period
+produces credible BCA decompositions for arbitrary US time
 combinations**, not exact numerical match to BCKM 2014. The cheapest, most
 informative validation is to apply the existing pipeline to a different US
 window where we have strong narrative priors and see whether the wedge
