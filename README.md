@@ -1,3 +1,11 @@
+---
+title: "BCA — Business Cycle Accounting"
+topic: "project-overview"
+layer: "all"
+status: "active"
+last_updated: "2026-05-03"
+---
+
 # BCA — Business Cycle Accounting
 
 A Python implementation of the Business Cycle Accounting methodology of

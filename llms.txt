@@ -1,0 +1,75 @@
+# BCA — Business Cycle Accounting
+
+A Python toolkit that decomposes aggregate economic fluctuations into four structural
+wedges — efficiency, labor, investment, and government — using the methodology of
+Chari, Kehoe & McGrattan (2007) and Brinca, Chari, Kehoe & McGrattan (2016). The
+pipeline fits a state-space model by Kalman-filter maximum likelihood, then runs
+counterfactual simulations to isolate each wedge's contribution to output, hours,
+and investment. Validated on US 1980–2014 (replicates published results to ≤0.01)
+and US 2010–2023 (COVID era). **US-only; cross-country is out of scope.**
+
+> For an AI-optimized context map with full glossary, logic flows, and variable
+> taxonomy, read [README_AI.md](README_AI.md) first.
+
+## Docs
+
+- [README.md](README.md): Project overview, quick start, repository layout, methodology summary, calibration, data sources, and test commands
+- [README_AI.md](README_AI.md): AI context map — full glossary, pipeline logic flow, key data structures, file-by-file roles, and critical conventions for AI agents
+- [BCA_info.md](BCA_info.md): Structured extract of the BCKM 2016 paper — prototype economy, accounting procedure, calibration table, and US empirical results; the live methodology reference
+- [vision-doc.md](vision-doc.md): Project roadmap — what is built (bca_core ✅), what is next (bca_api, bca_web), milestone table
+
+## Results
+
+- [bckm_replication/REPORT.md](bckm_replication/REPORT.md): Final BCKM 1980–2014 replication report — bugs found and fixed, f-stat validation (≤0.01 to Table 11), residual LL gap analysis, things-not-to-do list
+- [covid_analysis/REPORT.md](covid_analysis/REPORT.md): COVID-era BCA results (2010Q1–2023Q4) — wedge decomposition, counterfactuals, φ-statistics, COVID-vs-Great-Recession comparison; formatted as a research paper for external readers
+
+## Source: Core library (`bca_core/`)
+
+- [bca_core/params.py](bca_core/params.py): `CalibrationParams` dataclass — all BCKM Table 1 calibration constants with quarterly conversion properties
+- [bca_core/constants.py](bca_core/constants.py): Canonical BCKM parameter tables in code convention — `P_BCKM_TABLE8`, `SBAR_BCKM_TABLE8`, `QCHOL_BCKM_TABLE10`; critical convention note on P-transpose trap
+- [bca_core/model.py](bca_core/model.py): `PrototypeModel` — steady-state computation, log-linearization of the BCKM system equations, Klein QZ solution; `ModelSolution` with policy matrices
+- [bca_core/klein.py](bca_core/klein.py): `klein_solve` — generalized Schur (QZ) decomposition solver for linear rational expectations models; `BlancharKahnError` for detection of indeterminate/explosive solutions
+- [bca_core/bckm_lom.py](bca_core/bckm_lom.py): BCKM-faithful capital law-of-motion and state-space construction — `bckm_state_space` (estimation path), `bckm_state_space_cf` (counterfactual path with wedge deactivation); ports `mleqadj.m`/`fixexpadj.m`/`res_adjust2.m` line-for-line
+- [bca_core/var_estimation.py](bca_core/var_estimation.py): `estimate_var_mle` — full Kalman-filter MLE pipeline with DARE-based steady-state filter, Rauch-Tung-Striebel smoother, L-BFGS-B optimizer, content-addressed pickle caching; `prepare_observables` for log-deviation construction
+- [bca_core/counterfactuals.py](bca_core/counterfactuals.py): `solve_counterfactual`, `run_counterfactual`, `run_all_counterfactuals` — BCKM incremental wedge-alone simulations; `phi_statistics` (level-space SSR decomposition), `f_statistics_bckm` (level-ratio f-stats matching BCKM Table 11)
+- [bca_core/wedges.py](bca_core/wedges.py): Static wedge extraction from data — `build_capital_stock` (perpetual inventory), `extract_wedges_bckm_style` (efficiency A, labor τ_l, investment τ_x, government g)
+- [bca_core/data/pipeline.py](bca_core/data/pipeline.py): `build_us_dataset` — end-to-end data entry point: FRED fetch → BCKM adjustments → calgz detrending → returns `DataFrame[y, l, x, g]` as quarterly log-level series
+- [bca_core/data/adjustments.py](bca_core/data/adjustments.py): `reclassify_durables`, `subtract_sales_tax`, `to_real_per_capita`, `compute_labor_input`, `compute_government_wedge`, `remove_trend` (calgz fsolve)
+- [bca_core/data/fred.py](bca_core/data/fred.py): `FredDataFetcher` — FRED series fetcher with 90-day disk cache; maps BCKM data construction to FRED tickers; BLS-faithful labor via `CE16OV × AWHAETP`
+- [bca_core/data/bea.py](bca_core/data/bea.py): `BeaDataFetcher` — BEA NIPA and Fixed Assets API fetcher (diagnostic opt-in only; FRED defaults are production)
+
+## Source: Entry points
+
+- [scripts/run_var_counterfactuals.py](scripts/run_var_counterfactuals.py): Main pipeline driver for arbitrary US windows — full fetch → MLE → counterfactuals → Figure 2B plot
+- [scripts/diagnose_counterfactuals.py](scripts/diagnose_counterfactuals.py): PASS/FAIL diagnostic checks on the counterfactual decomposition (additivity, sign, window)
+- [scripts/solow_residual_check.py](scripts/solow_residual_check.py): Sanity check comparing extracted efficiency wedge A to the Solow residual
+- [covid_analysis/scripts/run_covid_analysis.py](covid_analysis/scripts/run_covid_analysis.py): COVID-era one-shot driver (2010Q1–2023Q4) — both trend variants, figure generation, result printing; ~3s with cached MLE pickles
+
+## Tests (`tests/`)
+
+- [tests/test_model.py](tests/test_model.py): Steady state, log-linearization, and Klein QZ solution tests
+- [tests/test_params.py](tests/test_params.py): Calibration parameter defaults and quarterly conversions
+- [tests/test_klein.py](tests/test_klein.py): QZ solver — stable/indeterminate/explosive systems
+- [tests/test_wedges.py](tests/test_wedges.py): Static wedge extraction and capital stock construction
+- [tests/test_var_estimation.py](tests/test_var_estimation.py): State-space model, `prepare_observables`, and `estimate_var_mle` structural tests
+- [tests/test_counterfactuals.py](tests/test_counterfactuals.py): Counterfactual correctness — all-active reproduces data, φ-statistics sum to 1, inactive-wedge coupling
+- [tests/test_bckm_table12.py](tests/test_bckm_table12.py): BCKM Table 12 (Great Recession peak-trough) ground-truth pinning; marked `@pytest.mark.bckm`
+- [tests/test_bckm_reference.py](tests/test_bckm_reference.py): `worktemp.mat` loader format-pinning; marked `@pytest.mark.bckm`
+- [tests/test_covid_analysis.py](tests/test_covid_analysis.py): COVID dataset shape, algebraic identities, and driver smoke test; marked `@pytest.mark.slow`
+- [tests/test_diag_smoke.py](tests/test_diag_smoke.py): Smoke test for the `diag_tx_counterfactual.py` regression check
+
+## Reference
+
+- [bckm_replication/BCKM_RESULTS.md](bckm_replication/BCKM_RESULTS.md): BCKM paper Parts III & IV — cross-country results and US 1980–2014 empirical tables (Table 8/9/10/11/12); regression-test ground truth
+- [bckm_replication/BCKM_DIFF_GUIDE.md](bckm_replication/BCKM_DIFF_GUIDE.md): Element-wise diff guide between our pipeline and BCKM `worktemp.mat` — coordinate conventions, observable ordering, detrending normalizations
+- [bckm_replication/matlab_reference/BCKM_STRATEGY.md](bckm_replication/matlab_reference/BCKM_STRATEGY.md): Authoritative description of the BCKM Matlab computational strategy, file-by-file; the ground-truth reference for any re-implementation
+- [bckm_replication/bca_paper.pdf](bckm_replication/bca_paper.pdf): Source paper (BCKM 2016, NBER WP 22663); content is extracted in `BCA_info.md` and `BCKM_RESULTS.md`
+
+## Internal (not for AI retrieval)
+
+- [CLAUDE.md](CLAUDE.md): Developer working rules, methodology constraints, and append-only debugging findings journal — authoritative for contributors but contains session history not useful for retrieval
+- [Diary.md](Diary.md): 2400-line Layer-1 session journal (BCKM replication era); internal history only
+- [covid_analysis/Diary.md](covid_analysis/Diary.md): COVID-era session journal; internal history only
+- [bckm_replication/DATA_FORENSICS.md](bckm_replication/DATA_FORENSICS.md): BEA NIPA migration investigation (archived; conclusion: FRED defaults are production)
+- [bckm_replication/DIVERGENCE_ANALYSIS.md](bckm_replication/DIVERGENCE_ANALYSIS.md): Early head-to-head divergence analysis (archived; superseded by REPORT.md)
+- [bckm_replication/counterfactual-debugging-summary.md](bckm_replication/counterfactual-debugging-summary.md): Debugging summary for the counterfactual incremental-decomposition fix (archived)

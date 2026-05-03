@@ -1,3 +1,11 @@
+---
+title: "BCKM ↔ Our Pipeline — Data Manipulation Reference"
+topic: "reference"
+layer: "bckm-replication"
+status: "reference"
+last_updated: "2026-05-03"
+---
+
 # BCKM ↔ Our Pipeline — Data Manipulation Reference
 
 When you cross-machine compare our pipeline against BCKM's `worktemp.mat`,

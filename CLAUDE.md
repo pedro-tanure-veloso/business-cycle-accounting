@@ -1,3 +1,11 @@
+---
+title: "BCA Project — Claude Working Instructions"
+topic: "meta"
+layer: "all"
+status: "internal"
+last_updated: "2026-05-03"
+---
+
 # BCA Project — Claude Working Instructions
 
 ## Goal

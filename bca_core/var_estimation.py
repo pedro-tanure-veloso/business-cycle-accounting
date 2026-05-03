@@ -233,6 +233,17 @@ class BCAStateSpace(MLEModel):
     """
 
     def __init__(self, endog, proto_model: PrototypeModel, **kwargs):
+        """
+        Subclass statsmodels MLEModel to embed the BCA state space.
+
+        We subclass rather than build a standalone Kalman filter because
+        statsmodels provides a battle-tested DARE + steady-state Kalman
+        implementation that we can inherit. The override supplies the
+        BCA-specific (F, H, Q_proc) matrices, which change at every
+        optimizer step as (Sbar, P, Q_chol) change. The warm-start and
+        loglikeobs paths use this class; the production fast optimizer
+        bypasses it via ``_neg_ll_fast`` to avoid Python-level overhead.
+        """
         k_states = 5
         k_posdef = 4  # only wedge states receive shocks
 
@@ -262,6 +273,15 @@ class BCAStateSpace(MLEModel):
 
     @property
     def param_names(self):
+        """
+        30-element parameter name list in [P_0(4), P(16), Q_lower_tri(10)] order.
+
+        The layout matches BCKM ``mleqadj.m`` theta convention so warm-start
+        values from ``_pack``/``_unpack`` map 1:1. Q is parameterized as the
+        lower-triangular Cholesky factor (not V = Q·Qᵀ directly) because it
+        enforces positive-definiteness of the shock covariance without
+        additional inequality constraints in the optimizer.
+        """
         names = []
         wedges = ["A", "taul", "taux", "g"]
         for w in wedges:
@@ -276,6 +296,15 @@ class BCAStateSpace(MLEModel):
 
     @property
     def start_params(self):
+        """
+        Diagonal-persistence warm start used only by the statsmodels fit path.
+
+        P = 0.9·I is the least-informative stationary prior. The real
+        BCKM-faithful warm start (Sbar fsolve + BCKM Table 8/10 P and Q)
+        is applied inside ``estimate_var_mle`` before L-BFGS-B begins, so
+        these values only matter for the pre-optimization statsmodels call
+        that seeds the initial gradient direction.
+        """
         params = np.zeros(30)
         # P = 0.9 * I
         P_flat = (0.9 * np.eye(4)).ravel()
@@ -290,6 +319,14 @@ class BCAStateSpace(MLEModel):
         return params
 
     def _unpack_params(self, params):
+        """
+        Split the flat 30-parameter vector into (P_0, P_var, Q_chol).
+
+        The layout [P_0(4) | P(16) | Q_lower_tri(10)] is shared with the
+        ``_pack``/``_unpack`` helpers inside ``estimate_var_mle``, ensuring
+        that a warm-start theta produced by ``_pack`` can be re-used here
+        without any re-ordering.
+        """
         P_0 = params[0:4]
         P_var = params[4:20].reshape(4, 4)
         Q = np.zeros((4, 4))
@@ -347,6 +384,14 @@ class BCAStateSpace(MLEModel):
         P_k = np.concatenate([[pk], Phi_k])
 
         def build(coeffs):
+            """
+            Assemble a full 5-element policy row from static log-linearization coefficients.
+
+            Policy rows (P_y, P_l, P_x) come from the static first-order conditions
+            after substituting the capital policy P_k and the consumption rule Phi_c.
+            Re-building from scratch at each optimizer step is cheaper than caching
+            because invalidation would require tracking P_var changes explicitly.
+            """
             k_coeff = coeffs[0] + coeffs[1] * fc
             s_coeffs = coeffs[1] * Phi_c + coeffs[2:]
             return np.concatenate([[k_coeff], s_coeffs])
@@ -354,6 +399,16 @@ class BCAStateSpace(MLEModel):
         return P_k, build(static["y"]), build(static["l"]), build(static["x"])
 
     def update(self, params, **kwargs):
+        """
+        Re-build the BCA state-space matrices at each optimizer step.
+
+        statsmodels calls ``update`` at every log-likelihood evaluation.
+        We use it to re-solve the model with the current VAR persistence
+        ``P_var``, reconstruct the policy rows ``(P_y, P_l, P_x, P_k)``,
+        and populate the statsmodels state-space slots (transition, design,
+        state_cov, state_intercept). The DARE is re-run inside statsmodels
+        after each ``update`` call to refresh the constant Kalman gain.
+        """
         super().update(params, **kwargs)
 
         P_0, P_var, Q = self._unpack_params(params)
@@ -571,6 +626,17 @@ def estimate_var_mle(
 
     # ── Build state-space matrices, re-linearizing per call (Path A) ────
     def _build_ss(Sbar, P_var, Q_mat):
+        """
+        Re-linearize the model at the current Sbar and build state-space matrices.
+
+        Sbar is not just a VAR mean — it parameterizes the physical steady state
+        (output, capital, labor, government) through a nonlinear system solve.
+        We re-run this at every optimizer step because the observation-equation
+        intercept ``obs_offset = log(ss_new[var])`` depends on Sbar; fixing it
+        while Sbar drifts would inject a Sbar-independent phantom intercept into
+        the Kalman innovations, breaking the SS anchor (the "phi0 bug",
+        fixed 2026-04-30; see CLAUDE.md Findings).
+        """
         ss_new = _model_ss_from_sbar(Sbar)
         # Reject degenerate SS (negative consumption etc. — happens when
         # Sbar wanders into infeasible regions during line search).
@@ -729,6 +795,16 @@ def estimate_var_mle(
 
     # ── RTS backward smoother ────────────────────────────────────────────
     def _rts(x_filt, P_filt, x_pred, P_pred, F):
+        """
+        Rauch-Tung-Striebel backward smoother for the constant-gain Kalman filter.
+
+        A separate implementation is needed because the steady-state Kalman uses
+        a constant gain derived from DARE, whereas statsmodels' built-in smoother
+        expects the time-varying P_pred sequence from a transient (non-steady-state)
+        forward pass. The constant-gain smoother gain G_t = P_filt · Fᵀ · P_pred⁻¹
+        is evaluated with the per-step stored P_pred (which differs from Σ_pred
+        only at t=0 due to the diffuse initialization).
+        """
         x_s = x_filt.copy()
         P_s = P_filt.copy()
         for t in range(T - 2, -1, -1):
@@ -746,6 +822,13 @@ def estimate_var_mle(
     # estimate. Sbar bounds [-1,-1,-1,-5]/[1,1,1,1] from mleqadj.m
     # Lb/Ub (lines 109/119).
     def _unpack(theta):
+        """
+        Split flat theta vector into (Sbar, P_var, Q_chol) for the fast objective.
+
+        Symmetric with ``_pack`` so that ``_pack(_unpack(theta)) == theta``
+        for any valid theta. The round-trip property is required for the
+        cache key and warm-start to agree on the canonical parameter layout.
+        """
         Sbar = theta[0:4]
         P_var = theta[4:20].reshape(4, 4)
         Q_chol = np.zeros((4, 4))
@@ -757,6 +840,13 @@ def estimate_var_mle(
         return Sbar, P_var, Q_chol
 
     def _pack(Sbar, P_var, Q_chol):
+        """
+        Assemble (Sbar, P_var, Q_chol) into a flat theta vector for L-BFGS-B.
+
+        Symmetric with ``_unpack``. Used to construct the warm-start theta
+        from the BCKM-published parameters and to build the content-addressed
+        cache key so that identical inputs always map to the same pickle path.
+        """
         theta = np.empty(N_P)
         theta[0:4] = Sbar
         theta[4:20] = P_var.ravel()
@@ -800,6 +890,16 @@ def estimate_var_mle(
     sample_obs_lvl = np.exp(obs_hat).mean(axis=0)
 
     def _fsolve_sbar_initmle():
+        """
+        Solve for the initial Sbar that matches model SS means to data means.
+
+        This mirrors BCKM ``initmle.m:53`` and is run once before L-BFGS-B
+        starts. A bad Sbar produces either a degenerate SS (negative consumption,
+        which raises LinAlgError and is penalized) or a misaligned Kalman
+        intercept that sends the optimizer into an infeasible basin. The fsolve
+        step pins Sbar to a physically meaningful starting point so the optimizer
+        begins with a valid likelihood surface.
+        """
         from scipy.optimize import fsolve
 
         if data_means is not None:
@@ -860,6 +960,16 @@ def estimate_var_mle(
     _SBAR_UB = np.array([ 1.0,  1.0,  1.0,  1.0])
 
     def _neg_ll_fast(theta):
+        """
+        Fast negative log-likelihood objective for L-BFGS-B — bypasses statsmodels.
+
+        The statsmodels ``MLEModel.fit`` path has significant Python overhead
+        per evaluation (attribute lookup, array copying, Python-level loops).
+        For ~200–500 L-BFGS-B iterations with 4-point finite-difference gradients,
+        that overhead dominates runtime. This function runs the same DARE → KF →
+        LL pipeline in pure numpy, cutting per-evaluation time by ~10×. The
+        statsmodels path is kept for the warm-start and as a reference check.
+        """
         Sbar, P_var, Q_chol = _unpack(theta)
         eig_max = np.max(np.abs(np.linalg.eigvals(P_var)))
         penalty = 5e5 * max(eig_max - _SPECTRAL_BOUND, 0.0) ** 2

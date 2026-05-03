@@ -1,3 +1,11 @@
+---
+title: "BCKM 1980–2014 Replication Reference (Parts III & IV)"
+topic: "reference"
+layer: "bckm-replication"
+status: "reference"
+last_updated: "2026-05-03"
+---
+
 # BCA — BCKM 1980-2014 Replication Reference (Parts III & IV)
 
 This file is the replication-target portion of the paper summary —

@@ -1,3 +1,11 @@
+---
+title: "Counterfactual Decomposition — Debugging Summary"
+topic: "debugging"
+layer: "bckm-replication"
+status: "archived"
+last_updated: "2026-05-03"
+---
+
 # Counterfactual Decomposition — Debugging Summary
 
 ## Problem Statement

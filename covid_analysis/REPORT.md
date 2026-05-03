@@ -1,3 +1,11 @@
+---
+title: "Business Cycle Accounting for the COVID Recession: United States 2010–2023"
+topic: "results"
+layer: "covid-analysis"
+status: "active"
+last_updated: "2026-05-03"
+---
+
 # Business Cycle Accounting for the COVID Recession: United States 2010–2023
 
 ## Abstract

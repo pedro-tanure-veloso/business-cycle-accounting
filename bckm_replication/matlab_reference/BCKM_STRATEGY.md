@@ -1,3 +1,11 @@
+---
+title: "BCKM Computational Strategy"
+topic: "reference"
+layer: "bckm-replication"
+status: "reference"
+last_updated: "2026-05-03"
+---
+
 # BCKM Computational Strategy
 
 This document describes the **exact** computational strategy implemented in the

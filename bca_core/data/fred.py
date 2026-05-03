@@ -62,12 +62,24 @@ FRED_SERIES = {
 
 
 def _cache_dir() -> Path:
+    """Return (creating if absent) the per-user FRED disk-cache directory.
+
+    Stored under ``~/.bca_cache/fred/`` so that multiple clones of this repo
+    share one cache and FRED API quota is not consumed on repeated identical
+    fetches across working directories.
+    """
     d = Path.home() / ".bca_cache" / "fred"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def _cache_is_fresh(path: Path, max_age_days: int = 90) -> bool:
+    """Return True if the cached file exists and is younger than max_age_days.
+
+    90 days is intentionally generous: FRED revises quarterly NIPA series
+    infrequently and the BCA window is historically fixed. A shorter TTL
+    would trigger unnecessary re-fetches without improving accuracy.
+    """
     if not path.exists():
         return False
     mtime = datetime.fromtimestamp(path.stat().st_mtime)
@@ -78,6 +90,14 @@ class FredDataFetcher:
     """Fetch and cache FRED series for BCA analysis."""
 
     def __init__(self, api_key: str | None = None):
+        """
+        Initialize the fetcher, preferring the FRED_API_KEY environment variable.
+
+        Lazy-importing ``fredapi`` here rather than at module level lets the rest
+        of ``bca_core`` import cleanly in environments where ``fredapi`` is not
+        installed (e.g. test runners that mock data), as long as no actual fetch
+        is attempted.
+        """
         self.api_key = api_key or os.environ.get("FRED_API_KEY")
         if not self.api_key:
             raise ValueError(

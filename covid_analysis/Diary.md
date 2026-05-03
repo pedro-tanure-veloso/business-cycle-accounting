@@ -1,3 +1,11 @@
+---
+title: "COVID Analysis — Session Diary"
+topic: "journal"
+layer: "covid-analysis"
+status: "internal"
+last_updated: "2026-05-03"
+---
+
 # COVID Analysis — Session Diary
 
 Append-only journal for Layer 2 work (COVID-era smoke test and beyond).

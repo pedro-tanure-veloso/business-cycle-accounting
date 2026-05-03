@@ -1,3 +1,11 @@
+---
+title: "BCA Project Diary"
+topic: "journal"
+layer: "all"
+status: "internal"
+last_updated: "2026-05-03"
+---
+
 # BCA Project Diary
 
 ---

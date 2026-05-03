@@ -1,3 +1,11 @@
+---
+title: "Business Cycle Accounting — Project Vision"
+topic: "vision"
+layer: "all"
+status: "active"
+last_updated: "2026-05-03"
+---
+
 # Business Cycle Accounting — Project Vision
 
 ## Goal

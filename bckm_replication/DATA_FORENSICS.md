@@ -1,3 +1,11 @@
+---
+title: "Data Forensics: BCKM 2016 US Replication"
+topic: "reference"
+layer: "bckm-replication"
+status: "archived"
+last_updated: "2026-05-03"
+---
+
 # Data Forensics: BCKM 2016 US Replication
 
 _Last updated: 2026-05-01_

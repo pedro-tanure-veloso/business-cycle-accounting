@@ -1,3 +1,11 @@
+---
+title: "Accounting for Business Cycles — Paper Summary"
+topic: "methodology"
+layer: "all"
+status: "reference"
+last_updated: "2026-05-03"
+---
+
 # Accounting for Business Cycles
 
 *Based on Brinca, Chari, Kehoe, and McGrattan — NBER Working Paper No. 22663 (September 2016) and the accompanying Technical Appendix.*

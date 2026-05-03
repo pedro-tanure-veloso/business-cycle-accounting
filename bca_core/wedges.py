@@ -259,6 +259,7 @@ def extract_all_wedges_direct(
     one_plus_taux = extract_investment_wedge(c, x, k, y, params)
 
     def to_hat(series: np.ndarray) -> np.ndarray:
+        """Convert a level series to mean-zero log-deviations for the state output."""
         log_s = np.log(np.maximum(series, 1e-12))
         return log_s - np.mean(log_s)
 

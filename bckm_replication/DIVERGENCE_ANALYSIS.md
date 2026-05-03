@@ -1,3 +1,11 @@
+---
+title: "BCKM Replication — Assessment & Path to a Verdict"
+topic: "debugging"
+layer: "bckm-replication"
+status: "archived"
+last_updated: "2026-05-03"
+---
+
 # BCKM Replication — Assessment & Path to a Verdict
 
 *Last updated: 2026-04-28 (Step 9 verdict in §11). Supersedes the earlier

@@ -1,3 +1,11 @@
+---
+title: "BCKM 2016 Replication — Final Report"
+topic: "results"
+layer: "bckm-replication"
+status: "archived"
+last_updated: "2026-05-03"
+---
+
 # BCKM 2016 Replication — Final Report
 
 **Status (2026-05-01): closed.** The pipeline reproduces BCKM 2016
