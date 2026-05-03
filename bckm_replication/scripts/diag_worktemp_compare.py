@@ -31,10 +31,6 @@ from bca_core.constants import (
     QCHOL_BCKM_TABLE10 as QCHOL_BCKM,
     SBAR_BCKM_TABLE8 as SBAR_BCKM,
 )
-# Convention note: see ``bca_core/constants.py`` — BCKM's paper Table 8
-# is the TRANSPOSE of the code's textbook ``state_{t+1} = P · state_t``
-# convention. Always import; never re-transcribe.
-
 
 def _max_diff(a: np.ndarray, b: np.ndarray) -> tuple[float, int]:
     d = np.abs(np.asarray(a) - np.asarray(b))

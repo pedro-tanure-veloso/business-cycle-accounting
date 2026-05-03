@@ -96,12 +96,8 @@ def add_recessions(ax):
 def load_or_build(path, mle_window=None):
     """Load cached parquet if present; otherwise fetch from FRED and cache.
 
-    Uses labor_target_mean=0.24279 (BCKM-empirical hours-per-capita anchor).
-    This is required because raw FRED hours/pop is ~23 while the model's
-    ss["l"] is ~0.29 — without anchoring, the wedge extraction sees an
-    80x scale mismatch and produces nonsense states. The 0.24279 anchor
-    is approximately invariant across US windows so it's a safe Layer 2
-    default. Document the choice in REPORT.md if needed.
+    Uses labor_target_mean=0.24279 (BCKM-empirical hours/pop anchor;
+    model ss["l"] ≈ 0.29, raw FRED ≈ 23 — rescale required).
     """
     label = "pre-COVID-fit" if mle_window else "full-window"
     if Path(path).exists():

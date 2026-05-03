@@ -11,9 +11,8 @@ Q3: 16 Q-sign-flip evaluations at our converged θ — basin gap sign-only
 Q4: per-quarter innovation magnitudes at BCKM-θ vs our-θ — which periods
     do we fit better, and how much?
 
-Q2 (full optimizer with shrinkage) is already in /tmp/post_bckm_data.txt
-from prior session: best LL = +1899.0304 from 5 restarts + 50-iter shrink.
-We reuse that number rather than re-run.
+Q2 uses the reference full-optimizer result (LL = +1899.0304 from 5 restarts +
+50-iter shrink), hardcoded to avoid a slow re-run.
 """
 from __future__ import annotations
 
@@ -253,9 +252,7 @@ def main():
     print(f"  ‖Q    − Q_BCKM   ‖∞       : {np.max(np.abs(Q_w - Q_b)):.4e}")
     walk_nats = res_w["ll"] - res_b["ll"]
 
-    # ── Q2 (cached): full optimizer result from /tmp/post_bckm_data.txt ──
-    # LL = +1899.0304, max|eig(P)| = 0.9950
-    # We show the walk-vs-shrink decomposition.
+    # ── Q2: full optimizer (hardcoded reference, see module docstring) ────
     full_ll_cached = 1899.0304
     print("\n" + "═" * 96)
     print(f"Q2: full optimizer (cached from prior session) → LL = {full_ll_cached:+.4f}")

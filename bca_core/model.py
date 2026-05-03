@@ -8,6 +8,7 @@ via the Klein (2000) QZ method.
 
 from __future__ import annotations
 
+import math
 import numpy as np
 from dataclasses import dataclass
 from scipy.optimize import brentq
@@ -55,39 +56,14 @@ class PrototypeModel:
         psi = p.psi
         g_share = p.g_share
 
-        # From Euler equation at SS (no adjustment cost distortion):
-        # 1 = beta * [alpha * y/k + (1 - delta)] / ((1+n)*(1+gamma))
-        # => y/k = [((1+n)*(1+gamma))/beta - (1-delta)] / alpha
+        # Euler equation at SS: yk = [((1+n)(1+γ))/β − (1−δ)] / α
         yk = ((1 + n) * (1 + gamma) / beta - (1 - delta)) / alpha
 
-        # x/k = b at steady state
-        xk = p.b
+        xk = p.b                             # x/k = b at SS
+        lk = yk ** (1 / (1 - alpha))         # production: l/k = (y/k)^(1/(1-α))
+        ck = yk * (1 - g_share) - xk         # resource constraint: c/k
 
-        # From production: y = k^alpha * l^(1-alpha) (with A=1, trend normalized)
-        # => y/k = (l/k)^(1-alpha) => l/k = (y/k)^(1/(1-alpha))
-        lk = yk ** (1 / (1 - alpha))
-
-        # Resource constraint: y = c + x + g
-        # c/k = y/k - x/k - g/k = y/k - x/k - g_share * y/k
-        ck = yk * (1 - g_share) - xk
-
-        # Labor FOC: psi * c/(1-l) = (1-alpha) * y/l
-        # => psi * (c/k) / (1 - l) = (1-alpha) * (y/k) / (l/k)^(-1)... simplify:
-        # psi * c/l * l/(1-l) = (1-alpha) * y/l
-        # psi * c * 1/(1-l) = (1-alpha) * y / l
-        # => psi * (c/k) / (1/k - l/k * (1/l)) ... let's do it directly.
-        #
-        # Write everything in terms of l:
-        # k = l / lk
-        # y = yk * k = yk * l / lk
-        # c = ck * k = ck * l / lk
-        # FOC: psi * c / (1 - l) = (1 - alpha) * y / l
-        # psi * (ck * l / lk) / (1 - l) = (1 - alpha) * (yk * l / lk) / l
-        # psi * ck * l / (lk * (1 - l)) = (1 - alpha) * yk / lk
-        # psi * ck * l / (1 - l) = (1 - alpha) * yk
-        # l / (1 - l) = (1 - alpha) * yk / (psi * ck)
-        # l = (1 - alpha) * yk / (psi * ck + (1 - alpha) * yk)
-
+        # Labor FOC: ψ·c/(1-l) = (1-α)·y/l  =>  l/(1-l) = (1-α)·yk/(ψ·ck)
         ratio = (1 - alpha) * yk / (psi * ck)
         l_ss = ratio / (1 + ratio)
 
@@ -97,7 +73,6 @@ class PrototypeModel:
         x_ss = xk * k_ss
         g_ss = g_share * y_ss
 
-        import math
         return {
             "y": y_ss,
             "c": c_ss,

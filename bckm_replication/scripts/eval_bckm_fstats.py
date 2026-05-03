@@ -34,11 +34,6 @@ from bca_core.constants import (
     QCHOL_BCKM_TABLE10 as QCHOL_BCKM,
     SBAR_BCKM_TABLE8 as SBAR_BCKM,
 )
-# Convention note: BCKM's paper publishes P in the transpose of the
-# code's textbook ``state_{t+1} = P · state_t`` convention. See
-# ``bca_core/constants.py`` for the full story. Do not re-transcribe
-# Table 8 here.
-
 
 def find_idx(dates, year, quarter):
     qmap = {1: ("01", "Q1"), 2: ("04", "Q2"), 3: ("07", "Q3"), 4: ("10", "Q4")}

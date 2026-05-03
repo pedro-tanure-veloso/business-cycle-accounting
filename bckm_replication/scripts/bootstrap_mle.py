@@ -18,12 +18,9 @@ to ``figure_bootstrap.png``. Findings feed
 ``STEP23_BOOTSTRAP_SENSITIVITY.md``.
 
 NOTE: The MLE machinery (``_build_ss``, ``_steady_state_kalman``,
-``_kf_ll``, ``_unpack``, ``_pack``) is duplicated from
-``bca_core/var_estimation.py``'s closures, since per
-``STEP9_HANDOFF.md`` this branch should not modify ``bca_core/``.
-The math is bit-for-bit identical and is verified via a sanity
-check at script start that re-runs ``estimate_var_mle`` and
-compares LL.
+``_kf_ll``, ``_unpack``, ``_pack``) is inlined from
+``bca_core/var_estimation.py``. A sanity check at script start
+verifies bit-for-bit agreement with ``estimate_var_mle``.
 """
 from __future__ import annotations
 
@@ -48,12 +45,9 @@ from bca_core.constants import P_BCKM_TABLE8
 
 
 # --- BCKM Table 8/10 warm-start (US MLE estimates) -------------------------
-# P imported from bca_core.constants (see that module's docstring for the
-# row/col convention story — paper Table 8 is the TRANSPOSE of code form).
+# P from bca_core.constants (canonical source — see that module's docstring).
 _P_BCKM = P_BCKM_TABLE8
-# Q is the BCKM ``x0c`` warm-start init (mleqadj.m adja=12.88, NOT the
-# converged Table 10 MLE) — kept inline because it does not appear in the
-# published tables. No row/col convention issue (Cholesky is lower-tri).
+# Q is the BCKM x0c warm-start (mleqadj.m) — NOT the converged Table 10 MLE.
 _Q_BCKM = np.array([
     [ 0.0240,  0.0000,  0.0000,  0.0000],
     [-0.0099,  0.0274,  0.0000,  0.0000],
@@ -69,7 +63,7 @@ def _make_mle_machinery(obs_hat: np.ndarray, proto: PrototypeModel,
                         data_means: np.ndarray):
     """Return (_neg_ll, _pack, _unpack, _eval_full, _fsolve_sbar).
 
-    Bit-for-bit duplication of estimate_var_mle's internal closures.
+    Inlined from estimate_var_mle; verified bit-for-bit identical.
     """
     T, n_obs = obs_hat.shape
     ss_calib = proto.steady_state()

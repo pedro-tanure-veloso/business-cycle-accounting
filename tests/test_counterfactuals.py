@@ -48,11 +48,8 @@ class TestSolveCounterfactual:
     def test_all_wedges_active(self, model, P_var):
         """All-active CF must match BCKM ``bckm_state_space`` exactly.
 
-        The CF engine was rewritten 2026-04-29 to call ``bckm_state_space_cf``
-        with ``As=[1,1,1,1]``, which equals ``bckm_state_space`` (the optimizer
-        path) by construction. This is the algebraic identity that locks in
-        Bug 1 / Deviation #1 from the BCKM ground truth: the all-active CF
-        produces exactly the optimizer's H rows, no Klein-vs-BCKM gap.
+        ``solve_counterfactual(..., As=[1,1,1,1])`` calls ``bckm_state_space_cf``
+        which must equal ``bckm_state_space`` (the optimizer path) by construction.
         """
         import math
         from bca_core.bckm_lom import bckm_state_space
@@ -151,7 +148,7 @@ class TestPhiStatistics:
 
 
 class TestLinearizationPoint:
-    """Lock in the ss-kwarg invariants from the 2026-04-29 cf-fix."""
+    """Verify that the ``ss`` kwarg controls the linearization point."""
 
     def test_default_ss_matches_calibrated_ss(self, model, P_var):
         """ss=None must equal an explicit ss=model.steady_state() call."""
@@ -165,13 +162,7 @@ class TestLinearizationPoint:
         np.testing.assert_allclose(cf_none["P_x"], cf_explicit["P_x"], rtol=1e-12)
 
     def test_solve_counterfactual_uses_provided_ss(self, model, P_var):
-        """A perturbed ss must produce different policy coefficients.
-
-        Pre-fix this kwarg did not exist and the linearization was always at
-        ``model.steady_state()`` regardless of which Sbar the optimizer reached
-        — that was Bug 1. A non-trivial perturbation should change at least
-        one of the four policy vectors.
-        """
+        """A perturbed ss must produce different policy coefficients."""
         ss_default = model.steady_state()
         ss_pert = dict(ss_default)
         # Perturb capital and consumption — both enter the linearization
@@ -187,13 +178,11 @@ class TestLinearizationPoint:
         assert not np.allclose(cf_default["P_y"], cf_pert["P_y"], rtol=1e-6)
 
     def test_all_active_at_ss_new_matches_build_ss(self, model):
-        """All-active CF at ``ss_new`` must equal H from estimate_var_mle.
+        """All-active CF at ``ss_new`` must match H rows from estimate_var_mle.
 
-        This is the regression test for Bug 1 at BCKM-θ specifically:
         ``solve_counterfactual(..., ss=res["ss_new"])`` with all wedges active
-        should reproduce the policy rows that the optimizer's ``_build_ss``
-        produces (H[0]=P_y, H[1]=P_l, H[2]=P_x). Pre-fix this disagreed by up
-        to 1.5–4.5 in places when Sbar moved away from the calibrated SS.
+        must reproduce the policy rows the optimizer's ``_build_ss`` produces
+        (H[0]=P_y, H[1]=P_l, H[2]=P_x).
         """
         # Need a non-degenerate observable matrix for estimate_var_mle's
         # eval_only path; the LL value is irrelevant — we only need H/ss_new.
@@ -213,18 +202,10 @@ class TestLinearizationPoint:
 class TestInactiveWedgesUseRealizedValues:
     """Lock in BCKM gwedges2.m semantics: inactive wedges flow through.
 
-    Earlier (2026-04-29) we zeroed inactive wedges inside
-    ``run_counterfactual`` as a workaround for Bug 2 (``P_0`` was injecting
-    BCKM-level constants as unconditional means). The **right** fix for
-    Bug 2 is to ignore ``P_0`` entirely; zeroing inactive wedges was an
-    overcorrection that dropped the BCKM coupling contribution.
-
-    BCKM ``gwedges2.m`` lines 80-115 use the FULL observed state for
-    every CF, multiplied by ``(C_j − C0)``. Inactive-column coefficients
-    of ``(C_j − C0)`` are non-zero through P_var × Gamma coupling, and
-    they multiply realized inactive-wedge values to produce ~1-2pp
-    contributions over the GR window. Zeroing them produced -5.4% labor
-    peak-trough vs target -3.4%; using realized values closes the gap.
+    BCKM ``gwedges2.m`` lines 80-115 use the FULL observed state for every
+    CF, multiplied by ``(C_j − C0)``. Inactive-column coefficients of
+    ``(C_j − C0)`` are non-zero through P_var × Gamma coupling and must
+    not be zeroed out.
     """
 
     def test_single_wedge_uses_realized_inactive_columns(
@@ -232,19 +213,9 @@ class TestInactiveWedgesUseRealizedValues:
     ):
         """A single-wedge CF MUST depend on inactive wedge values via coupling.
 
-        The previous test (locked in pre-2026-04-30 behaviour) asserted the
-        opposite: that A-only CF was invariant to τ_l, τ_x, g values. That
-        was wrong — it dropped the BCKM gwedges2.m coupling terms.
-
-        Note: a diagonal ``P_var`` makes this test vacuous. With As=[1,0,0,0]
-        the gamma solve in ``bckm_capital_lom`` reduces to
-        ``gamma = -((a0·γk + a1)·I + a0·P.T)^{-1} (b0_z · P[0,:] + [b1_z,0,0,0])``,
-        and ``b0``/``b1`` are non-zero only on the z entry (inactive wedges are
-        pinned in ``res_adjust2``). When P_var is diagonal, both LHS and RHS
-        decouple by wedge, so ``(Γ_A − Γ_0)`` is identically zero on
-        τ_l/τ_x/g positions and the coupling channel cancels exactly. The
-        BCKM coupling story requires off-diagonals in the z row of P (which
-        published Table 8 does have); use a P with such off-diagonals here.
+        Requires off-diagonals in the z row of P_var to expose the coupling
+        (a purely diagonal P makes the channel cancel by symmetry, as in
+        BCKM ``gwedges2.m``). BCKM published Table 8 has such off-diagonals.
         """
         P_coupled = 0.9 * np.eye(4)
         # Non-zero z-row off-diagonals: τ_l/τ_x/g feed into z next period.
@@ -277,11 +248,8 @@ class TestInactiveWedgesUseRealizedValues:
     ):
         """Setting ``cf_policies['P_0']`` must NOT shift the CF path.
 
-        Pre-2026-04-29, ``run_counterfactual`` used ``(I-P)^{-1} P_0`` as
-        the inactive wedge value, treating ``P_0`` as a BCKM-level VAR
-        drift. Wedges are HAT coords, so this injected huge constant
-        offsets (σ(y^A)/σ(y) blew up to 7.0 vs target 0.6). Post-fix,
-        ``P_0`` is irrelevant inside ``run_counterfactual``.
+        Wedges are in hat-deviation coordinates so ``P_0`` (VAR drift in
+        levels) must be ignored inside ``run_counterfactual``.
         """
         cf_pol = solve_counterfactual(model, P_var, active_wedges=[0])
 

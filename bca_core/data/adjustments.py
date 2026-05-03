@@ -160,92 +160,23 @@ def compute_labor_input(
     """
     Compute labor input l_t in [0, 1].
 
-    Hours source — empirical universe ranking (verified 2026-04-30 against
-    BCKM `worktemp.mat` Y_raw[:,2] over 1980Q1–2014Q4):
-
-      ============================ ============ ================ ===============
-      Series                        corr w/BCKM   centered RMSE   max|diff| live
-      ============================ ============ ================ ===============
-      PAYEMS × AWHNONAG (default)        0.913            0.019         7.6e-02
-      HOANBS (nonfarm bus, all wkr)      0.934            0.023         9.8e-02
-      PRS85006013 (employment idx)       0.956            0.016         (better)
-      PRS85006023 (avg wkly hrs idx)    -0.012            0.132         (worse)
-      ============================ ============ ================ ===============
-
-    BCKM's `hours.dat` is BLS total economy hours (universe = nonfarm
-    business + farm + government). FRED has no quarterly equivalent;
-    HOANBS is the closest universe-match but excludes farm + government
-    (~12% of hours, lower-volatility), so its amplitude is *higher* than
-    BCKM's source — RMSE 0.023 worse than PAYEMS×AWHNONAG (0.019). The
-    Frankenstein PAYEMS×AWHNONAG (employees × prod-nonsup hours) ends up
-    closer to BCKM by accident: PAYEMS gives the universe breadth, AWHNONAG
-    dampens the amplitude. PRS85006013 (employment index) wins on cycle
-    correlation but drops the hours dimension entirely.
-
-    PRS85006023 (avg weekly hours INDEX) correlates **-0.01** with BCKM —
-    a landmine if used as a stand-alone hours proxy. Kept as a no-op
-    fallback for very old saved datasets only.
-
     Source priority (preferred → fallback):
-      1. ``employment_cps × avg_weekly_hours_total`` (LNS12000000 ×
-         AWHAETP, both monthly via FRED) — BLS-faithful BCKM
-         ``usdata.m`` `hours.dat` analogue. CPS civilian employment
-         (ages 16+) × avg weekly hours of all employees, total private,
-         scaled by ``weeks_per_quarter = 13``. Highest priority when
-         both columns are FULLY populated (`.notna().all()`); mirrors
-         BCKM's total-economy hours universe more closely than
-         PAYEMS×AWHNONAG. **Window-specific**: AWHAETP only starts in
-         2006Q1 (BLS CES program added the all-employees series in
-         March 2006), so this path is unavailable for windows extending
-         further back. The BCKM 1980-2014 regression therefore falls
-         through to path #2; only Layer 2 windows starting 2006+ can
-         use the BLS path.
-      2. ``employment × avg_weekly_hours`` (PAYEMS × AWHNONAG) —
-         legacy default. PAYEMS is total nonfarm; AWHNONAG is
-         prod-nonsup hours, so this is a Frankenstein but ends up
-         empirically close to BCKM (corr 0.91, RMSE 0.019).
-      3. ``nonfarm_business_hours`` (HOANBS) — universe-correct fallback
-         when AWHNONAG is unavailable (it starts 1964Q1).
-      4. ``hours_index`` (PRS85006023) — backwards-compat only; do not
-         rely on for cycle fidelity.
+      1. ``employment_cps × avg_weekly_hours_total`` (LNS12000000 × AWHAETP)
+         — BLS-faithful BCKM ``usdata.m`` ``hours.dat`` analogue. AWHAETP
+         starts 2006Q1, so this path is only active for windows from 2006+;
+         the 1980-2014 BCKM regression falls through to path 2.
+      2. ``employment × avg_weekly_hours`` (PAYEMS × AWHNONAG) — legacy
+         default, empirically close to BCKM.
+      3. ``nonfarm_business_hours`` (HOANBS).
+      4. ``hours_index`` (PRS85006023) — backwards-compat only.
 
-    Normalizes so the (full-FRED-range) mean equals ``target_mean``.
-    Pass ``target_mean=None`` to skip the rescale entirely (the caller
-    receives raw hours-per-capita in the units PAYEMS×AWHNONAG/pop
-    produces — useful for non-BCKM-1980-2014 windows where anchoring
-    to BCKM's hpc level would inject a phantom level offset).
-
-    The rescale is needed for BCKM-faithful 1980-2014:
-    PAYEMS×AWHNONAG / pop ≈ 22.5, HOANBS / pop ≈ 0.0007 — neither is
-    in BCKM's hpc≈0.24 range without rescaling. Per CLAUDE.md, when
-    rescaled, the level is preserved through to `prepare_observables`
-    — no second rescale.
-
-    target_mean=0.24279 source: BCKM's worktemp.mat Y_raw[:, 2] (the
-    growth-detrended log-hours-per-capita BCKM's KF actually consumes)
-    has ``exp(Y_raw[:, 2]).mean() = 0.24279`` over 1980Q1–2014Q4, which
-    is BCKM's empirical hpc level. BCKM constructs hpc directly as
-    ``H ./ Pop`` in usdata.m:48-60 with no separate "discretionary
-    hours" denominator — the 0.24 level is whatever the unit conventions
-    inside their ``hours.dat`` produce (the file isn't in the BCA repo).
-    Pinning target_mean to 0.24279 makes our rescaled labor series
-    level-match BCKM's at every quarter, closing the +0.029 log shift
-    visible in scripts/diag_bckm_data_isolation.py at BCKM-θ. Earlier
-    default 0.25 was a McGrattan-tradition round number not derived from
-    any specific BCKM constant; the residual ~+0.006 cycle-amplitude gap
-    after this fix comes from PAYEMS×AWHNONAG vs BCKM's BLS Productivity
-    & Costs total-economy hours universe difference and is unfixable
-    without a BLS fetcher (see compute_labor_input call site for the
-    series-source ranking).
+    ``target_mean=0.24279`` matches BCKM's empirical hours-per-capita
+    (``worktemp.mat`` Y_raw[:,2] mean over 1980Q1–2014Q4). Pass ``None``
+    to skip the rescale.
     """
     weeks_per_quarter = 13.0
-    # BLS-faithful path requires FULL coverage of both series across the
-    # SAMPLE WINDOW (not the full FRED-fetched range). AWHAETP only
-    # starts in 2006Q1 — the BLS CES program added the all-employees
-    # series in March 2006 — so this path is window-specific. We check
-    # ``.notna().all()`` on the sample sub-window when one is provided;
-    # this lets COVID 2010-2023 use the BLS path even though the
-    # underlying df spans 1947+ (and therefore has NaN AWHAETP pre-2006).
+    # BLS path requires full coverage of both series in the sample window
+    # (AWHAETP has NaN pre-2006 in the full FRED-fetched df).
     if sample_window is not None:
         s, e = sample_window
         win_idx = (df.index >= pd.Timestamp(pd.Period(s, freq="Q").start_time)) & \

@@ -72,8 +72,6 @@ PEAK_PERIOD = pd.Period("2008Q1", freq="Q")  # = ``bind``; base-normalization po
 TROUGH_PERIOD = pd.Period("2009Q3", freq="Q")
 
 # BCKM 2016 published US estimates (Tables 8/10) — used for Tier 2.
-# Imported from ``bca_core.constants`` — see that module's docstring for
-# the row/col convention story (paper Table 8 is the TRANSPOSE of code).
 from bca_core.constants import (
     P_BCKM_TABLE8 as P_BCKM,
     QCHOL_BCKM_TABLE10 as QCHOL_BCKM,

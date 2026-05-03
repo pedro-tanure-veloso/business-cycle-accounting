@@ -176,56 +176,37 @@ def prepare_observables(
     """
     Build BCKM-style observables: log-deviations from model SS.
 
-    Raw step (BCKM mleqadj.m:237-238 convention — uncentered logs):
+    BCKM mleqadj.m:237-238 convention — raw uncentered logs:
         y_raw = log(y_dt)
-        l_raw = log(l)                 # raw log labor (no SS centering)
+        l_raw = log(l)         # raw log labor, no SS rescaling
         x_raw = log(x_dt / (x_ss/y_ss))
         g_raw = log(g_dt / (g_ss/y_ss))
 
-    Labor is fed at its raw data mean (≈0.243 for US 1980–2014); the
-    SS-vs-data level gap is then absorbed by Sbar via the corresponding
-    ``obs_offset[1] = log(ss_new["l"])`` cancellation. Earlier versions
-    rescaled ``df["l"]`` to model ``l_ss`` before centering — that
-    rescale produced a constant +0.197 phantom innovation at every
-    quarter when Sbar implied ``l_new ≠ l_ss_calib``, which was the
-    dominant source of the LL gap to BCKM at fixed θ.
+    Labor is fed at its raw data mean; the SS-vs-data level gap is
+    absorbed by Sbar via ``obs_offset[1] = log(ss_new["l"])``.
 
-    Two architectures supported:
+    Two modes:
 
-    - ``center=True`` (legacy, BCKM ``mleqadj.m``-style ``phi0`` design):
-      ``phi0 = mean(obs_raw)`` and ``obs = obs_raw − phi0``. The wedge
-      VAR is constrained to ``Sbar = 0`` and the SS-misalignment offset
-      lives in ``phi0``. Used by the older Step 3–6 pipeline.
+    - ``center=True``: ``phi0 = mean(obs_raw)``, ``obs = obs_raw − phi0``
+      (BCKM ``mleqadj.m``-style ``phi0`` design).
 
-    - ``center=False`` (Step 7, BCKM ``initmle.m``-style design):
-      ``obs = obs_raw`` (uncentered). ``phi0`` is still returned so
-      callers can warm-start ``Sbar`` from it (linear solve), but it is
-      no longer subtracted from the observables. The SS gap is then
-      absorbed by a free ``Sbar`` in the wedge VAR rather than by a
-      fixed obs intercept.
+    - ``center=False``: ``obs = obs_raw`` (uncentered); ``phi0`` returned
+      for Sbar warm-start. SS gap absorbed by free Sbar in the VAR
+      (BCKM ``initmle.m``-style design).
 
     Parameters
     ----------
     df : DataFrame with columns y, c, x, g, l (detrended pipeline output).
     ss : steady-state dict from proto.steady_state().
-    center : if True (default), subtract the sample mean (legacy
-        ``mleqadj.m`` design). If False, leave the obs uncentered so
-        that a free ``Sbar`` can absorb the offset (``initmle.m``
-        design).
+    center : if True, subtract the sample mean; if False, leave uncentered.
 
     Returns
     -------
-    obs : T x 4 array.  Mean ≈ 0 if ``center=True``, else mean = phi0.
+    obs : T x 4 array.
     phi0 : 4-vector, the sample mean of obs_raw.
     """
-    # BCKM mleqadj.m:237 convention: Y = log(per-capita data) − log(growth
-    # factor) for y, x, g (gz-detrended); l is just log(per-capita hours).
-    # Our df is already detrended via build_us_dataset(method="calgz"), so
-    # raw log(df["var"]) recovers BCKM's Y rows directly.  All four channels
-    # are RAW detrended logs — no calibrated-ratio centering.  The SS-vs-
-    # data offset lives entirely in `obs_offset` (set by `_build_ss` from
-    # `ss_new`).  This is "Option A" applied symmetrically (extended from
-    # the earlier labor-only fix on 2026-04-29).
+    # BCKM mleqadj.m:237: df is already calgz-detrended, so raw log(df["var"])
+    # recovers BCKM's Y rows directly. SS-vs-data offset lives in obs_offset.
     y_hat = np.log(df["y"].values)
     l_hat = np.log(df["l"].values)
     x_hat = np.log(df["x"].values)

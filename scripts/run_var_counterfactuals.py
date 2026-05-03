@@ -111,11 +111,7 @@ def main(
         print(f"Fetching from FRED and saving to {save_data_path} ...")
     else:
         print("Building US dataset (fetching from FRED)...")
-    # BCKM `datamine.m`: t = (1980.25:0.25:2015), iobs=1, eobs=140 — sample
-    # is 1980Q1 through 2014Q4 (T=140). Step 6 extension to 1948 was based
-    # on a different (older) usdata.m vintage and is reverted in Step 8.2.
-    # Detrending uses calgz-style γ (Step 8.3) anchored at the BCKM base
-    # date 2008Q1 (`bdate=2008.25` in datamine.m).
+    # BCKM datamine.m: 1980Q1–2014Q4 (T=140), base date 2008Q1 (bdate=2008.25).
     df, meta = build_us_dataset(
         start="1980Q1",
         end="2014Q4",
@@ -149,9 +145,7 @@ def main(
     print(f"  SS: y={ss['y']:.4f}  l={ss['l']:.4f}  "
           f"x/y={ss['x']/ss['y']:.4f}  g/y={ss['g']/ss['y']:.4f}")
 
-    # ── 4. Build observables (BCKM mleqadj.m initmle.m convention) ──────
-    # Uncentered: SS gap is absorbed by free Sbar in the wedge VAR
-    # (Step 7), not by a fixed phi0 in the obs equation.
+    # ── 4. Build observables (BCKM mleqadj.m / initmle.m convention) ────
     print("\nPreparing observables (log-deviations from model SS, uncentered)...")
     obs_hat, phi0 = prepare_observables(df, ss, center=False)
     print(f"  phi0 (sample mean of obs_raw, target for Sbar warm-start): "

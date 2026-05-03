@@ -25,10 +25,6 @@ from bca_core.constants import (
     P_BCKM_TABLE8 as P_BCKM,
     QCHOL_BCKM_TABLE10 as QCHOL_BCKM,
 )
-# Convention note: see ``bca_core/constants.py`` — BCKM's paper Table 8
-# is the TRANSPOSE of the code's textbook ``state_{t+1} = P · state_t``
-# convention. Always import; never re-transcribe.
-
 
 def main() -> None:
     df, _meta = build_us_dataset(

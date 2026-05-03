@@ -87,65 +87,21 @@ def build_us_dataset(
         Required for ``detrend_method="calgz"``. Anchors the trend so
         ``log(detrended_y[base_year_quarter]) = 0``. Matches BCKM
         ``datamine.m`` `bdate=2008.25`.
-    g_source : "fred" (default, legacy) or "bea". When "bea", the
-        government channel is reconstructed from BEA NIPA per BCKM
-        ``usdata.m:37-38,56``: ``G = rGC + rEX − rIM`` where each
-        component is real-2017-$ (chained-$ for rEX/rIM via T10106;
-        nominal/price-idx*100 for rGC via T30905/T30904). Bypasses
-        ``compute_government_wedge`` and the GDP-deflator deflation
-        for the g channel only — y/x/l unchanged. Requires a BEA API
-        key (or warm cache).
-
-        **Status (2026-05-01): infrastructure-only, hard gate DEFERRED.**
-        The BEA path is BCKM-faithful in isolation but currently FAILS
-        the per-channel level gate vs ``bckm.Y_raw[:,3]``
-        (mean|diff|=0.21 vs FRED 0.034). Root cause: BCKM's
-        ``maketrend.m`` defines ``Y_raw[:,3] = log(g_pc/y_pc) at bind``
-        — the level depends on **both** g and y constructions at
-        2008Q1. Migrating g while y stays on FRED produces a
-        mismatched ratio (BEA chain-real NX vs FRED-deflated NX
-        differ ~$300B at the 2008 oil shock; chain-real ≠ nominal÷
-        GDPDEF when terms-of-trade move). The gate can only be
-        evaluated after the y channel also migrates to BEA chain-real
-        (Step 4 of the migration plan; needs BEA Fixed Asset rKCD).
-        Until then, default ``g_source="fred"`` so the f-stat
-        baseline doesn't move; ``g_source="bea"`` is preserved for
-        the post-y joint-gate test.
-    y_source : "fred" (default, legacy) or "bea". When "bea", the output
-        channel is reconstructed BCKM-faithful per ``usdata.m:51``:
-
-            Y = rGDP − rSTX_real + 0.04·rKCD_real + rDCD_real
-
-        - ``rGDP`` from T10106 line 1 (chain-real-2017-$, BEA panel)
-        - ``rSTX_real`` = (federal excise + state-local sales + state-
-          local excise) / pPCE × 100 — real-2017-$ deflation by PCE
-          deflator (BCKM ``nipa119(4,T)`` = T10109 line 2).
-        - ``rKCD_real``, ``rDCD_real`` from
-          :meth:`BeaDataFetcher.fetch_durables_components` — annual
-          BEA Fixed Asset Tables FAAt101/103 line 15 ("Consumer durable
-          goods"), quarterized log-linearly for the stock and
-          constant-within-year for the depreciation flow.
-
-        Bypasses ``reclassify_durables`` and ``subtract_sales_tax`` for
-        the y channel only — c/x/l/g unchanged. Requires a BEA API key
-        (or warm cache).
-    x_source : "fred" (default, legacy) or "bea". When "bea", the
-        investment channel is reconstructed BCKM-faithful per
-        ``usdata.m:53``::
-
-            X = rCD + rGPDI + rGI − (rCD/(rCND+rCS+rCD))·rSTX_real
-
-        where rCD/rCND/rCS/rGPDI/rGI/pPCE all come from
-        :meth:`BeaDataFetcher.fetch_real_components` (chain-real
-        components per ``usdata.m:30-38``). The ``rCD`` term moves
-        consumer-durables expenditure flow into investment (BCA
-        convention: durables are investment, not consumption); the
-        last term subtracts the durables-share of sales tax (the
-        portion of rSTX falling on durables, treated as a sales-tax
-        wedge on investment). Bypasses the FRED-path
-        ``reclassify_durables`` (perpetual-inventory durables stock)
-        and the FRED ``gov_investment`` aggregate. Requires a BEA API
-        key (or warm cache).
+    g_source : "fred" (default) or "bea". When "bea", reconstructs the
+        government channel from BEA NIPA per BCKM ``usdata.m:37-38,56``
+        (``G = rGC + rEX − rIM``). Available for diagnostics but not the
+        default — the level gate only passes after y also migrates to BEA
+        chain-real (order-coupling via the bind-year ratio). Requires a
+        BEA API key (or warm cache).
+    y_source : "fred" (default) or "bea". When "bea", reconstructs output
+        BCKM-faithful per ``usdata.m:51``:
+        ``Y = rGDP − rSTX_real + 0.04·rKCD_real + rDCD_real``
+        (BEA Fixed Asset Tables + T10106 + T10109). Requires a BEA API key.
+    x_source : "fred" (default) or "bea". When "bea", reconstructs
+        investment BCKM-faithful per ``usdata.m:53``:
+        ``X = rCD + rGPDI + rGI − (rCD/(rCND+rCS+rCD))·rSTX_real``
+        (chain-real components from :meth:`BeaDataFetcher.fetch_real_components`).
+        Requires a BEA API key.
     mle_window : optional ``(start, end)`` quarter-string pair (e.g.
         ``("2010Q1", "2019Q4")``) restricting the calgz slope fit to a
         sub-window of the full sample. The fitted trend is then

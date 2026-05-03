@@ -36,22 +36,13 @@ FRED_SERIES = {
     "sales_tax_state": "ASLSTAX",       # state government sales tax revenue (annual; legacy fallback — pipeline prefers BEA when key available)
     # Population & labor
     #
-    # working_age_pop: BCKM `usdata.m` uses
-    #   pop = (civilian noninstitutional 16+) - (civilian noninstitutional 65+) + (armed forces)
-    # i.e. working-age civilian + armed forces. FRED retired CNP65OV, so the
-    # cleanest available proxy is OECD MEI Working Age Population (Aged 15-64),
-    # quarterly NSA. 15-64 instead of 16-64, and excludes armed forces — but
-    # drops the rapidly growing 65+ cohort that CNP16OV included (that cohort
-    # doubled from ~25M to ~50M over 1980-2014 and was the dominant reason
-    # our per-capita aggregates drifted vs BCKM; fixed 2026-04-30).
-    # Units: persons (not thousands like CNP16OV); fetch_raw normalizes to
-    # thousands to keep `to_real_per_capita`'s scaling unchanged.
+    # working_age_pop: BCKM usdata.m uses civilian noninstitutional 16+ plus
+    # armed forces. Best available FRED proxy: OECD MEI 15-64 (LFWA64TTUSQ647N),
+    # quarterly NSA, in persons. fetch_raw normalizes to thousands to match
+    # to_real_per_capita scaling.
     "working_age_pop": "LFWA64TTUSQ647N",  # OECD MEI 15-64, quarterly NSA, persons
-    # nonfarm_business_hours: BLS Productivity & Costs Nonfarm Business Hours
-    # of All Workers, quarterly index (2017=100). Universe-correct fallback
-    # for AWHNONAG-missing sub-samples (HOANBS starts 1947Q1; AWHNONAG starts
-    # 1964Q1). Verified via cycle-correlation probe on 2026-04-30: HOANBS
-    # corr=0.93 with BCKM, PAYEMS×AWHNONAG corr=0.91, PRS85006023 corr=−0.01.
+    # nonfarm_business_hours: BLS Productivity & Costs Nonfarm Business Hours,
+    # all workers, quarterly index (2017=100). Universe-correct labor fallback.
     "nonfarm_business_hours": "HOANBS",  # quarterly index, 1947+, BLS
     "employment": "PAYEMS",             # total nonfarm payrolls (default labor input)
     "avg_weekly_hours": "AWHNONAG",     # avg weekly hours, prod-nonsup (default labor input; 1964+)

@@ -1,14 +1,7 @@
 """Walk LL surface from BCKM-θ to our-converged-θ to disambiguate
 "objective is wrong" vs "optimizer escaped the right basin".
 
-Setup
------
-We have established (cached at /tmp/fstats_clean.txt, 2026-04-30):
-  • At BCKM-θ:  LL_ours = +1645.97   f-stats ≈ Table 11 (gap ≤ 0.025)
-  • At our-θ:   LL_ours = +1826.47   f-stats wildly off  (fY[A]=0.05, fY[τ_l]=0.88)
-
-So our optimizer climbs out of BCKM's basin into a higher-LL one. The
-question this script settles:
+This script settles:
 
   Q1: Is LL monotone-increasing from BCKM-θ → our-θ?
       → YES: our LL surface itself is wrong (objective bug). The
