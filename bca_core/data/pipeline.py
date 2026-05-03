@@ -228,7 +228,9 @@ def build_us_dataset(
     series_to_deflate = ["y_adj", "c_adj", "x_adj", "g_raw"]
     adj = to_real_per_capita(adj, series_to_deflate)
 
-    labor = compute_labor_input(adj, target_mean=labor_target_mean)
+    labor = compute_labor_input(
+        adj, target_mean=labor_target_mean, sample_window=(start, end)
+    )
     adj["l"] = labor
 
     adj["y_real_pc"] = adj["y_adj"]

@@ -229,3 +229,62 @@ a meaningful 2pp positive deviation".
 ### Exact next step
 Whatever the user wants next. Pipeline is in a good state — fast
 iteration, sharper signals, clean test suite.
+
+---
+
+## 2026-05-02 (later) — Cross-window labor-source validation
+
+User question: "Is it worrisome that BCKM regression uses
+PAYEMS×AWHNONAG and COVID uses CE16OV×AWHAETP — does that invalidate
+the Layer-2 validation?"
+
+### Diagnostic
+Built `bckm_replication/scripts/diag_bls_labor_on_bckm_window.py` to
+rebuild the BCKM 1980-2014 parquet under the BLS-faithful path and
+compare f-stats at BCKM-θ side-by-side against the legacy
+PAYEMS×AWHNONAG parquet.
+
+### Bugs surfaced (and fixed)
+
+1. **`compute_labor_input` priority logic was using `.notna().any()`**.
+   On the BCKM 1980-2014 window, this caused the BLS path to activate
+   on partial coverage (AWHAETP starts 2006Q1), silently dropping all
+   pre-2006 quarters and giving us a 36-quarter slice instead of 140.
+   Fixed: use `.notna().all()`.
+
+2. **The check was running on the FULL FRED-fetched range (1947+),
+   not the caller's sample window**. So even with `.notna().all()`,
+   the BLS path would wrongly decline on COVID 2010-2023 because
+   AWHAETP has NaN pre-2006 in the fetched dataframe. Fixed: added
+   a `sample_window` kwarg to `compute_labor_input`, plumbed through
+   from `build_us_dataset`. Coverage check now runs only on the
+   sample sub-window.
+
+### Verdict — there's NO cross-window inconsistency
+
+After the fix, the cross-window experiment shows:
+
+| Window | BLS path active? | f-stats vs legacy |
+|---|---|---|
+| BCKM 1980-2014 (test_bckm_table12 fixture) | NO (AWHAETP doesn't cover pre-2006) | bit-identical (max\|Δ\|=0.0000) |
+| COVID 2010-2023 | YES (both series fully cover the window) | sharper signals as documented |
+
+So the labor source is **data-availability-gated, not
+preference-gated**. The pipeline applies the same priority rule on
+every window; the rule simply selects different paths because the
+data dictates it. That's principled, not arbitrary.
+
+The original worry ("two different pipelines for two different
+windows") doesn't apply — it's the same pipeline making the same
+decision based on what data exists. The COVID Layer-2 validation
+holds.
+
+### Tests
+- 79/79 fast non-COVID tests pass after the API change
+  (`compute_labor_input` got a new optional kwarg with a
+  None default — backward compatible).
+- COVID smoke test: 6/6 rubric still passes both variants with the
+  sharp BLS-anchored numbers (-16.7%, +2.0%, etc.).
+- BCKM regression: ΔLL = 0.0000, max|Δf-stat| = 0.0000 between BLS
+  and legacy parquet builds — Layer-1 regression is bit-for-bit
+  unchanged.

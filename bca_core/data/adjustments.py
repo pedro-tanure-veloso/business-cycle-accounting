@@ -155,6 +155,7 @@ def to_real_per_capita(df: pd.DataFrame, series_cols: list[str]) -> pd.DataFrame
 def compute_labor_input(
     df: pd.DataFrame,
     target_mean: float | None = 0.24279,
+    sample_window: tuple[str, str] | None = None,
 ) -> pd.Series:
     """
     Compute labor input l_t in [0, 1].
@@ -191,8 +192,14 @@ def compute_labor_input(
          ``usdata.m`` `hours.dat` analogue. CPS civilian employment
          (ages 16+) × avg weekly hours of all employees, total private,
          scaled by ``weeks_per_quarter = 13``. Highest priority when
-         both columns are present; mirrors BCKM's total-economy hours
-         universe more closely than PAYEMS×AWHNONAG.
+         both columns are FULLY populated (`.notna().all()`); mirrors
+         BCKM's total-economy hours universe more closely than
+         PAYEMS×AWHNONAG. **Window-specific**: AWHAETP only starts in
+         2006Q1 (BLS CES program added the all-employees series in
+         March 2006), so this path is unavailable for windows extending
+         further back. The BCKM 1980-2014 regression therefore falls
+         through to path #2; only Layer 2 windows starting 2006+ can
+         use the BLS path.
       2. ``employment × avg_weekly_hours`` (PAYEMS × AWHNONAG) —
          legacy default. PAYEMS is total nonfarm; AWHNONAG is
          prod-nonsup hours, so this is a Frankenstein but ends up
@@ -232,12 +239,33 @@ def compute_labor_input(
     series-source ranking).
     """
     weeks_per_quarter = 13.0
-    if (
-        "employment_cps" in df.columns
-        and "avg_weekly_hours_total" in df.columns
-        and df["employment_cps"].notna().any()
-        and df["avg_weekly_hours_total"].notna().any()
-    ):
+    # BLS-faithful path requires FULL coverage of both series across the
+    # SAMPLE WINDOW (not the full FRED-fetched range). AWHAETP only
+    # starts in 2006Q1 — the BLS CES program added the all-employees
+    # series in March 2006 — so this path is window-specific. We check
+    # ``.notna().all()`` on the sample sub-window when one is provided;
+    # this lets COVID 2010-2023 use the BLS path even though the
+    # underlying df spans 1947+ (and therefore has NaN AWHAETP pre-2006).
+    if sample_window is not None:
+        s, e = sample_window
+        win_idx = (df.index >= pd.Timestamp(pd.Period(s, freq="Q").start_time)) & \
+                  (df.index <= pd.Timestamp(pd.Period(e, freq="Q").end_time))
+        cps_check     = df.get("employment_cps")
+        awhaetp_check = df.get("avg_weekly_hours_total")
+        bls_full_coverage = (
+            cps_check is not None
+            and awhaetp_check is not None
+            and cps_check[win_idx].notna().all()
+            and awhaetp_check[win_idx].notna().all()
+        )
+    else:
+        bls_full_coverage = (
+            "employment_cps" in df.columns
+            and "avg_weekly_hours_total" in df.columns
+            and df["employment_cps"].notna().all()
+            and df["avg_weekly_hours_total"].notna().all()
+        )
+    if bls_full_coverage:
         # BLS-faithful: CPS employment × avg weekly hours of all employees ×
         # weeks/quarter (BCKM `usdata.m` `hours.dat` analogue).
         hours = (
