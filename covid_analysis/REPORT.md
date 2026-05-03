@@ -2,8 +2,8 @@
 
 ## Abstract
 
-We apply the Business Cycle Accounting (BCA) framework of Brinca, Chari, Kehoe, and
-McGrattan (2016) to the United States over 2010Q1–2023Q4, anchored at the 2019Q4 NBER
+We apply the Business Cycle Accounting (BCA) framework of Chari, Kehoe, and
+McGrattan (2007) to the United States over 2010Q1–2023Q4, anchored at the 2019Q4 NBER
 cycle peak. The framework decomposes aggregate fluctuations into four structural wedges —
 efficiency, labor, investment, and government — via Kalman-filter MLE on a VAR(1), and
 uses counterfactual simulations to quantify each wedge's contribution to output, hours, and
