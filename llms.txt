@@ -40,7 +40,8 @@ and US 2010–2023 (COVID era). **US-only; cross-country is out of scope.**
 
 ## Source: Entry points
 
-- [scripts/run_var_counterfactuals.py](scripts/run_var_counterfactuals.py): Main pipeline driver for arbitrary US windows — full fetch → MLE → counterfactuals → Figure 2B plot
+- [scripts/run_bca.py](scripts/run_bca.py): **Primary CLI** — any US window via `--start/--end/--base`; produces 10 output files (wedge plots, CF decompositions, f-stats CSV); built-in FRED key guide; ~3s on cache hit
+- [scripts/run_var_counterfactuals.py](scripts/run_var_counterfactuals.py): Legacy BCKM 1980-2014 pipeline driver — full fetch → MLE → counterfactuals → Figure 2B plot
 - [scripts/diagnose_counterfactuals.py](scripts/diagnose_counterfactuals.py): PASS/FAIL diagnostic checks on the counterfactual decomposition (additivity, sign, window)
 - [scripts/solow_residual_check.py](scripts/solow_residual_check.py): Sanity check comparing extracted efficiency wedge A to the Solow residual
 - [covid_analysis/scripts/run_covid_analysis.py](covid_analysis/scripts/run_covid_analysis.py): COVID-era one-shot driver (2010Q1–2023Q4) — both trend variants, figure generation, result printing; ~3s with cached MLE pickles

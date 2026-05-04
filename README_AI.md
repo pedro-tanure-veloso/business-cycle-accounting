@@ -3,7 +3,7 @@ title: "BCA — AI Context Map"
 topic: "project-overview"
 layer: "all"
 status: "active"
-last_updated: "2026-05-03"
+last_updated: "2026-05-04"
 ---
 
 # BCA — AI Context Map
@@ -345,6 +345,7 @@ Q:    4×4 lower-triangular Cholesky factor of shock covariance V = Q·Qᵀ
 
 | File | Role | Key public API |
 |------|------|----------------|
+| `scripts/run_bca.py` | **Primary CLI** — any US window via `--start/--end/--base`; 10 output files, FRED key guide, ~3s on cache hit | `--help` |
 | `bca_core/params.py` | Calibration constants with BCKM Table 1 defaults | `CalibrationParams` dataclass |
 | `bca_core/constants.py` | Published BCKM parameter tables **in code convention** | `P_BCKM_TABLE8`, `SBAR_BCKM_TABLE8`, `QCHOL_BCKM_TABLE10` |
 | `bca_core/model.py` | Steady-state computation, log-linearization, Klein QZ solution | `PrototypeModel`, `ModelSolution` |
