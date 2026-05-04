@@ -92,6 +92,45 @@ NBER_RECESSIONS = [
 ]
 
 
+# ── API key guide ──────────────────────────────────────────────────────────────
+
+def _print_fred_key_guide(data_path: str) -> None:
+    """Print a clear, actionable guide when the FRED API key is missing."""
+    print(
+        "\n"
+        "╔══════════════════════════════════════════════════════════════════════╗\n"
+        "║  FRED API key required                                               ║\n"
+        "╚══════════════════════════════════════════════════════════════════════╝\n"
+        "\n"
+        "  This run needs to fetch data from the St. Louis Fed's FRED API.\n"
+        "  A free key is required (registration takes about 1 minute).\n"
+        "\n"
+        "  ① Get your free key\n"
+        "       https://fred.stlouisfed.org/docs/api/api_key.html\n"
+        "\n"
+        "  ② Set it in your shell  (paste your key after the = sign):\n"
+        "\n"
+        "       export FRED_API_KEY=your_key_here\n"
+        "\n"
+        "     Verify it is set:\n"
+        "\n"
+        "       echo $FRED_API_KEY\n"
+        "\n"
+        "     Or pass it inline with the command:\n"
+        "\n"
+        "       FRED_API_KEY=your_key_here python scripts/run_bca.py ...\n"
+        "\n"
+        "     Or pass it as a flag (not stored in shell history):\n"
+        "\n"
+        "       python scripts/run_bca.py --fred-api-key your_key_here ...\n"
+        "\n"
+        "  ③ After the first successful run the data is saved automatically.\n"
+        "     Subsequent runs need no key at all:\n"
+        "\n"
+        f"       python scripts/run_bca.py ... --data {data_path}\n"
+    )
+
+
 # ── Date utilities ──────────────────────────────────────────────────────────────
 
 def parse_quarter(s: str) -> tuple[int, int]:
@@ -623,6 +662,12 @@ def main() -> None:
              "from FRED. Useful for the cached BCKM parquet or any previously "
              "saved run.",
     )
+    parser.add_argument(
+        "--fred-api-key", metavar="KEY",
+        help="FRED API key. Alternative to setting the FRED_API_KEY environment "
+             "variable. Register for a free key at "
+             "https://fred.stlouisfed.org/docs/api/api_key.html",
+    )
 
     # Output
     parser.add_argument(
@@ -706,16 +751,36 @@ def main() -> None:
         # Auto-cache in output_dir so repeated runs don't re-fetch FRED
         data_parquet = str(output_dir / f"{slug}.parquet")
 
+    # ── FRED API key pre-flight ───────────────────────────────────────────────
+    # A FRED key is only required when the data parquet does not yet exist on
+    # disk. If the parquet is already present (--data or a prior auto-cache),
+    # no network call is made and no key is needed.
+    fred_key = getattr(args, "fred_api_key", None) or os.environ.get("FRED_API_KEY")
+    needs_fred = not Path(data_parquet).exists()
+    if needs_fred and fred_key is None:
+        _print_fred_key_guide(data_parquet)
+        sys.exit(1)
+
     print(f"\n[1/4] Dataset  ({start_str} → {end_str})")
-    df, meta = build_us_dataset(
-        start=start_str,
-        end=end_str,
-        detrend_method="calgz",
-        base_year_quarter=base_str,
-        labor_target_mean=labor_target,
-        mle_window=mle_window_arg,
-        data_path=data_parquet,
-    )
+    try:
+        df, meta = build_us_dataset(
+            start=start_str,
+            end=end_str,
+            detrend_method="calgz",
+            base_year_quarter=base_str,
+            labor_target_mean=labor_target,
+            mle_window=mle_window_arg,
+            data_path=data_parquet,
+            fred_api_key=fred_key,
+        )
+    except ValueError as exc:
+        # Belt-and-suspenders: catch any key-related error that slipped past the
+        # pre-flight (e.g. the parquet existed but was stale/corrupt and a re-fetch
+        # was triggered internally).
+        if "api key" in str(exc).lower() or "fred" in str(exc).lower():
+            _print_fred_key_guide(data_parquet)
+            sys.exit(1)
+        raise
     T = len(df)
     print(f"  T = {T} quarters  |  "
           f"γ_annual = {meta.get('gamma_annual', float('nan')):.4f}  |  "
