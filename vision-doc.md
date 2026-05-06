@@ -51,12 +51,8 @@ Four layers, kept loosely coupled so each can be tested independently:
 
 1. **`bca_core`** ✅ **Complete** — pure-Python computational core: data pipeline, wedge
    extraction, Kalman-filter VAR MLE, and counterfactuals. No web dependencies.
-2. **`bca_api`** — FastAPI service that exposes `bca_core` over HTTP. Long-running MLE jobs run
-   asynchronously; results are cached by `(sample_hash, calibration_hash)`. Also hosts the
-   quarterly LLM call to the Anthropic API (hypothesis generation), cached until the next
-   NIPA release.
-3. **`bca_web`** — Single-page front end (React + Recharts). Three screens: Macro Overview,
-   Wedge Decomposition, Hypothesis Layer.
+2. **`bca_data_builder`** — A static data pipeline. It runs `bca_core` quarterly via CI/CD (e.g., GitHub Actions), calls the Gemini API for hypothesis generation, and exports all results as static JSON files.
+3. **`bca_web`** — Single-page front end (React + Recharts) exported as a static site. It fetches the pre-computed JSON files from `bca_data_builder` to render the three screens: Macro Overview, Wedge Decomposition, Hypothesis Layer. Hosted on a static provider (e.g., Vercel, GitHub Pages) with zero moving parts.
 4. **Nowcasting extension** *(planned)* — MIDAS regressions that extend the BCA to monthly
    frequency using theoretically motivated high-frequency indicators. Served as an additional
    panel in `bca_web` once implemented.
@@ -90,23 +86,17 @@ For implementation details, calibration constants, and known pitfalls see `CLAUD
 
 ---
 
-## Stage 2 — `bca_api`: FastAPI service
+## Stage 2 — `bca_data_builder`: Static Data Pipeline
 
-Endpoints (minimum viable):
+Instead of a dynamic API, the backend is a data build step that runs on a schedule (quarterly upon NIPA releases, and monthly for nowcasts). 
 
-- `POST /runs` — body: `{start, end, base, calibration_overrides?}`. Returns `{run_id, status}`.
-  Kicks off estimation asynchronously.
-- `GET /runs/{run_id}` — returns status and, when complete, the full result: wedges,
-  counterfactuals, φ-statistics, metadata.
-- `GET /data` — returns the raw and adjusted US data series for transparency.
-- `GET /hypotheses/{quarter}` — returns the cached LLM hypothesis output for a given quarter.
+The pipeline will:
+1. Run `build_us_dataset()` and pass it to `estimate_var_mle()` using `bca_core`.
+2. Compute the counterfactuals and historical comparisons.
+3. Call the Gemini API to generate the hypothesis layer.
+4. Export all the results to a directory of static JSON files (e.g., `data/latest_quarter.json`, `data/historical_comparisons.json`, `data/hypotheses.json`).
 
-Persist results in SQLite or Postgres keyed by `(sample_hash, calibration_hash)` so repeated
-runs are served from cache. MLE estimation takes ~2–12 minutes cold; a job queue (RQ or Celery)
-is required for anything beyond a toy deployment.
-
-`bca_core.data` already implements a FRED adapter with disk caching. The API layer calls
-`build_us_dataset()` and passes the result to `estimate_var_mle()`.
+This step is designed to be automated via CI/CD (e.g., GitHub Actions). This entirely removes the need for a live server, database, or asynchronous job queue like Celery. Since the web dashboard only reflects the current state of the US economy and requires zero user configuration, computing it once per update is the optimal architecture.
 
 ---
 
@@ -371,20 +361,19 @@ Generate structured hypotheses as specified.
 - **The reference table is always included in full** (~600 tokens). It is small enough that retrieval adds complexity without benefit.
 - **The prompt asks for falsifiable indicators.** A hypothesis that cannot be disconfirmed is not useful.
 - **One call per quarter, response cached.** Do not re-run the LLM on demand — cache the response until the next quarterly NIPA trigger.
-- **Model:** use the most current available Anthropic Sonnet model, updated at each quarterly run so the world-knowledge assumption remains as valid as possible. Display the model name and approximate knowledge cutoff in the UI.
+- **Model:** use the Gemini 3.1 Pro (High) model, updated at each quarterly run so the world-knowledge assumption remains as valid as possible. Display the model name and approximate knowledge cutoff in the UI.
 
 ---
 
 ### Data Flow
 
 ```
-NIPA Release (quarterly)
+NIPA Release (quarterly) / CI/CD Cron Trigger
         │
         ▼
-bca_api — data pipeline
+bca_data_builder — data pipeline
   ├── Pull FRED: GDP, C, I, G, NX, hours, population, deflator
-  ├── Apply BCKM adjustments (durables, sales tax, per-capita, calgz)
-  └── Store adjusted series → database
+  └── Apply BCKM adjustments (durables, sales tax, per-capita, calgz)
         │
         ▼
 bca_core — BCA engine
@@ -394,21 +383,21 @@ bca_core — BCA engine
   ├── Extract investment wedge (Euler recursion + estimated VAR)
   ├── Run 4 single-wedge counterfactual simulations
   ├── Compute φ-statistics and peak-to-trough decompositions
-  ├── Compute historical episode comparison (cosine similarity in φ-space)
-  └── Store results → database keyed by (country, quarter, calibration_hash)
+  └── Compute historical episode comparison (cosine similarity in φ-space)
         │
         ▼
-bca_api — LLM call (Anthropic API)
+bca_data_builder — LLM call (Gemini API)
   ├── Assemble prompt: φ-stats + wedge levels + reference table
-  ├── Call current Anthropic Sonnet model
-  ├── Parse and store structured response
-  └── Cache until next NIPA release
+  ├── Call Gemini 3.1 Pro (High) model
+  └── Parse structured response
         │
         ▼
-bca_api (FastAPI) → serves all panels to bca_web
+bca_data_builder — Static Export
+  └── Export all results to static JSON files
         │
         ▼
-bca_web (React)
+bca_web (React Static Build)
+  ├── Fetches static JSON files directly (no API server needed)
   ├── Screen 1: Macro Overview
   ├── Screen 2: Wedge Decomposition
   └── Screen 3: Hypothesis Layer
@@ -420,16 +409,16 @@ bca_web (React)
 
 | Screen | Component | Data source |
 |--------|-----------|-------------|
-| 1A | `GDPChart` | FRED via bca_api |
-| 1B | `QuarterlySnapshot` | FRED via bca_api |
-| 1C | `HistoricalPercentiles` | bca_api computed |
-| 2A | `WedgeTimeSeries` | bca_core output |
-| 2B | `PhiStatBar` | bca_core output |
-| 2C | `CounterfactualChart` | bca_core output |
-| 2D | `HistoricalEpisodesTable` | bca_core output, pre-computed per episode |
-| 3A | `WedgeSummaryBox` | bca_core output, formatted |
+| 1A | `GDPChart` | Static JSON (FRED data) |
+| 1B | `QuarterlySnapshot` | Static JSON (FRED data) |
+| 1C | `HistoricalPercentiles` | Static JSON (pre-computed) |
+| 2A | `WedgeTimeSeries` | Static JSON (bca_core output) |
+| 2B | `PhiStatBar` | Static JSON (bca_core output) |
+| 2C | `CounterfactualChart` | Static JSON (bca_core output) |
+| 2D | `HistoricalEpisodesTable` | Static JSON (pre-computed) |
+| 3A | `WedgeSummaryBox` | Static JSON (bca_core output) |
 | 3B | `MicroFoundationsTable` | Static — hardcoded in front end |
-| 3C | `HypothesisPanel` | LLM output, cached quarterly |
+| 3C | `HypothesisPanel` | Static JSON (LLM output) |
 
 The `MicroFoundationsTable` is static and hardcoded in the front end. It does not change with new
 data and should not be fetched from the API. Adding a new paper to the reference table is a code
@@ -535,7 +524,7 @@ within-quarter and update only at the quarterly NIPA release. Flag this assumpti
 2. **Efficiency and labor wedge nowcasts** — estimate MIDAS regressions; evaluate in pseudo-OOS from 2000 onward with a rolling window.
 3. **Investment wedge nowcast** — estimate MIDAS on GZ EBP; run recession vs. non-recession subgroup check.
 4. **Government wedge** — wire up MTS and trade data; hold constant within-quarter.
-5. **Integration with `bca_api`** — expose nowcasted wedges alongside the quarterly BCA output; add "current quarter estimate" panel to `bca_web` with confidence bands and the date of the most recent monthly update.
+5. **Integration with `bca_data_builder`** — export nowcasted wedges as static JSON alongside the quarterly BCA output; add "current quarter estimate" panel to `bca_web` with confidence bands and the date of the most recent monthly update.
 
 **Stack:** `fredapi` for FRED data, `scipy.optimize` for NLS MIDAS estimation (~50 lines, more transparent than a library), `statsmodels.tsa.dynamic_factor_mq` for DFM extension if pursued.
 
@@ -580,9 +569,9 @@ within-quarter and update only at the quarterly NIPA release. Flag this assumpti
 | 4 | VAR MLE — parameters match BCKM Tables 8/9/10 | ✅ Done |
 | 5 | Investment wedge extraction using solved VAR | ✅ Done |
 | 6 | Counterfactuals + φ-statistics — f-stats match BCKM Table 11 to ≤0.01 | ✅ Done |
-| 7 | `bca_api` — FastAPI service + async job queue | ⬜ Next |
-| 8 | `bca_web` Screen 1 — Macro Overview (GDP chart, snapshot, percentiles) | ⬜ |
-| 9 | `bca_web` Screen 2 — Wedge Decomposition (φ-stats, CFs, historical table) | ⬜ |
-| 10 | `bca_web` Screen 3 — Hypothesis Layer (LLM integration, micro-foundations table) | ⬜ |
-| 11 | Quarterly trigger — automated NIPA-release pipeline + LLM cache invalidation | ⬜ |
+| 7 | `bca_data_builder` — Static data export pipeline | ✅ Done |
+| 8 | `bca_web` Screen 1 — Macro Overview (GDP chart, snapshot, percentiles) | ✅ Done |
+| 9 | `bca_web` Screen 2 — Wedge Decomposition (φ-stats, CFs, historical table) | ✅ Done |
+| 10 | `bca_web` Screen 3 — Hypothesis Layer (LLM integration, micro-foundations table) | ✅ Done |
+| 11 | Quarterly trigger — CI/CD NIPA-release pipeline + LLM cache invalidation | ⬜ Next |
 | 12 | Nowcasting extension — MIDAS regressions, monthly wedge monitor panel | ⬜ |

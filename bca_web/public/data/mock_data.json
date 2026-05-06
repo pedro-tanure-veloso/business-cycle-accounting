@@ -1,0 +1,63 @@
+{
+  "quarter": "2024Q4",
+  "macro_overview": {
+    "gdp_growth_qoq": 0.021,
+    "gdp_growth_yoy": 0.025,
+    "components": {
+      "consumption": {"growth_qoq": 0.02, "contribution_to_gdp": 1.4},
+      "investment": {"growth_qoq": -0.01, "contribution_to_gdp": -0.2},
+      "government": {"growth_qoq": 0.015, "contribution_to_gdp": 0.3},
+      "net_exports": {"contribution_to_gdp": -0.1}
+    },
+    "historical_percentiles": {
+      "gdp": 85,
+      "investment": 45,
+      "consumption": 88
+    }
+  },
+  "wedge_decomposition": {
+    "current_levels": {
+      "efficiency": {"sd_from_mean": 0.5, "percentile": 65, "trend": "improved"},
+      "labor": {"sd_from_mean": -1.6, "percentile": 12, "trend": "worsened"},
+      "investment": {"sd_from_mean": 0.2, "percentile": 55, "trend": "flat"},
+      "government": {"sd_from_mean": 1.1, "percentile": 82, "trend": "improved"}
+    },
+    "phi_statistics": {
+      "efficiency": 0.21,
+      "labor": 0.41,
+      "investment": 0.25,
+      "government": 0.13
+    },
+    "historical_comparison": {
+      "most_analogous_episode": "2008Q4-2009Q2",
+      "similarity_score": 0.89
+    }
+  },
+  "hypothesis_layer": {
+    "pattern_identification": "The current configuration is dominated by a deteriorating labor wedge (41% of output movement, currently 1.6 SD below mean), with a secondary drag from the investment wedge. This profile strongly resembles the 2008-2009 recession dynamics.",
+    "candidate_mechanisms": [
+      {
+        "wedge": "Labor",
+        "mechanism": "Wage rigidity / sticky wages",
+        "citations": ["Hall (2005)", "Shimer (2004)"],
+        "reasoning": "Given the rapid decline in job finding rates but persistent nominal wage growth in recent BLS reports, the labor wedge opening is consistent with wages failing to clear a softening labor market."
+      },
+      {
+        "wedge": "Labor",
+        "mechanism": "Search and matching frictions",
+        "citations": ["Mortensen & Pissarides (1994)"],
+        "reasoning": "The recent drop in JOLTS vacancies alongside stable layoffs suggests a matching efficiency decline."
+      }
+    ],
+    "what_to_watch": [
+      {
+        "mechanism": "Wage rigidity",
+        "indicator": "Watch the Atlanta Fed Wage Growth Tracker. If wage growth decelerates to match inflation, the labor wedge should begin to close."
+      },
+      {
+        "mechanism": "Search and matching frictions",
+        "indicator": "Watch the Beveridge Curve (JOLTS openings vs BLS unemployment). Further outward shifts would confirm matching deterioration."
+      }
+    ]
+  }
+}

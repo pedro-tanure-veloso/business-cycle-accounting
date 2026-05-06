@@ -2423,3 +2423,12 @@ still way off; the run was the broken Step 7 option-2 config (Sbar pinned,
 sample 1948–2014, max|eig|=1.008 — non-stationary). Need rerun after 8.2+
 for a clean f-stat comparison.
 
+
+
+## 2026-05-06 — BCA Web App & Data Builder (Stage 2 & 3)
+- **Completed**: Converted the project architecture from a dynamic FastAPI service to a static data pipeline (`bca_data_builder`) and a static React frontend (`bca_web`).
+- **Completed**: Built `scripts/build_quarterly_data.py` to extract wedges, calculate statistics, and call Gemini 3.1 Pro (High) for hypothesis generation, saving the result to a static JSON file.
+- **Completed**: Created the React dashboard (`bca_web/src/App.tsx`) with a modern dark-mode aesthetic to visualize the Macro Overview, Wedge Decomposition, and Hypothesis Layer.
+- **In progress**: Web layer is built and mock-tested; waiting on automation implementation.
+- **Blocked**: None.
+- **Next step**: Implement GitHub Actions automation (Milestone 11) for quarterly NIPA release triggers, or begin the Nowcasting extension (Stage 4).

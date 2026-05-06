@@ -88,6 +88,7 @@ primarily a labor-driven contraction. Details in
 ```
 scripts/                    User-facing entry points
   run_bca.py                ★ Main CLI — any US window, all outputs in one command
+  build_quarterly_data.py   Stage 2 data pipeline (runs bca_core + Gemini LLM)
   run_var_counterfactuals.py  Legacy BCKM-1980-2014 driver (parquet + figures)
   diagnose_counterfactuals.py PASS/FAIL diagnostics for the CF decomposition
   solow_residual_check.py     Solow residual sanity check
@@ -125,6 +126,10 @@ covid_analysis/             Layer 2 — COVID 2010Q1–2023Q4 smoke test
   figures/                  figure_A/B/2C/2D/2E_covid*.png + wedges_*.png
   REPORT.md                 Narrative results + COVID-vs-Great-Recession comparison
   Diary.md                  Session-by-session journal
+
+bca_web/                    Stage 3 — React Dashboard (Static Web App)
+  public/data/              Static JSON files consumed by the UI
+  src/                      React components and CSS design system
 
 tests/                      pytest unit tests (91 tests)
   test_bckm_*               BCKM 1980-2014 regression (marked @pytest.mark.bckm)
