@@ -153,12 +153,35 @@ Four subplots, one per wedge (efficiency, labor, investment, government), in sta
 units from their sample means. Recession shading. Annotate the current quarter value and its
 historical percentile.
 
-**Panel 2B — φ-statistics: current recession window.**
+**Panel 2B — f-statistics: current recession window.**
 A stacked bar chart showing, for each of output, labor, and investment, the share of movement
 explained by each wedge. The recession window is user-selectable: default to the most recent NBER
 recession if ongoing, otherwise let the user select start and end quarters.
 
 This is the central panel of the app.
+
+> **What the f-statistic means** *(UI tooltip / info box copy)*
+>
+> For each wedge, the BCA engine runs a counterfactual simulation in which *only that wedge*
+> moves — the other three are held at their trend values. The f-statistic measures how closely
+> that single-wedge simulation tracks the actual data over the selected window. Values range from
+> 0 to 1 and sum to 1 across all four wedges.
+>
+> **f = 1** for a wedge means: the simulated economy with only that wedge active would have
+> matched the data exactly — this recession is entirely explained by that one distortion.
+> **f = 0** means: activating that wedge alone produces no improvement over staying at trend.
+>
+> *Example.* In the 2008–09 episode the labor wedge has fY = 0.43. That means a hypothetical
+> economy in which only the labor market distortion moved — financial markets, TFP, and
+> government spending all stayed on trend — would have tracked actual US GDP over 2007Q4–2011Q3
+> more closely than any other single-wedge story. The investment wedge is second (fY = 0.27),
+> consistent with the role of financial frictions in the crisis but indicating they were secondary
+> to the labor market channel once the full episode, including the slow recovery, is accounted for.
+>
+> *What the statistic does not say.* A high f-statistic identifies which wedge *moves with* the
+> data, not what *caused* the wedge to move. The labor wedge could be elevated because of search
+> frictions, sticky wages, payroll financing costs, or something else entirely. Screen 3
+> (Hypothesis Layer) is where those candidate mechanisms are surfaced.
 
 **Panel 2C — Counterfactual paths.**
 For each of output, labor, and investment: the actual data series plus the four single-wedge
