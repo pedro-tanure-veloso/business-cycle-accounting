@@ -169,27 +169,34 @@ A table showing the φ-statistics for the current episode alongside the same sta
 historical US recessions. Lets the user answer: does the current wedge configuration look more
 like 2008 or more like 2020?
 
-| Episode | φ_y(eff) | φ_y(labor) | φ_y(inv) | φ_y(gov) |
-|---------|----------|------------|----------|----------|
-| 1981–82 | 0.56 | 0.20 | 0.15 | 0.09 |
-| 1990–91 | 0.73 | 0.01 | 0.12 | 0.14 |
-| 2001    | 0.52 | 0.07 | 0.21 | 0.20 |
-| 2008–09 | 0.46 | 0.01 | 0.43 | 0.10 |
-| 2020    | 0.33 | 0.20 | 0.10 | 0.37 |
-| **Current** | **—** | **—** | **—** | **—** |
+| Episode | fY(eff) | fY(labor) | fY(inv) | fY(gov) | Window |
+|---------|---------|-----------|---------|---------|--------|
+| 1981–82 | 0.31 | 0.26 | 0.29 | 0.14 | 1981Q3–1985Q2 |
+| 1990–91 | 0.36 | 0.18 | 0.33 | 0.13 | 1990Q3–1994Q2 |
+| 2001    | 0.06 | 0.59 | 0.21 | 0.14 | 2001Q1–2004Q4 |
+| 2008–09 | 0.21 | 0.43 | 0.27 | 0.08 | 2007Q4–2011Q3 |
+| 2020    | 0.22 | 0.37 | 0.21 | 0.20 | 2020Q1–2023Q4 |
+| **Current** | **—** | **—** | **—** | **—** | |
 
-*Pre-COVID values computed from the 1980Q1–2014Q4 BCA estimation; 2020 from
-the 2010Q1–2023Q4 pre-COVID-fit MLE. All φ-statistics are for output (φ_y)
-over each NBER recession window. "Current" is populated by the BCA engine at
-each quarterly NIPA update. Source:
+*Statistic: `f_statistics_bckm` (level-ratio, anchored at NBER peak). Window:
+NBER peak + 16 quarters (recession + initial recovery) — consistent with
+BCKM Table 11's 2008Q1–2011Q4 choice. Pre-COVID values use the 1980Q1–2014Q4
+MLE; 2020 uses the 2010Q1–2023Q4 pre-COVID-fit MLE. The 2008–09 fY(labor) =
+0.43 matches BCKM's published 0.46 closely (residual gap is our MLE vs
+BCKM's published θ, per `bckm_replication/REPORT.md`). "Current" is
+populated by the BCA engine at each quarterly NIPA update. Source:
 `scripts/compute_historical_phi_stats.py`.*
 
-**What the table tells you.** The efficiency wedge dominates the 1980s and
-1990s recessions — consistent with oil/supply shocks and the Volcker
-disinflation. The 2008–09 recession shows an investment–efficiency split
-(the financial-crisis signature: collateral constraints + TFP slowdown).
-The 2020 window (just two quarters) is led by the government wedge
-(shutdown-driven spending and net-export swings) alongside efficiency.
+**What the table tells you.** The 1981–82 recession is a three-way split
+(Volcker disinflation + oil shock + credit crunch — no single wedge dominates).
+The 1990–91 recession has a similar mixed profile. The 2001 recession is
+strongly labor-wedge-led over the 4-year window — the dot-com bust produced
+a prolonged jobless recovery that shows up here. The 2008–09 recession is
+the canonical labor-wedge recession (consistent with BCKM's headline finding),
+with a secondary investment wedge role. The 2020 episode has a more even
+four-way distribution: the labor and efficiency wedges are co-important, the
+government wedge is elevated (fiscal response + net-export swings), and the
+investment wedge is smaller than in 2008.
 
 ---
 

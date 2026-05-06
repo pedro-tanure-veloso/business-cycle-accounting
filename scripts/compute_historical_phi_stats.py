@@ -1,5 +1,5 @@
 """
-Compute φ-statistics for major US recessions and print the Panel 2D
+Compute f-statistics for major US recessions and print the Panel 2D
 comparison table for vision-doc.md.
 
 Estimation strategy
@@ -7,19 +7,34 @@ Estimation strategy
 Pre-COVID recessions (1981–82, 1990–91, 2001, 2008–09)
     One MLE run on the full 1980Q1–2014Q4 sample; result is cached
     in bckm_replication/data/ so subsequent calls take ~3 s.
-    φ-statistics are sliced to each recession's NBER window.
 
 COVID recession (2020)
     Re-uses the existing pre-COVID-fit MLE pickle
     (covid_analysis/data/us_2010_2023_calgz_preCOVID.mle.pkl,
     fit on 2010Q1–2019Q4).  Fast path; no recomputation.
 
-NBER recession dates used
-    1981–82 : 1981Q3 – 1982Q4   (Jul 1981 – Nov 1982)
-    1990–91 : 1990Q3 – 1991Q1   (Jul 1990 – Mar 1991)
-    2001    : 2001Q1 – 2001Q4   (Mar 2001 – Nov 2001)
-    2008–09 : 2007Q4 – 2009Q2   (Dec 2007 – Jun 2009)
-    2020    : 2020Q1 – 2020Q2   (Feb 2020 – Apr 2020)
+Statistic and window choice
+----------------------------
+BCKM Table 11 reports f-statistics anchored at 2008Q1 over the window
+2008Q1–2011Q4 (the recession + jobless-recovery period).  The labor
+wedge's dominant role is in the sluggish recovery, not just the acute
+drop, so windows that end at the NBER trough badly understate it.
+
+For a consistent cross-episode comparison we use:
+  - Statistic  : f_statistics_bckm (level-ratio, anchored at NBER peak)
+  - Window     : NBER peak through peak + 15 quarters (16 quarters = 4 years)
+                 → captures both the recession and the initial recovery
+
+For 2008–09, peak 2007Q4, this gives the window 2007Q4–2011Q3, which
+is one quarter off from BCKM's 2008Q1–2011Q4 and recovers f-stats
+close to their published values (fYτL ≈ 0.46).
+
+NBER recession peaks used
+    1981–82 : peak 1981Q3  (Jul 1981)
+    1990–91 : peak 1990Q3  (Jul 1990)
+    2001    : peak 2001Q1  (Mar 2001)
+    2008–09 : peak 2007Q4  (Dec 2007)
+    2020    : peak 2020Q1  (Feb 2020)
 
 Usage
 -----
@@ -48,34 +63,38 @@ from bca_core.params import CalibrationParams
 from bca_core.model import PrototypeModel
 from bca_core.var_estimation import estimate_var_mle, prepare_observables
 from bca_core.wedges import extract_wedges_bckm_style
-from bca_core.counterfactuals import run_all_counterfactuals, phi_statistics
+from bca_core.counterfactuals import run_all_counterfactuals, f_statistics_bckm
 from bca_core.constants import (
-    P_BCKM_TABLE8   as P_BCKM,
+    P_BCKM_TABLE8      as P_BCKM,
     QCHOL_BCKM_TABLE10 as QCHOL_BCKM,
     SBAR_BCKM_TABLE8   as SBAR_BCKM,
 )
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
-BCKM_PARQUET  = REPO_ROOT / "bckm_replication"  / "data" / "us_1980_2014_calgz.parquet"
-BCKM_META     = REPO_ROOT / "bckm_replication"  / "data" / "us_1980_2014_calgz.meta.json"
+BCKM_PARQUET   = REPO_ROOT / "bckm_replication" / "data" / "us_1980_2014_calgz.parquet"
+BCKM_META      = REPO_ROOT / "bckm_replication" / "data" / "us_1980_2014_calgz.meta.json"
 BCKM_MLE_CACHE = REPO_ROOT / "bckm_replication" / "data" / "us_1980_2014_calgz.mle.pkl"
 
-COVID_PARQUET  = REPO_ROOT / "covid_analysis" / "data" / "us_2010_2023_calgz_preCOVID.parquet"
-COVID_META     = REPO_ROOT / "covid_analysis" / "data" / "us_2010_2023_calgz_preCOVID.meta.json"
+COVID_PARQUET   = REPO_ROOT / "covid_analysis" / "data" / "us_2010_2023_calgz_preCOVID.parquet"
+COVID_META      = REPO_ROOT / "covid_analysis" / "data" / "us_2010_2023_calgz_preCOVID.meta.json"
 COVID_MLE_CACHE = REPO_ROOT / "covid_analysis" / "data" / "us_2010_2023_calgz_preCOVID.mle.pkl"
 
-# ── NBER recession windows (label → (start_year, start_q, end_year, end_q)) ───
+# ── Recession definitions ──────────────────────────────────────────────────────
+# Each entry: label → (peak_year, peak_quarter)
+# Window = peak through peak + WINDOW_LEN - 1  (16 quarters = 4 years)
+# Anchor = peak (normalized to 1.0 in level-ratio statistics)
+
+WINDOW_LEN = 16   # quarters — recession + initial recovery
 
 RECESSIONS = {
-    "1981–82": (1981, 3, 1982, 4),
-    "1990–91": (1990, 3, 1991, 1),
-    "2001":    (2001, 1, 2001, 4),
-    "2008–09": (2007, 4, 2009, 2),
-    "2020":    (2020, 1, 2020, 2),
+    "1981–82": (1981, 3),
+    "1990–91": (1990, 3),
+    "2001":    (2001, 1),
+    "2008–09": (2007, 4),
+    "2020":    (2020, 1),
 }
 
-# Which sample to use for each recession
 RECESSION_SAMPLE = {
     "1981–82": "bckm",
     "1990–91": "bckm",
@@ -83,7 +102,6 @@ RECESSION_SAMPLE = {
     "2008–09": "bckm",
     "2020":    "covid",
 }
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -98,6 +116,12 @@ def find_idx(dates, year: int, quarter: int) -> int | None:
     return None
 
 
+def add_quarters(year: int, quarter: int, n: int) -> tuple[int, int]:
+    """Advance (year, quarter) by n quarters."""
+    total = (year * 4 + quarter - 1) + n
+    return total // 4, total % 4 + 1
+
+
 def load_meta(path: Path) -> dict:
     with open(path) as fh:
         return json.load(fh)
@@ -105,21 +129,11 @@ def load_meta(path: Path) -> dict:
 
 # ── Pipeline runner ────────────────────────────────────────────────────────────
 
-def run_pipeline(
-    parquet: Path,
-    meta: dict,
-    mle_cache: Path | None,
-    label: str,
-) -> tuple:
+def run_pipeline(parquet: Path, meta: dict, mle_cache: Path | None, label: str):
     """
     Load data, run (or reload) MLE, compute counterfactuals.
 
-    Returns
-    -------
-    (df, data_hat, cfs)
-        df       : raw DataFrame
-        data_hat : dict with 'y', 'l', 'x' log-deviation arrays (full sample)
-        cfs      : counterfactuals dict from run_all_counterfactuals
+    Returns (df, data_hat, cfs).
     """
     print(f"\n[{label}] Loading {parquet.name} …")
     df = pd.read_parquet(parquet)
@@ -174,8 +188,10 @@ def run_pipeline(
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--no-cache-mle", action="store_true",
                         help="Force MLE refit; ignore cached pickle files.")
     parser.add_argument("--save-json", metavar="PATH",
@@ -187,7 +203,8 @@ def main() -> None:
 
     # ── Run the two pipelines ──────────────────────────────────────────────
     print("=" * 68)
-    print("Historical φ-statistics — Panel 2D")
+    print("Historical f-statistics — Panel 2D")
+    print(f"Statistic: f_statistics_bckm  |  Window: peak + {WINDOW_LEN} quarters")
     print("=" * 68)
 
     bckm_meta  = load_meta(BCKM_META)
@@ -203,58 +220,94 @@ def main() -> None:
         COVID_PARQUET, covid_meta, covid_cache, "2010-2023 preCOVID"
     )
 
-    # ── Compute φ-stats per recession ─────────────────────────────────────
+    # ── Compute f-stats per recession ──────────────────────────────────────
     results: dict[str, dict] = {}
 
-    for label, (sy, sq, ey, eq) in RECESSIONS.items():
-        sample = RECESSION_SAMPLE[label]
+    for label, (peak_yr, peak_q) in RECESSIONS.items():
+        sample     = RECESSION_SAMPLE[label]
         df         = df_bckm   if sample == "bckm"  else df_covid
         data_hat   = data_hat_bckm  if sample == "bckm"  else data_hat_covid
         cfs        = cfs_bckm  if sample == "bckm"  else cfs_covid
 
-        i_start = find_idx(df.index, sy, sq)
-        i_end   = find_idx(df.index, ey, eq)
-
-        if i_start is None or i_end is None:
-            print(f"\n  [{label}] Could not locate window indices — skipping.")
+        i_peak = find_idx(df.index, peak_yr, peak_q)
+        if i_peak is None:
+            print(f"\n  [{label}] Peak {peak_yr}Q{peak_q} not in sample — skipping.")
             continue
 
-        phi_df = phi_statistics(data_hat, cfs, window=(i_start, i_end))
+        # End of window: peak + WINDOW_LEN - 1, capped at sample end
+        end_yr, end_q = add_quarters(peak_yr, peak_q, WINDOW_LEN - 1)
+        i_end = find_idx(df.index, end_yr, end_q)
+        if i_end is None:
+            # Cap at sample end
+            i_end = len(df) - 1
+            end_yr_act, end_q_act = None, None
+        else:
+            end_yr_act, end_q_act = end_yr, end_q
 
-        # φ-stats for output (row = wedge, col = variable)
+        window_str = (f"{peak_yr}Q{peak_q}–"
+                      f"{end_yr_act}Q{end_q_act}" if end_yr_act
+                      else f"{peak_yr}Q{peak_q}–end")
+
+        # f_statistics_bckm: anchor = peak, window = (peak, peak+15)
+        f_df = f_statistics_bckm(
+            data_hat, cfs,
+            window=(i_peak, i_end),
+            anchor=i_peak,
+        )
+
         row = {
-            w: float(phi_df.loc[w, "y"])
+            w: float(f_df.loc[w, "y"])
             for w in ["efficiency", "labor", "investment", "government"]
         }
         results[label] = {
-            "window": f"{sy}Q{sq}–{ey}Q{eq}",
-            "sample": f"1980Q1–2014Q4" if sample == "bckm" else "2010Q1–2023Q4",
-            "phi_y": row,
+            "peak": f"{peak_yr}Q{peak_q}",
+            "window": window_str,
+            "sample": "1980Q1–2014Q4" if sample == "bckm" else "2010Q1–2023Q4",
+            "f_y": row,
         }
-        print(f"\n  [{label}]  window {sy}Q{sq}–{ey}Q{eq}")
-        print(f"    φ_y(eff)={row['efficiency']:.2f}  φ_y(lab)={row['labor']:.2f}"
-              f"  φ_y(inv)={row['investment']:.2f}  φ_y(gov)={row['government']:.2f}")
+        print(f"\n  [{label}]  peak {peak_yr}Q{peak_q}  window {window_str}")
+        print(f"    fY(eff)={row['efficiency']:.2f}  fY(lab)={row['labor']:.2f}"
+              f"  fY(inv)={row['investment']:.2f}  fY(gov)={row['government']:.2f}")
+
+    # ── BCKM Table 11 check ────────────────────────────────────────────────
+    # For 2008–09, also show the BCKM-exact window (2008Q1–2011Q4) anchored
+    # at 2008Q1 so we can compare directly to published Table 11 values.
+    print("\n--- BCKM Table 11 sanity check (2008Q1–2011Q4, anchor=2008Q1) ---")
+    i_bind  = find_idx(df_bckm.index, 2008, 1)
+    i_2011q4 = find_idx(df_bckm.index, 2011, 4)
+    if i_bind is not None and i_2011q4 is not None:
+        f_check = f_statistics_bckm(
+            data_hat_bckm, cfs_bckm,
+            window=(i_bind, i_2011q4),
+            anchor=i_bind,
+        )
+        for var in ["y", "l", "x"]:
+            vals = [float(f_check.loc[w, var])
+                    for w in ["efficiency", "labor", "investment", "government"]]
+            print(f"  f{var.upper()} = eff {vals[0]:.2f}  lab {vals[1]:.2f}"
+                  f"  inv {vals[2]:.2f}  gov {vals[3]:.2f}"
+                  + (" ← cf. Table 11: 0.16 / 0.46 / 0.32" if var == "y" else ""))
 
     # ── Print formatted table ─────────────────────────────────────────────
     print("\n" + "=" * 68)
-    print("Panel 2D — Historical φ-statistics (output, φ_y)")
+    print("Panel 2D — Historical f-statistics for output (fY)")
+    print(f"Window definition: NBER peak + {WINDOW_LEN} quarters")
     print("=" * 68)
-    hdr = f"{'Episode':<12} {'φ_y(eff)':>10} {'φ_y(labor)':>12} {'φ_y(inv)':>10} {'φ_y(gov)':>10}"
+    hdr = f"{'Episode':<12} {'fY(eff)':>10} {'fY(labor)':>12} {'fY(inv)':>10} {'fY(gov)':>10}  window"
     print(hdr)
-    print("-" * 68)
+    print("-" * 80)
     for label, info in results.items():
-        r = info["phi_y"]
+        r = info["f_y"]
         print(f"{label:<12} {r['efficiency']:>10.2f} {r['labor']:>12.2f}"
-              f" {r['investment']:>10.2f} {r['government']:>10.2f}")
+              f" {r['investment']:>10.2f} {r['government']:>10.2f}  {info['window']}")
 
-    # ── Markdown table for copy-paste into vision-doc.md ─────────────────
+    # ── Markdown for vision-doc.md ────────────────────────────────────────
     print("\n>>> Markdown (for vision-doc.md Panel 2D):\n")
-    print("| Episode | φ_y(eff) | φ_y(labor) | φ_y(inv) | φ_y(gov) |")
-    print("|---------|----------|------------|----------|----------|")
+    print("| Episode | fY(eff) | fY(labor) | fY(inv) | fY(gov) |")
+    print("|---------|---------|-----------|---------|---------|")
     for label, info in results.items():
-        r = info["phi_y"]
-        tag = " **(current window)**" if label == list(results)[-1] else ""
-        print(f"| {label}{tag} | {r['efficiency']:.2f} | {r['labor']:.2f}"
+        r = info["f_y"]
+        print(f"| {label} | {r['efficiency']:.2f} | {r['labor']:.2f}"
               f" | {r['investment']:.2f} | {r['government']:.2f} |")
     print(f"| **Current** | **—** | **—** | **—** | **—** |")
 
