@@ -1,3 +1,11 @@
+---
+title: "Reflections on Vibe Coding the Replication"
+topic: "methodology"
+layer: "all"
+status: "reference"
+last_updated: "2026-05-06"
+---
+
 # Reflections on Vibe Coding the Replication 
 This document synthesizes observations regarding the replication of quantitative research—specifically the conversion of Matlab code to Python—using large language models (LLMs).
 

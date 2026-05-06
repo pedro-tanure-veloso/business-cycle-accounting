@@ -17,6 +17,7 @@ and US 2010–2023 (COVID era). **US-only; cross-country is out of scope.**
 - [README_AI.md](README_AI.md): AI context map — full glossary, pipeline logic flow, key data structures, file-by-file roles, and critical conventions for AI agents
 - [BCA_info.md](BCA_info.md): Structured extract of the BCKM 2016 paper — prototype economy, accounting procedure, calibration table, and US empirical results; the live methodology reference
 - [vision-doc.md](vision-doc.md): Project roadmap — what is built (bca_core ✅), what is next (bca_api, bca_web), milestone table
+- [llm_replication_reflections.md](llm_replication_reflections.md): Reflections on using LLMs to replicate quantitative research — context-decay patterns, benchmarking gaps, and strategic recommendations for AI-assisted replication
 
 ## Results
 
