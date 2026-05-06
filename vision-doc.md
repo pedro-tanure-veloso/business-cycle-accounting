@@ -165,7 +165,7 @@ For each of output, labor, and investment: the actual data series plus the four 
 counterfactual paths, as in BCKM Figure 2. Indexed to 100 at the start of the selected window.
 
 **Panel 2D — Historical comparison.**
-A table showing the φ-statistics for the current episode alongside the same statistics for major
+A table showing the f-statistics for the current episode alongside the same statistics for major
 historical US recessions. Lets the user answer: does the current wedge configuration look more
 like 2008 or more like 2020?
 
@@ -175,16 +175,19 @@ like 2008 or more like 2020?
 | 1990–91 | 0.36 | 0.18 | 0.33 | 0.13 | 1990Q3–1994Q2 |
 | 2001    | 0.06 | 0.59 | 0.21 | 0.14 | 2001Q1–2004Q4 |
 | 2008–09 | 0.21 | 0.43 | 0.27 | 0.08 | 2007Q4–2011Q3 |
-| 2020    | 0.22 | 0.37 | 0.21 | 0.20 | 2020Q1–2023Q4 |
+| 2020    | 0.21 | 0.36 | 0.21 | 0.22 | 2020Q1–2022Q4 |
 | **Current** | **—** | **—** | **—** | **—** | |
 
 *Statistic: `f_statistics_bckm` (level-ratio, anchored at NBER peak). Window:
-NBER peak + 16 quarters (recession + initial recovery) — consistent with
-BCKM Table 11's 2008Q1–2011Q4 choice. Pre-COVID values use the 1980Q1–2014Q4
-MLE; 2020 uses the 2010Q1–2023Q4 pre-COVID-fit MLE. The 2008–09 fY(labor) =
-0.43 matches BCKM's published 0.46 closely (residual gap is our MLE vs
-BCKM's published θ, per `bckm_replication/REPORT.md`). "Current" is
-populated by the BCA engine at each quarterly NIPA update. Source:
+NBER peak + 16 quarters (recession + initial recovery) for all pre-COVID
+episodes — consistent with BCKM Table 11's 2008Q1–2011Q4 choice. The 2020
+episode uses 12 quarters (2020Q1–2022Q4) because the COVID recovery was
+largely complete by end-2022; extending to 2023Q4 mixes in post-recovery
+dynamics. Pre-COVID values use the 1980Q1–2014Q4 MLE; 2020 uses the
+2010Q1–2023Q4 pre-COVID-fit MLE. The 2008–09 fY(labor) = 0.43 matches
+BCKM's published 0.46 closely (residual gap is our MLE vs BCKM's published
+θ, per `bckm_replication/REPORT.md`). "Current" is populated by the BCA
+engine at each quarterly NIPA update. Source:
 `scripts/compute_historical_phi_stats.py`.*
 
 **What the table tells you.** The 1981–82 recession is a three-way split

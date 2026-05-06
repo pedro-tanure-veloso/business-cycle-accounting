@@ -82,10 +82,16 @@ COVID_MLE_CACHE = REPO_ROOT / "covid_analysis" / "data" / "us_2010_2023_calgz_pr
 
 # ── Recession definitions ──────────────────────────────────────────────────────
 # Each entry: label → (peak_year, peak_quarter)
-# Window = peak through peak + WINDOW_LEN - 1  (16 quarters = 4 years)
-# Anchor = peak (normalized to 1.0 in level-ratio statistics)
+# Default window = peak + WINDOW_LEN - 1 quarters (16 quarters = 4 years),
+# capturing recession + initial recovery, consistent with BCKM Table 11's
+# 2008Q1–2011Q4 choice.
+# Anchor = peak (normalized to 1.0 in level-ratio statistics).
+#
+# Per-episode overrides: 2020 ends at 2022Q4 (12 quarters) because
+# the COVID recovery was largely complete by then; a 16-quarter window
+# would extend into 2023Q4 and mix in post-recovery dynamics.
 
-WINDOW_LEN = 16   # quarters — recession + initial recovery
+WINDOW_LEN = 16   # quarters — default, recession + initial recovery
 
 RECESSIONS = {
     "1981–82": (1981, 3),
@@ -101,6 +107,12 @@ RECESSION_SAMPLE = {
     "2001":    "bckm",
     "2008–09": "bckm",
     "2020":    "covid",
+}
+
+# Override window length (quarters) for specific episodes.
+# 2020: peak 2020Q1 + 12 quarters = 2022Q4 (3 years, covers COVID + recovery)
+WINDOW_LEN_OVERRIDE = {
+    "2020": 12,
 }
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -234,8 +246,9 @@ def main() -> None:
             print(f"\n  [{label}] Peak {peak_yr}Q{peak_q} not in sample — skipping.")
             continue
 
-        # End of window: peak + WINDOW_LEN - 1, capped at sample end
-        end_yr, end_q = add_quarters(peak_yr, peak_q, WINDOW_LEN - 1)
+        # End of window: peak + window_len - 1, capped at sample end
+        window_len = WINDOW_LEN_OVERRIDE.get(label, WINDOW_LEN)
+        end_yr, end_q = add_quarters(peak_yr, peak_q, window_len - 1)
         i_end = find_idx(df.index, end_yr, end_q)
         if i_end is None:
             # Cap at sample end
