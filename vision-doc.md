@@ -10,14 +10,20 @@ last_updated: "2026-05-06"
 
 ## Goal
 
-Build a **US-only web application** that performs Business Cycle Accounting (BCA) in the style of
-Chari–Kehoe–McGrattan (2007) and Brinca–Chari–Kehoe–McGrattan (2016, NBER WP 22663). The user
-picks a US time window, the app runs the full BCA procedure end-to-end, and returns the four
-wedges (efficiency, labor, investment, government) plus counterfactual decompositions of output,
-labor, and investment.
+Build a **quarterly-updated Business Cycle Monitor** — a US-only web dashboard that gives a
+structural snapshot of the current economy using Business Cycle Accounting (BCA) in the style of
+Chari–Kehoe–McGrattan (2007) and Brinca–Chari–Kehoe–McGrattan (2016, NBER WP 22663).
 
-The flagship use case is a **quarterly-updated Business Cycle Monitor** that combines three things
-no standard macro dashboard does together:
+The dashboard is not a user-configurable tool. It runs on a fixed, continuously extended sample
+(1980Q1 to present) and updates automatically each quarter when BEA releases NIPA data. The
+four wedges — efficiency (A), labor (1−τ_l), investment (1+τ_x), government (g) — plus
+counterfactual decompositions are always shown for the current state of the economy.
+
+*(User-specified time windows are the scope of the `bca_core` CLI,
+[`scripts/run_bca.py`](scripts/run_bca.py), which is already complete. The web app is a different
+product: no window picker, no parameter tweaking — just the current quarter.)*
+
+The dashboard combines three things no standard macro dashboard does together:
 
 1. **GDP decomposition by demand component** — the standard macro picture.
 2. **BCA wedge decomposition** — which structural margin is driving the business cycle.
@@ -165,14 +171,25 @@ like 2008 or more like 2020?
 
 | Episode | φ_y(eff) | φ_y(labor) | φ_y(inv) | φ_y(gov) |
 |---------|----------|------------|----------|----------|
-| 1981–82 | — | — | — | — |
-| 1990–91 | — | — | — | — |
-| 2001    | — | — | — | — |
-| 2008–09 | ~0.26 | ~0.44 | ~0.23 | ~0.07 |
-| 2020    | — | — | — | — |
+| 1981–82 | 0.56 | 0.20 | 0.15 | 0.09 |
+| 1990–91 | 0.73 | 0.01 | 0.12 | 0.14 |
+| 2001    | 0.52 | 0.07 | 0.21 | 0.20 |
+| 2008–09 | 0.46 | 0.01 | 0.43 | 0.10 |
+| 2020    | 0.33 | 0.20 | 0.10 | 0.37 |
 | **Current** | **—** | **—** | **—** | **—** |
 
-Values populated by the BCA engine at each quarterly update.
+*Pre-COVID values computed from the 1980Q1–2014Q4 BCA estimation; 2020 from
+the 2010Q1–2023Q4 pre-COVID-fit MLE. All φ-statistics are for output (φ_y)
+over each NBER recession window. "Current" is populated by the BCA engine at
+each quarterly NIPA update. Source:
+`scripts/compute_historical_phi_stats.py`.*
+
+**What the table tells you.** The efficiency wedge dominates the 1980s and
+1990s recessions — consistent with oil/supply shocks and the Volcker
+disinflation. The 2008–09 recession shows an investment–efficiency split
+(the financial-crisis signature: collateral constraints + TFP slowdown).
+The 2020 window (just two quarters) is led by the government wedge
+(shutdown-driven spending and net-export swings) alongside efficiency.
 
 ---
 
