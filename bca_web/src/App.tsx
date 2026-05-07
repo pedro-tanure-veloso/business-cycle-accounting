@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Activity, BarChart3, BrainCircuit, TrendingUp, TrendingDown, 
-  AlertTriangle, Clock, ActivitySquare
+  AlertTriangle, ActivitySquare
 } from 'lucide-react';
 import { 
   BarChart, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -15,8 +15,6 @@ interface BCAData {
   macro_quarter: string;
   macro_overview: {
     gdp_growth_qoq: number;
-    gdi_growth_qoq: number;
-    supply_growth_qoq: number;
     gdp_growth_yoy: number;
     components: {
       consumption: { growth_qoq: number; contribution_to_gdp: number };
@@ -37,10 +35,13 @@ interface BCAData {
   wedge_decomposition: {
     current_levels: Record<string, { sd_from_mean: number; percentile: number; trend: string }>;
     phi_statistics: Record<string, number>;
-    historical_comparison: {
-      most_analogous_episode: string;
-      similarity_score: number;
-    };
+    cf_time_series: Array<{
+      quarter: string;
+      Data: number;
+      Efficiency: number;
+      Labor: number;
+      Investment: number;
+    }>;
   };
   hypothesis_layer: {
     pattern_identification: string;
@@ -162,13 +163,6 @@ function App() {
                 {renderArrow(data.macro_overview.components.net_exports.contribution_to_gdp)}
               </div>
             </div>
-            <div className="glass-panel kpi-card">
-              <span className="kpi-label">Income Optic (GDI)</span>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span className="kpi-value">{annualizeRate(data.macro_overview.gdi_growth_qoq).toFixed(1)}%</span>
-                {renderArrow(data.macro_overview.gdi_growth_qoq)}
-              </div>
-            </div>
           </div>
           <div style={{ marginTop: '1rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
             * Note: All macro overview figures represent QoQ annualized rates or contributions to GDP.
@@ -210,7 +204,7 @@ function App() {
 
           <div className="grid-2">
             <div className="glass-panel">
-              <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>f-Statistics: Output Explained by Wedge</h3>
+              <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>Share of Output Fluctuation Explained by Wedge</h3>
               <div className="chart-container">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={phiChartData} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
@@ -224,33 +218,23 @@ function App() {
               </div>
             </div>
 
-            <div className="glass-panel">
-              <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>Historical Context</h3>
+            <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column' }}>
+              <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>Output Components (2024Q1 = 100)</h3>
               
-              <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem' }}>
-                <span className="kpi-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Clock size={16} /> Most Analogous Historical Episode
-                </span>
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '1rem', marginTop: '0.5rem' }}>
-                  <span className="kpi-value" style={{ fontSize: '1.75rem' }}>
-                    {data.wedge_decomposition.historical_comparison.most_analogous_episode}
-                  </span>
-                  <span className="badge badge-blue">
-                    {(data.wedge_decomposition.historical_comparison.similarity_score * 100).toFixed(0)}% Match
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                {Object.entries(data.wedge_decomposition.current_levels).map(([wedge, stats]) => (
-                  <div key={wedge} style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)' }}>
-                    <div style={{ textTransform: 'capitalize', fontWeight: 500, marginBottom: '0.25rem' }}>{wedge} Wedge</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                      <span>{stats.sd_from_mean > 0 ? '+' : ''}{stats.sd_from_mean} SD</span>
-                      <span>{stats.percentile}th pct</span>
-                    </div>
-                  </div>
-                ))}
+              <div style={{ flex: 1, minHeight: '250px', marginBottom: '1.5rem' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={data.wedge_decomposition.cf_time_series} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+                    <XAxis dataKey="quarter" stroke="var(--text-muted)" fontSize={12} />
+                    <YAxis stroke="var(--text-muted)" fontSize={12} domain={['auto', 'auto']} />
+                    <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} />
+                    <Legend />
+                    <Line type="monotone" dataKey="Data" stroke="#ffffff" strokeWidth={3} dot={false} />
+                    <Line type="monotone" dataKey="Efficiency" stroke="#3b82f6" strokeDasharray="5 5" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="Labor" stroke="#10b981" strokeDasharray="3 4 5 4" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="Investment" stroke="#8b5cf6" strokeDasharray="1 3" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             </div>
           </div>
@@ -329,8 +313,7 @@ function App() {
 
           <div className="ai-warning">
             <AlertTriangle size={20} />
-            <strong>Hypotheses generated by AI — not structural findings.</strong> 
-            Treat as a starting point for analysis, not a conclusion. Based on Gemini 3.1 Pro (High).
+            <span><strong>Hypotheses generated by AI — not structural findings.</strong> Treat as a starting point for analysis, not a conclusion. Based on Gemini 2.5 Flash.</span>
           </div>
         </section>
 

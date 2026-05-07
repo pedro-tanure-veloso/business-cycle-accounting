@@ -46,7 +46,7 @@ def generate_hypotheses(stats_payload: dict, gemini_api_key: str) -> dict:
     prompt = f"""
     You are an expert macroeconomist specializing in business cycle accounting (BCA).
     
-    Here is the structural snapshot of the US economy for {stats_payload['quarter']}:
+    Here is the structural snapshot of the US economy. The following statistics are evaluated for the period 2024Q1 to {stats_payload['quarter']}:
     - Efficiency Wedge f-stat (output explained): {stats_payload['wedge_decomposition']['phi_statistics']['efficiency']:.2f}
     - Labor Wedge f-stat: {stats_payload['wedge_decomposition']['phi_statistics']['labor']:.2f}
     - Investment Wedge f-stat: {stats_payload['wedge_decomposition']['phi_statistics']['investment']:.2f}
@@ -59,6 +59,7 @@ def generate_hypotheses(stats_payload: dict, gemini_api_key: str) -> dict:
     Government: {stats_payload['wedge_decomposition']['current_levels']['government']['sd_from_mean']}
 
     Generate a structured JSON response identifying the pattern, candidate mechanisms based on the BCA literature (e.g. Mortensen & Pissarides, Bernanke Gertler Gilchrist, etc.), and what high-frequency indicators to watch. 
+    IMPORTANT FOR CITATIONS: On candidate mechanisms, cite at most 3 papers, and strictly format them using only the author's last name and year of publication (e.g., 'Hall (2005)').
     Make sure to follow this exact JSON schema:
     {{
       "pattern_identification": "string",
@@ -73,7 +74,7 @@ def generate_hypotheses(stats_payload: dict, gemini_api_key: str) -> dict:
 
     try:
         response = client.models.generate_content(
-            model='gemini-2.5-pro', # We use the latest pro model as proxy for Gemini 3.1 Pro (High)
+            model='gemini-2.5-flash', # Falling back to flash to avoid 429 RESOURCE_EXHAUSTED
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -173,7 +174,12 @@ def main():
     }
 
     # Phi stats
-    phi_df = phi_statistics(r["data_hat"], r["cfs"])
+    try:
+        phi_start_idx = list(dates).index(pd.Timestamp('2024-01-01'))
+    except ValueError:
+        phi_start_idx = 0
+    
+    phi_df = phi_statistics(r["data_hat"], r["cfs"], window=(phi_start_idx, len(dates) - 1))
     phi_stats = {
         "efficiency": round(phi_df.loc["efficiency", "y"], 2),
         "labor": round(phi_df.loc["labor", "y"], 2),
@@ -181,19 +187,36 @@ def main():
         "government": round(phi_df.loc["government", "y"], 2)
     }
 
+    # 4.2 CF Time Series for UI
+    cf_ts = []
+    if phi_start_idx > 0:
+        mask = slice(phi_start_idx, len(dates))
+        sub_dates = dates[mask]
+        
+        def to_level(series_log, anchor_idx):
+            return 100.0 * np.exp(series_log[mask] - series_log[anchor_idx])
+
+        data_level = to_level(r["data_hat"]["y"], phi_start_idx)
+        eff_level = to_level(r["cfs"]["efficiency"]["y"], phi_start_idx)
+        lab_level = to_level(r["cfs"]["labor"]["y"], phi_start_idx)
+        inv_level = to_level(r["cfs"]["investment"]["y"], phi_start_idx)
+        
+        for i, d in enumerate(sub_dates):
+            cf_ts.append({
+                "quarter": f"{d.year}Q{d.quarter}",
+                "Data": float(round(data_level[i], 2)),
+                "Efficiency": float(round(eff_level[i], 2)),
+                "Labor": float(round(lab_level[i], 2)),
+                "Investment": float(round(inv_level[i], 2))
+            })
+
     # 4.5 Fetch Income/Supply optics and Time Series from FRED
-    gdi_growth_qoq = gdp_growth_qoq
     demand_ts = []
     supply_ts = []
     try:
         from fredapi import Fred
         fred = Fred(api_key=os.environ.get("FRED_API_KEY"))
-        # Income Optic (Real GDI, QoQ Annualized Percentage -> de-annualized to fraction)
-        gdi_series = fred.get_series("A261RL1Q225SBEA")
-        if not gdi_series.empty:
-            gdi_reported = gdi_series.dropna().iloc[-1]
-            gdi_growth_qoq = (1 + gdi_reported / 100)**0.25 - 1
-
+        
         demand_tickers = {
             "Consumption": "DPCERY2Q224SBEA",
             "Investment": "A006RY2Q224SBEA",
@@ -228,8 +251,6 @@ def main():
         "quarter": latest_q_str,
         "macro_overview": {
             "gdp_growth_qoq": round(gdp_growth_qoq, 4),
-            "gdi_growth_qoq": round(gdi_growth_qoq, 4),
-            "supply_growth_qoq": round(gdp_growth_qoq, 4), # Conceptually equals GDP
             "gdp_growth_yoy": round(gdp_growth_yoy, 4),
             "components": {
                 "consumption": {"growth_qoq": round(c_growth_qoq, 4), "contribution_to_gdp": round(c_growth_qoq * 0.68 * 100, 2)},
@@ -250,10 +271,7 @@ def main():
         "wedge_decomposition": {
             "current_levels": current_levels,
             "phi_statistics": phi_stats,
-            "historical_comparison": {
-                "most_analogous_episode": "2008Q4-2009Q2", # Would normally use cosine sim of phi-space
-                "similarity_score": 0.89
-            }
+            "cf_time_series": cf_ts
         }
     }
 

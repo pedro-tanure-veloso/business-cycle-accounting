@@ -1,25 +1,23 @@
 {
   "quarter": "2025Q3",
   "macro_overview": {
-    "gdp_growth_qoq": 0.004963,
-    "gdi_growth_qoq": 0.0064,
-    "supply_growth_qoq": 0.004963,
+    "gdp_growth_qoq": 0.005,
     "gdp_growth_yoy": -0.009,
     "components": {
       "consumption": {
-        "growth_qoq": 0.002689,
+        "growth_qoq": 0.0009,
         "contribution_to_gdp": 0.06
       },
       "investment": {
-        "growth_qoq": 0.00368,
+        "growth_qoq": -0.0012,
         "contribution_to_gdp": -0.02
       },
       "government": {
-        "growth_qoq": 0.00182,
+        "growth_qoq": 0.0053,
         "contribution_to_gdp": 0.1
       },
       "net_exports": {
-        "contribution_to_gdp": -0.00325
+        "contribution_to_gdp": -0.1
       }
     },
     "historical_percentiles": {
@@ -217,34 +215,99 @@
       }
     },
     "phi_statistics": {
-      "efficiency": 0.05,
+      "efficiency": 0.03,
       "labor": 0.01,
-      "investment": 0.62,
-      "government": 0.32
+      "investment": 0.8,
+      "government": 0.17
     },
-    "historical_comparison": {
-      "most_analogous_episode": "2008Q4-2009Q2",
-      "similarity_score": 0.89
-    }
+    "cf_time_series": [
+      {
+        "quarter": "2024Q1",
+        "Data": 100.0,
+        "Efficiency": 100.0,
+        "Labor": 100.0,
+        "Investment": 100.0
+      },
+      {
+        "quarter": "2024Q2",
+        "Data": 100.41,
+        "Efficiency": 100.03,
+        "Labor": 101.77,
+        "Investment": 99.24
+      },
+      {
+        "quarter": "2024Q3",
+        "Data": 100.78,
+        "Efficiency": 100.12,
+        "Labor": 102.5,
+        "Investment": 98.89
+      },
+      {
+        "quarter": "2024Q4",
+        "Data": 100.9,
+        "Efficiency": 99.8,
+        "Labor": 102.96,
+        "Investment": 98.69
+      },
+      {
+        "quarter": "2025Q1",
+        "Data": 98.92,
+        "Efficiency": 98.49,
+        "Labor": 109.63,
+        "Investment": 95.66
+      },
+      {
+        "quarter": "2025Q2",
+        "Data": 99.4,
+        "Efficiency": 99.37,
+        "Labor": 101.62,
+        "Investment": 98.99
+      },
+      {
+        "quarter": "2025Q3",
+        "Data": 99.89,
+        "Efficiency": 100.0,
+        "Labor": 98.37,
+        "Investment": 100.48
+      }
+    ]
   },
   "macro_quarter": "2026Q1",
   "hypothesis_layer": {
-    "pattern_identification": "The current configuration is dominated by a deteriorating labor wedge, strongly resembling the 2008-2009 recession dynamics. (Generated via Mock due to missing API Key/Library).",
+    "pattern_identification": "The US economy for 2024Q1-2025Q3 is primarily characterized by significant fluctuations originating from the investment wedge (explaining 80% of output changes). This wedge is currently elevated (0.87 standard deviations above its mean), suggesting pronounced distortions or impediments in capital markets or investment decisions. The government wedge also contributes moderately (17% of output explained) and is currently below its mean (-0.61 standard deviations), indicating relatively contractionary or less stimulative fiscal influences. The labor and efficiency wedges play a negligible role in explaining overall output fluctuations.",
     "candidate_mechanisms": [
       {
-        "wedge": "Labor",
-        "mechanism": "Wage rigidity / sticky wages",
+        "wedge": "Investment Wedge",
+        "mechanism": "Financial frictions and risk premia affecting the cost of capital and access to financing for firms, or disruptions in the capital goods production sector. A high investment wedge implies that capital is significantly more costly to accumulate than implied by the underlying productivity and household preferences, leading to underinvestment relative to the efficient path.",
         "citations": [
-          "Hall (2005)",
-          "Shimer (2004)"
+          "Bernanke, Gertler, Gilchrist (1999)",
+          "Christiano, Motto, Rostagno (2003)",
+          "Mendoza (2010)"
         ],
-        "reasoning": "Persistent nominal wage growth in recent BLS reports."
+        "reasoning": "The investment wedge's dominant f-stat (0.80) indicates that fluctuations in capital formation are the primary driver of business cycles. Its current value significantly above the mean (0.87 standard deviations) suggests that firms face elevated financial frictions, higher external finance premiums, or increased risk aversion in capital markets, making investment more challenging or expensive despite its overall importance to the economy. Alternatively, it could reflect supply-side constraints and increased costs in the capital goods industry itself."
+      },
+      {
+        "wedge": "Government Wedge",
+        "mechanism": "Shifts in fiscal policy, including changes in government spending, taxation, or public debt management, which affect aggregate demand, resource allocation, and the private sector's incentives for consumption and investment.",
+        "citations": [
+          "Barro (1990)",
+          "Leeper, Walker (2011)"
+        ],
+        "reasoning": "With a moderate f-stat of 0.17, the government wedge contributes non-trivially to output fluctuations. Its current value below the mean (-0.61 standard deviations) suggests a period where government activities are either less stimulative, more focused on fiscal consolidation, or are imposing fewer distortions than typical, potentially dampening aggregate demand or public investment relative to historical norms."
       }
     ],
     "what_to_watch": [
       {
-        "mechanism": "Wage rigidity",
-        "indicator": "Watch the Atlanta Fed Wage Growth Tracker."
+        "mechanism": "Financial frictions and cost of capital",
+        "indicator": "Corporate bond spreads (e.g., BAA-Treasury spread), bank lending standards (Senior Loan Officer Opinion Survey), VIX (volatility index), equity market valuation (e.g., P/E ratios)."
+      },
+      {
+        "mechanism": "Supply-side constraints in capital goods production",
+        "indicator": "Manufacturing new orders and shipments for capital goods (non-defense, ex-aircraft), Producer Price Index for industrial machinery and equipment, manufacturing capacity utilization."
+      },
+      {
+        "mechanism": "Fiscal policy and government spending",
+        "indicator": "Monthly Treasury Statement (federal receipts and outlays), Congressional Budget Office (CBO) budget projections and reports, public statements from fiscal authorities, legislative developments on taxation and spending bills."
       }
     ]
   }
