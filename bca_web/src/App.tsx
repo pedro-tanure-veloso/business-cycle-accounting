@@ -218,10 +218,10 @@ function App() {
               </div>
             </div>
 
-            <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
               <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>Output Components (2024Q1 = 100)</h3>
               
-              <div style={{ flex: 1, minHeight: '250px', marginBottom: '1.5rem' }}>
+              <div style={{ flex: 1, minHeight: '250px', marginBottom: '1.5rem', minWidth: 0 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={data.wedge_decomposition.cf_time_series} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
