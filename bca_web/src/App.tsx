@@ -34,7 +34,8 @@ interface BCAData {
       consumption: { growth_qoq: number; contribution_to_gdp: number };
       investment: { growth_qoq: number; contribution_to_gdp: number };
       government: { growth_qoq: number; contribution_to_gdp: number };
-      net_exports: { contribution_to_gdp: number };
+      exports: { growth_qoq: number; contribution_to_gdp: number };
+      imports: { growth_qoq: number; contribution_to_gdp: number };
     };
     historical_percentiles: {
       gdp: number; // Percentile rank in historical sample
@@ -142,7 +143,7 @@ function App() {
             <div className="section-divider"></div>
           </div>
           
-          <div className="grid-5">
+          <div className="grid-6">
             <div className="glass-panel kpi-card">
               <span className="kpi-label">GDP Growth</span>
               <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -151,31 +152,39 @@ function App() {
               </div>
             </div>
             <div className="glass-panel kpi-card">
-              <span className="kpi-label">Consumption Contrib.</span>
+            <div className="glass-panel kpi-card">
+              <span className="kpi-label">Consumption</span>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span className="kpi-value">{data.macro_overview.components.consumption.contribution_to_gdp.toFixed(1)}%</span>
-                {renderArrow(data.macro_overview.components.consumption.contribution_to_gdp)}
+                <span className="kpi-value">{annualizeRate(data.macro_overview.components.consumption.growth_qoq).toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.components.consumption.growth_qoq)}
               </div>
             </div>
             <div className="glass-panel kpi-card">
-              <span className="kpi-label">Investment Contrib.</span>
+              <span className="kpi-label">Investment</span>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span className="kpi-value">{data.macro_overview.components.investment.contribution_to_gdp.toFixed(1)}%</span>
-                {renderArrow(data.macro_overview.components.investment.contribution_to_gdp)}
+                <span className="kpi-value">{annualizeRate(data.macro_overview.components.investment.growth_qoq).toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.components.investment.growth_qoq)}
               </div>
             </div>
             <div className="glass-panel kpi-card">
-              <span className="kpi-label">Gov. Contribution</span>
+              <span className="kpi-label">Government</span>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span className="kpi-value">{data.macro_overview.components.government.contribution_to_gdp.toFixed(1)}%</span>
-                {renderArrow(data.macro_overview.components.government.contribution_to_gdp)}
+                <span className="kpi-value">{annualizeRate(data.macro_overview.components.government.growth_qoq).toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.components.government.growth_qoq)}
               </div>
             </div>
             <div className="glass-panel kpi-card">
-              <span className="kpi-label">Net Export Contrib.</span>
+              <span className="kpi-label">Exports</span>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span className="kpi-value">{data.macro_overview.components.net_exports.contribution_to_gdp.toFixed(1)}%</span>
-                {renderArrow(data.macro_overview.components.net_exports.contribution_to_gdp)}
+                <span className="kpi-value">{annualizeRate(data.macro_overview.components.exports.growth_qoq).toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.components.exports.growth_qoq)}
+              </div>
+            </div>
+            <div className="glass-panel kpi-card">
+              <span className="kpi-label">Imports</span>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span className="kpi-value">{annualizeRate(data.macro_overview.components.imports.growth_qoq).toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.components.imports.growth_qoq)}
               </div>
             </div>
           </div>

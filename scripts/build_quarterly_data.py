@@ -240,10 +240,11 @@ def main():
         fred = Fred(api_key=os.environ.get("FRED_API_KEY"))
         
         demand_tickers = {
-            "Consumption": "DPCERY2Q224SBEA",
-            "Investment": "A006RY2Q224SBEA",
-            "Government": "A822RY2Q224SBEA",
-            "Net Exports": "A019RY2Q224SBEA",
+            "Consumption": "DPCERL1Q225SBEA",
+            "Investment": "A006RL1Q225SBEA",
+            "Government": "A822RL1Q225SBEA",
+            "Exports": "A019RL1Q225SBEA",
+            "Imports": "A021RL1Q225SBEA",
             "Total GDP Growth": "A191RL1Q225SBEA"
         }
         
@@ -278,7 +279,8 @@ def main():
                 "consumption": {"growth_qoq": round(c_growth_qoq, 4), "contribution_to_gdp": round(c_growth_qoq * 0.68 * 100, 2)},
                 "investment": {"growth_qoq": round(x_growth_qoq, 4), "contribution_to_gdp": round(x_growth_qoq * 0.17 * 100, 2)},
                 "government": {"growth_qoq": round(g_growth_qoq, 4), "contribution_to_gdp": round(g_growth_qoq * 0.18 * 100, 2)},
-                "net_exports": {"contribution_to_gdp": -0.1} # Mocked for simplicity
+                "exports": {"growth_qoq": 0, "contribution_to_gdp": 0},
+                "imports": {"growth_qoq": 0, "contribution_to_gdp": 0}
             },
             "historical_percentiles": {
                 "gdp": compute_historical_percentile(y, y.iloc[-1]),
@@ -322,18 +324,16 @@ def main():
         
         if len(demand_ts) > 0:
             latest_d = demand_ts[-1]
-            # These FRED series are already 'Contributions to Percent Change in Real GDP'
-            # We store them directly as annual percentage point contributions.
-            payload["macro_overview"]["components"]["consumption"]["contribution_to_gdp"] = round(latest_d["Consumption"], 2)
-            payload["macro_overview"]["components"]["investment"]["contribution_to_gdp"] = round(latest_d["Investment"], 2)
-            payload["macro_overview"]["components"]["government"]["contribution_to_gdp"] = round(latest_d["Government"], 2)
-            payload["macro_overview"]["components"]["net_exports"]["contribution_to_gdp"] = round(latest_d["Net Exports"], 2)
-            
-            # For the growth_qoq fields, we'll store a placeholder or calculate it if needed,
-            # but for the KPI cards we will prioritize the contributions.
-            payload["macro_overview"]["components"]["consumption"]["growth_qoq"] = round(latest_d["Consumption"] / 400, 6)
-            payload["macro_overview"]["components"]["investment"]["growth_qoq"] = round(latest_d["Investment"] / 400, 6)
-            payload["macro_overview"]["components"]["government"]["growth_qoq"] = round(latest_d["Government"] / 400, 6)
+            # Consumption, Investment, and Government are now Growth Rates (SAAR)
+            # We store them as QoQ log-differences internally.
+            def to_qoq(saar):
+                return (1 + saar/100)**0.25 - 1
+
+            payload["macro_overview"]["components"]["consumption"]["growth_qoq"] = round(to_qoq(latest_d["Consumption"]), 6)
+            payload["macro_overview"]["components"]["investment"]["growth_qoq"] = round(to_qoq(latest_d["Investment"]), 6)
+            payload["macro_overview"]["components"]["government"]["growth_qoq"] = round(to_qoq(latest_d["Government"]), 6)
+            payload["macro_overview"]["components"]["exports"]["growth_qoq"] = round(to_qoq(latest_d["Exports"]), 6)
+            payload["macro_overview"]["components"]["imports"]["growth_qoq"] = round(to_qoq(latest_d["Imports"]), 6)
     except Exception as e:
         print(f"Warning: Failed to override with BEA headline data: {e}")
 
