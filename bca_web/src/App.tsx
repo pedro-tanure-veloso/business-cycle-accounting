@@ -152,7 +152,6 @@ function App() {
               </div>
             </div>
             <div className="glass-panel kpi-card">
-            <div className="glass-panel kpi-card">
               <span className="kpi-label">Consumption</span>
               <div style={{ display: 'flex', alignItems: 'center' }}>
                 <span className="kpi-value">{annualizeRate(data.macro_overview.components.consumption.growth_qoq).toFixed(1)}%</span>

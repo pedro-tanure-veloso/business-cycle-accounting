@@ -239,13 +239,25 @@ def main():
         from fredapi import Fred
         fred = Fred(api_key=os.environ.get("FRED_API_KEY"))
         
-        demand_tickers = {
+        # Tickers for the stacked bar chart (Contributions to GDP Growth)
+        # Matches BEA Table 1.1.2
+        contrib_tickers = {
             "Consumption": "DPCERY2Q224SBEA",
             "Investment": "A006RY2Q224SBEA",
             "Government": "A822RY2Q224SBEA",
-            "Exports": "A019RY2Q224SBEA",
+            "Exports": "A020RY2Q224SBEA",
             "Imports": "A021RY2Q224SBEA",
             "Total GDP Growth": "A191RL1Q225SBEA"
+        }
+
+        # Tickers for the KPI cards (Growth Rate % Change SAAR)
+        # Matches BEA Table 1.1.1
+        growth_tickers = {
+            "Consumption": "DPCERL1Q225SBEA",
+            "Investment": "A006RL1Q225SBEA",
+            "Government": "A822RL1Q225SBEA",
+            "Exports": "A020RO1Q156NBEA",
+            "Imports": "A021RO1Q156NBEA"
         }
         
         def fetch_recent(tickers):
@@ -265,7 +277,7 @@ def main():
                 data.append(row_dict)
             return data
 
-        demand_ts = fetch_recent(demand_tickers)
+        demand_ts = fetch_recent(contrib_tickers)
         print("Successfully fetched FRED time series for plotting.")
     except Exception as e:
         print(f"Warning: Failed to fetch FRED time series: {e}")
@@ -325,19 +337,24 @@ def main():
         if len(demand_ts) > 0:
             latest_d = demand_ts[-1]
             
-            # KPI Cards: We need Growth Rates (Percent Change) for C, I, G, E, I.
-            # We'll fetch them specifically for the latest quarter since demand_ts is now contributions.
+            # KPI Cards: Use growth_tickers for component-specific growth rates
             try:
-                payload["macro_overview"]["components"]["consumption"]["growth_qoq"] = round(to_qoq(fred.get_series("DPCERL1Q225SBEA").iloc[-1]), 6)
-                payload["macro_overview"]["components"]["investment"]["growth_qoq"] = round(to_qoq(fred.get_series("A006RL1Q225SBEA").iloc[-1]), 6)
-                payload["macro_overview"]["components"]["government"]["growth_qoq"] = round(to_qoq(fred.get_series("A822RL1Q225SBEA").iloc[-1]), 6)
-                payload["macro_overview"]["components"]["exports"]["growth_qoq"] = round(to_qoq(fred.get_series("A019RL1Q225SBEA").iloc[-1]), 6)
-                payload["macro_overview"]["components"]["imports"]["growth_qoq"] = round(to_qoq(fred.get_series("A021RL1Q225SBEA").iloc[-1]), 6)
-            except:
-                pass # Fallback to existing calculations if specific fetch fails
+                def to_qoq(saar):
+                    return (1 + saar/100)**0.25 - 1
 
-            # Time Series Chart: Uses contributions from demand_ts.
-            # No further changes needed here as demand_ts already has Exports/Imports now.
+                payload["macro_overview"]["components"]["consumption"]["growth_qoq"] = round(to_qoq(fred.get_series(growth_tickers["Consumption"]).iloc[-1]), 6)
+                payload["macro_overview"]["components"]["investment"]["growth_qoq"] = round(to_qoq(fred.get_series(growth_tickers["Investment"]).iloc[-1]), 6)
+                payload["macro_overview"]["components"]["government"]["growth_qoq"] = round(to_qoq(fred.get_series(growth_tickers["Government"]).iloc[-1]), 6)
+                payload["macro_overview"]["components"]["exports"]["growth_qoq"] = round(to_qoq(fred.get_series(growth_tickers["Exports"]).iloc[-1]), 6)
+                payload["macro_overview"]["components"]["imports"]["growth_qoq"] = round(to_qoq(fred.get_series(growth_tickers["Imports"]).iloc[-1]), 6)
+            except Exception as e:
+                print(f"Warning: Failed to fetch growth KPIs: {e}")
+
+            # Time Series Chart: Already uses contributions from demand_ts (fetch_recent(contrib_tickers))
+            # Just ensure the latest_quarter payload summary also reflects these contributions
+            payload["macro_overview"]["components"]["consumption"]["contribution_to_gdp"] = round(latest_d["Consumption"], 2)
+            payload["macro_overview"]["components"]["investment"]["contribution_to_gdp"] = round(latest_d["Investment"], 2)
+            payload["macro_overview"]["components"]["government"]["contribution_to_gdp"] = round(latest_d["Government"], 2)
             payload["macro_overview"]["components"]["exports"]["contribution_to_gdp"] = round(latest_d["Exports"], 2)
             payload["macro_overview"]["components"]["imports"]["contribution_to_gdp"] = round(latest_d["Imports"], 2)
     except Exception as e:
