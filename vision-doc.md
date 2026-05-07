@@ -143,10 +143,8 @@ Four subplots, one per wedge (efficiency, labor, investment, government), in sta
 units from their sample means. Recession shading. Annotate the current quarter value and its
 historical percentile.
 
-**Panel 2B — f-statistics: current recession window.**
-A stacked bar chart showing, for each of output, labor, and investment, the share of movement
-explained by each wedge. The recession window is user-selectable: default to the most recent NBER
-recession if ongoing, otherwise let the user select start and end quarters.
+**Panel 2B — Share of Output Fluctuation Explained by Wedge.**
+A stacked bar chart showing, for each wedge, its contribution to output movement. The evaluation window is dynamically set to track the current business cycle regime (e.g., post-2024Q1) rather than the entire historical sample. This provides current-cycle diagnostics instead of retrospective historical analysis.
 
 This is the central panel of the app.
 
@@ -177,42 +175,8 @@ This is the central panel of the app.
 For each of output, labor, and investment: the actual data series plus the four single-wedge
 counterfactual paths, as in BCKM Figure 2. Indexed to 100 at the start of the selected window.
 
-**Panel 2D — Historical comparison.**
-A table showing the f-statistics for the current episode alongside the same statistics for major
-historical US recessions. Lets the user answer: does the current wedge configuration look more
-like 2008 or more like 2020?
-
-| Episode | fY(eff) | fY(labor) | fY(inv) | fY(gov) | Window |
-|---------|---------|-----------|---------|---------|--------|
-| 1981–82 | 0.31 | 0.26 | 0.29 | 0.14 | 1981Q3–1985Q2 |
-| 1990–91 | 0.36 | 0.18 | 0.33 | 0.13 | 1990Q3–1994Q2 |
-| 2001    | 0.06 | 0.59 | 0.21 | 0.14 | 2001Q1–2004Q4 |
-| 2008–09 | 0.21 | 0.43 | 0.27 | 0.08 | 2007Q4–2011Q3 |
-| 2020    | 0.21 | 0.36 | 0.21 | 0.22 | 2020Q1–2022Q4 |
-| **Current** | **—** | **—** | **—** | **—** | |
-
-*Statistic: `f_statistics_bckm` (level-ratio, anchored at NBER peak). Window:
-NBER peak + 16 quarters (recession + initial recovery) for all pre-COVID
-episodes — consistent with BCKM Table 11's 2008Q1–2011Q4 choice. The 2020
-episode uses 12 quarters (2020Q1–2022Q4) because the COVID recovery was
-largely complete by end-2022; extending to 2023Q4 mixes in post-recovery
-dynamics. Pre-COVID values use the 1980Q1–2014Q4 MLE; 2020 uses the
-2010Q1–2023Q4 pre-COVID-fit MLE. The 2008–09 fY(labor) = 0.43 matches
-BCKM's published 0.46 closely (residual gap is our MLE vs BCKM's published
-θ, per `bckm_replication/REPORT.md`). "Current" is populated by the BCA
-engine at each quarterly NIPA update. Source:
-`scripts/compute_historical_phi_stats.py`.*
-
-**What the table tells you.** The 1981–82 recession is a three-way split
-(Volcker disinflation + oil shock + credit crunch — no single wedge dominates).
-The 1990–91 recession has a similar mixed profile. The 2001 recession is
-strongly labor-wedge-led over the 4-year window — the dot-com bust produced
-a prolonged jobless recovery that shows up here. The 2008–09 recession is
-the canonical labor-wedge recession (consistent with BCKM's headline finding),
-with a secondary investment wedge role. The 2020 episode has a more even
-four-way distribution: the labor and efficiency wedges are co-important, the
-government wedge is elevated (fiscal response + net-export swings), and the
-investment wedge is smaller than in 2008.
+**Panel 2D — (Deprecated) Historical comparison.**
+*Note: This panel has been deprecated and replaced by the high-fidelity `cf_time_series` line charts (Panel 2C) to keep the dashboard focused purely on the current cycle's structural drivers.*
 
 ---
 
@@ -361,7 +325,7 @@ Generate structured hypotheses as specified.
 - **The reference table is always included in full** (~600 tokens). It is small enough that retrieval adds complexity without benefit.
 - **The prompt asks for falsifiable indicators.** A hypothesis that cannot be disconfirmed is not useful.
 - **One call per quarter, response cached.** Do not re-run the LLM on demand — cache the response until the next quarterly NIPA trigger.
-- **Model:** use the Gemini 3.1 Pro (High) model, updated at each quarterly run so the world-knowledge assumption remains as valid as possible. Display the model name and approximate knowledge cutoff in the UI.
+- **Model:** use the Gemini 2.5 Flash model (or similar latest endpoint) due to experimental API free-tier quotas. It provides high-speed generation with minimal rate limiting, while still retaining excellent macro understanding. Display the model name in the UI.
 
 ---
 
