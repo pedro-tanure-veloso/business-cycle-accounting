@@ -207,13 +207,22 @@ function App() {
                         return order.indexOf(item.name || "");
                       }}
                     />
-                    <Legend />
                     <Bar dataKey="Consumption" stackId="a" fill="#3b82f6" />
                     <Bar dataKey="Investment" stackId="a" fill="#8b5cf6" />
                     <Bar dataKey="Government" stackId="a" fill="#10b981" />
                     <Bar dataKey="Exports" stackId="a" fill="#f59e0b" />
                     <Bar dataKey="Imports" stackId="a" fill="#ef4444" />
                     <Line type="monotone" dataKey="Total GDP Growth" stroke="#ffffff" strokeWidth={2} dot={{ r: 3, fill: '#ffffff' }} />
+                    <Legend 
+                      payload={[
+                        { value: 'Consumption', type: 'rect', id: 'Consumption', color: '#3b82f6' },
+                        { value: 'Investment', type: 'rect', id: 'Investment', color: '#8b5cf6' },
+                        { value: 'Government', type: 'rect', id: 'Government', color: '#10b981' },
+                        { value: 'Exports', type: 'rect', id: 'Exports', color: '#f59e0b' },
+                        { value: 'Imports', type: 'rect', id: 'Imports', color: '#ef4444' },
+                        { value: 'Total GDP Growth', type: 'line', id: 'Total GDP Growth', color: '#ffffff' }
+                      ]}
+                    />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
