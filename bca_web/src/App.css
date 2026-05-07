@@ -205,3 +205,34 @@
   font-size: 0.875rem;
   margin-top: 2rem;
 }
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .main-content {
+    padding: 1rem;
+    gap: 2rem;
+  }
+
+  .grid-2, .grid-4, .grid-5 {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-value {
+    font-size: 2rem;
+  }
+
+  .glass-panel {
+    padding: 1.25rem 1rem;
+  }
+
+  .ai-warning {
+    align-items: flex-start;
+  }
+}
