@@ -55,6 +55,7 @@ interface BCAData {
       Efficiency: number;
       Labor: number;
       Investment: number;
+      Government: number;
     }>;
   };
   hypothesis_layer: {
@@ -247,6 +248,7 @@ function App() {
                     <Line type="monotone" dataKey="Efficiency" stroke="#3b82f6" strokeDasharray="5 5" strokeWidth={2} dot={false} />
                     <Line type="monotone" dataKey="Labor" stroke="#10b981" strokeDasharray="3 4 5 4" strokeWidth={2} dot={false} />
                     <Line type="monotone" dataKey="Investment" stroke="#8b5cf6" strokeDasharray="1 3" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="Government" stroke="#f59e0b" strokeDasharray="2 2" strokeWidth={2} dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

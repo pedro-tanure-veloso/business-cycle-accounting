@@ -220,6 +220,7 @@ def main():
         eff_level = to_level(r["cfs"]["efficiency"]["y"], phi_start_idx)
         lab_level = to_level(r["cfs"]["labor"]["y"], phi_start_idx)
         inv_level = to_level(r["cfs"]["investment"]["y"], phi_start_idx)
+        gov_level = to_level(r["cfs"]["government"]["y"], phi_start_idx)
         
         for i, d in enumerate(sub_dates):
             cf_ts.append({
@@ -227,7 +228,8 @@ def main():
                 "Data": float(round(data_level[i], 2)),
                 "Efficiency": float(round(eff_level[i], 2)),
                 "Labor": float(round(lab_level[i], 2)),
-                "Investment": float(round(inv_level[i], 2))
+                "Investment": float(round(inv_level[i], 2)),
+                "Government": float(round(gov_level[i], 2))
             })
 
     # 4.5 Fetch Income/Supply optics and Time Series from FRED
