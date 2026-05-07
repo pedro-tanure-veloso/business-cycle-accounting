@@ -240,11 +240,11 @@ def main():
         fred = Fred(api_key=os.environ.get("FRED_API_KEY"))
         
         demand_tickers = {
-            "Consumption": "DPCERL1Q225SBEA",
-            "Investment": "A006RL1Q225SBEA",
-            "Government": "A822RL1Q225SBEA",
-            "Exports": "A019RL1Q225SBEA",
-            "Imports": "A021RL1Q225SBEA",
+            "Consumption": "DPCERY2Q224SBEA",
+            "Investment": "A006RY2Q224SBEA",
+            "Government": "A822RY2Q224SBEA",
+            "Exports": "A019RY2Q224SBEA",
+            "Imports": "A021RY2Q224SBEA",
             "Total GDP Growth": "A191RL1Q225SBEA"
         }
         
@@ -324,16 +324,22 @@ def main():
         
         if len(demand_ts) > 0:
             latest_d = demand_ts[-1]
-            # Consumption, Investment, and Government are now Growth Rates (SAAR)
-            # We store them as QoQ log-differences internally.
-            def to_qoq(saar):
-                return (1 + saar/100)**0.25 - 1
+            
+            # KPI Cards: We need Growth Rates (Percent Change) for C, I, G, E, I.
+            # We'll fetch them specifically for the latest quarter since demand_ts is now contributions.
+            try:
+                payload["macro_overview"]["components"]["consumption"]["growth_qoq"] = round(to_qoq(fred.get_series("DPCERL1Q225SBEA").iloc[-1]), 6)
+                payload["macro_overview"]["components"]["investment"]["growth_qoq"] = round(to_qoq(fred.get_series("A006RL1Q225SBEA").iloc[-1]), 6)
+                payload["macro_overview"]["components"]["government"]["growth_qoq"] = round(to_qoq(fred.get_series("A822RL1Q225SBEA").iloc[-1]), 6)
+                payload["macro_overview"]["components"]["exports"]["growth_qoq"] = round(to_qoq(fred.get_series("A019RL1Q225SBEA").iloc[-1]), 6)
+                payload["macro_overview"]["components"]["imports"]["growth_qoq"] = round(to_qoq(fred.get_series("A021RL1Q225SBEA").iloc[-1]), 6)
+            except:
+                pass # Fallback to existing calculations if specific fetch fails
 
-            payload["macro_overview"]["components"]["consumption"]["growth_qoq"] = round(to_qoq(latest_d["Consumption"]), 6)
-            payload["macro_overview"]["components"]["investment"]["growth_qoq"] = round(to_qoq(latest_d["Investment"]), 6)
-            payload["macro_overview"]["components"]["government"]["growth_qoq"] = round(to_qoq(latest_d["Government"]), 6)
-            payload["macro_overview"]["components"]["exports"]["growth_qoq"] = round(to_qoq(latest_d["Exports"]), 6)
-            payload["macro_overview"]["components"]["imports"]["growth_qoq"] = round(to_qoq(latest_d["Imports"]), 6)
+            # Time Series Chart: Uses contributions from demand_ts.
+            # No further changes needed here as demand_ts already has Exports/Imports now.
+            payload["macro_overview"]["components"]["exports"]["contribution_to_gdp"] = round(latest_d["Exports"], 2)
+            payload["macro_overview"]["components"]["imports"]["contribution_to_gdp"] = round(latest_d["Imports"], 2)
     except Exception as e:
         print(f"Warning: Failed to override with BEA headline data: {e}")
 
