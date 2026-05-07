@@ -200,7 +200,13 @@ function App() {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
                     <XAxis dataKey="quarter" stroke="var(--text-muted)" fontSize={10} tick={{ fontSize: 10 }} />
                     <YAxis stroke="var(--text-muted)" fontSize={10} tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} 
+                      itemSorter={(item) => {
+                        const order = ["Consumption", "Investment", "Government", "Exports", "Imports"];
+                        return order.indexOf(item.name || "");
+                      }}
+                    />
                     <Legend />
                     <Bar dataKey="Consumption" stackId="a" fill="#3b82f6" />
                     <Bar dataKey="Investment" stackId="a" fill="#8b5cf6" />
