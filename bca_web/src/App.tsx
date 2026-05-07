@@ -107,8 +107,8 @@ function App() {
             <Activity size={24} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-            <h1 className="brand-title" style={{ whiteSpace: 'nowrap' }}>BCA Monitor</h1>
-            <span className="brand-subtitle">US Structural Snapshot</span>
+            <h1 className="brand-title">Business Cycle Monitor</h1>
+            <span className="brand-subtitle">US Quarterly Structural Snapshot</span>
           </div>
         </div>
         <div className="header-status">
