@@ -34,8 +34,12 @@ recession is roughly 46% from the labor wedge.
 
 The project is a Python port of the published Matlab replication code by Brinca,
 Chari, Kehoe, and McGrattan (2016). It is validated against the paper's published
-results (Layer 1) and against a COVID-era out-of-sample window (Layer 2). A web
-application (FastAPI backend + React front end) is the planned next deliverable.
+results (Layer 1) and against a COVID-era out-of-sample window (Layer 2).
+
+A high-fidelity web application (**BCA Monitor**) is the primary interface for this project. 
+It uses a static React frontend to visualize structural findings and an AI Hypothesis Layer 
+(Gemini) to interpret them for human analysts. An automated quarterly pipeline (GitHub Actions) 
+ensures the dashboard is always up to date with the latest BEA/FRED releases.
 
 ---
 
@@ -162,8 +166,11 @@ fully expanded.
 | Optimizer | `scipy.optimize.minimize` with L-BFGS-B method |
 | QZ decomposition | `scipy.linalg.qz` (Klein 2000 solver) |
 | DARE | `scipy.linalg.solve_discrete_are` |
-| Data API | `fredapi` ≥ 0.5 (FRED); `requests` (BEA REST, thin wrapper) |
-| Testing | pytest ≥ 7.0 |
+| Data API | `fredapi` ≥ 0.5 (FRED) |
+| **Web UI** | **React 18, Vite, Recharts, Lucide Icons, Vanilla CSS** |
+| **Hypothesis Layer**| **Gemini 2.5 Flash** (via `google-genai` Python SDK) |
+| **Hosting** | **Vercel** (Automatic rebuilds on push) |
+| **Automation** | **GitHub Actions** (Triggered 1st of every month or manually) |
 | Caching | Content-addressed pickle keyed by SHA-256 of inputs; 90-day FRED disk cache under `~/.bca_cache/fred/` |
 
 ---
@@ -261,6 +268,20 @@ data_hat + counterfactual paths  →  phi_statistics()
                                          →  f_statistics_bckm()  [Table 11 formula]
   Level-ratio SSR over the Great Recession window (2008Q1–2011Q4):
     fY_j = (1/SSR_j_level) / Σ_k (1/SSR_k_level)
+
+### Step 6 — Dashboard Generation (`scripts/build_quarterly_data.py`)
+```
+stats_payload  →  Gemini 2.5 Flash (LLM)  →  Qualitative structural hypotheses
+               →  Latest FRED headline data  →  Real-time growth optics
+               →  JSON Export (latest_quarter.json)
+```
+
+### Step 7 — Frontend Visualization (`bca_web/`)
+```
+latest_quarter.json  →  React State  →  Recharts Line/ComposedCharts
+                                    →  Glassmorphism Metric Cards
+                                    →  AI Hypothesis Layer Component
+```
 ```
 
 ---
@@ -359,6 +380,9 @@ Q:    4×4 lower-triangular Cholesky factor of shock covariance V = Q·Qᵀ
 | `bca_core/data/adjustments.py` | BCKM data adjustments (durables, sales tax, labor, calgz) | `reclassify_durables`, `compute_labor_input`, `remove_trend` |
 | `bca_core/data/fred.py` | FRED series fetcher with 90-day disk cache | `FredDataFetcher` |
 | `bca_core/data/bea.py` | BEA NIPA + Fixed Assets fetcher (diagnostic opt-in) | `BeaDataFetcher` |
+| `scripts/build_quarterly_data.py` | **Automated Data Exporter** — Orchestrates Layer 2 + LLM + FRED for dashboard usage | `generate_hypotheses`, `main` |
+| `bca_web/src/App.tsx` | **Main Dashboard Controller** — Responsible for data fetching, chart rendering, and AI logic | `App` Component |
+| `.github/workflows/update_data.yml` | **CI/CD Workflow** — Schedules monthly runs of `build_quarterly_data.py` | — |
 
 ---
 

@@ -28,10 +28,23 @@ from bca_core.data.pipeline import build_us_dataset
 from scripts.run_bca import run_pipeline, phi_statistics
 
 def compute_historical_percentile(series: pd.Series, current_val: float) -> int:
+    """
+    Computes the percentile rank of the current value relative to the historical series.
+    Used for the 'Historical Context' indicators in the dashboard.
+    """
     return int((series < current_val).mean() * 100)
 
 def generate_hypotheses(stats_payload: dict, gemini_api_key: str) -> dict:
-    """Call Gemini 3.1 Pro (High) to generate the hypothesis layer."""
+    """
+    Orchestrates the AI Hypothesis Layer by sending structural BCA findings to Gemini.
+    
+    Args:
+        stats_payload: A dictionary containing the current quarter's macro and wedge stats.
+        gemini_api_key: The API key for Google GenAI.
+        
+    Returns:
+        A dictionary following the hypothesis schema (pattern, mechanisms, indicator-to-watch).
+    """
     try:
         from google import genai
         from google.genai import types
@@ -156,7 +169,12 @@ def main():
     lg = states[:, 4]
 
     # z-scores for current level
+    # Helper to calculate z-scores and trends for wedges
     def get_z_stats(series, name):
+        """
+        Calculates standard deviation from the mean, historical percentile, 
+        and a 'trend' label (improved/worsened) for a given structural wedge series.
+        """
         val = series[-1]
         mean = np.mean(series)
         sd = np.std(series)
@@ -193,6 +211,8 @@ def main():
         mask = slice(phi_start_idx, len(dates))
         sub_dates = dates[mask]
         
+        # Convert log-differences back to levels (anchored at 100 at the start of the window)
+        # for high-fidelity visualization in the React dashboard.
         def to_level(series_log, anchor_idx):
             return 100.0 * np.exp(series_log[mask] - series_log[anchor_idx])
 
