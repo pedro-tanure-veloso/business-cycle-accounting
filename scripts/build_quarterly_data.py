@@ -322,10 +322,18 @@ def main():
         
         if len(demand_ts) > 0:
             latest_d = demand_ts[-1]
-            payload["macro_overview"]["components"]["consumption"]["growth_qoq"] = round((1 + latest_d["Consumption"]/100)**0.25 - 1, 6)
-            payload["macro_overview"]["components"]["investment"]["growth_qoq"] = round((1 + latest_d["Investment"]/100)**0.25 - 1, 6)
-            payload["macro_overview"]["components"]["government"]["growth_qoq"] = round((1 + latest_d["Government"]/100)**0.25 - 1, 6)
-            payload["macro_overview"]["components"]["net_exports"]["contribution_to_gdp"] = round(latest_d["Net Exports"] / 400, 6)
+            # These FRED series are already 'Contributions to Percent Change in Real GDP'
+            # We store them directly as annual percentage point contributions.
+            payload["macro_overview"]["components"]["consumption"]["contribution_to_gdp"] = round(latest_d["Consumption"], 2)
+            payload["macro_overview"]["components"]["investment"]["contribution_to_gdp"] = round(latest_d["Investment"], 2)
+            payload["macro_overview"]["components"]["government"]["contribution_to_gdp"] = round(latest_d["Government"], 2)
+            payload["macro_overview"]["components"]["net_exports"]["contribution_to_gdp"] = round(latest_d["Net Exports"], 2)
+            
+            # For the growth_qoq fields, we'll store a placeholder or calculate it if needed,
+            # but for the KPI cards we will prioritize the contributions.
+            payload["macro_overview"]["components"]["consumption"]["growth_qoq"] = round(latest_d["Consumption"] / 400, 6)
+            payload["macro_overview"]["components"]["investment"]["growth_qoq"] = round(latest_d["Investment"] / 400, 6)
+            payload["macro_overview"]["components"]["government"]["growth_qoq"] = round(latest_d["Government"] / 400, 6)
     except Exception as e:
         print(f"Warning: Failed to override with BEA headline data: {e}")
 

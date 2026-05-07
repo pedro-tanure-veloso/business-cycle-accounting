@@ -151,30 +151,30 @@ function App() {
               </div>
             </div>
             <div className="glass-panel kpi-card">
-              <span className="kpi-label">Consumption</span>
+              <span className="kpi-label">Consumption Contrib.</span>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span className="kpi-value">{annualizeRate(data.macro_overview.components.consumption.growth_qoq).toFixed(1)}%</span>
-                {renderArrow(data.macro_overview.components.consumption.growth_qoq)}
+                <span className="kpi-value">{data.macro_overview.components.consumption.contribution_to_gdp.toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.components.consumption.contribution_to_gdp)}
               </div>
             </div>
             <div className="glass-panel kpi-card">
-              <span className="kpi-label">Investment</span>
+              <span className="kpi-label">Investment Contrib.</span>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span className="kpi-value">{annualizeRate(data.macro_overview.components.investment.growth_qoq).toFixed(1)}%</span>
-                {renderArrow(data.macro_overview.components.investment.growth_qoq)}
+                <span className="kpi-value">{data.macro_overview.components.investment.contribution_to_gdp.toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.components.investment.contribution_to_gdp)}
               </div>
             </div>
             <div className="glass-panel kpi-card">
-              <span className="kpi-label">Government</span>
+              <span className="kpi-label">Gov. Contribution</span>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span className="kpi-value">{annualizeRate(data.macro_overview.components.government.growth_qoq).toFixed(1)}%</span>
-                {renderArrow(data.macro_overview.components.government.growth_qoq)}
+                <span className="kpi-value">{data.macro_overview.components.government.contribution_to_gdp.toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.components.government.contribution_to_gdp)}
               </div>
             </div>
             <div className="glass-panel kpi-card">
-              <span className="kpi-label">Net Exports</span>
+              <span className="kpi-label">Net Export Contrib.</span>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span className="kpi-value">{annualizeContrib(data.macro_overview.components.net_exports.contribution_to_gdp).toFixed(1)}%</span>
+                <span className="kpi-value">{data.macro_overview.components.net_exports.contribution_to_gdp.toFixed(1)}%</span>
                 {renderArrow(data.macro_overview.components.net_exports.contribution_to_gdp)}
               </div>
             </div>
