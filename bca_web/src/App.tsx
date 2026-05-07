@@ -200,29 +200,38 @@ function App() {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
                     <XAxis dataKey="quarter" stroke="var(--text-muted)" fontSize={10} tick={{ fontSize: 10 }} />
                     <YAxis stroke="var(--text-muted)" fontSize={10} tick={{ fontSize: 10 }} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} 
-                      itemSorter={(item) => {
-                        const order = ["Consumption", "Investment", "Government", "Exports", "Imports"];
-                        return order.indexOf(item.name || "");
-                      }}
-                    />
-                    <Bar dataKey="Consumption" stackId="a" fill="#3b82f6" />
-                    <Bar dataKey="Investment" stackId="a" fill="#8b5cf6" />
-                    <Bar dataKey="Government" stackId="a" fill="#10b981" />
-                    <Bar dataKey="Exports" stackId="a" fill="#f59e0b" />
-                    <Bar dataKey="Imports" stackId="a" fill="#ef4444" />
+                    <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} />
+                    <Legend content={(props) => {
+                      const items = [
+                        { label: 'Consumption', color: '#3b82f6' },
+                        { label: 'Investment', color: '#8b5cf6' },
+                        { label: 'Government', color: '#10b981' },
+                        { label: 'Exports', color: '#f59e0b' },
+                        { label: 'Imports', color: '#ef4444' },
+                        { label: 'Total GDP Growth', color: '#ffffff', isLine: true }
+                      ];
+                      return (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '1.5rem', marginTop: '1rem', fontSize: '0.75rem' }}>
+                          {items.map(item => (
+                            <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <div style={{ 
+                                width: item.isLine ? '12px' : '8px', 
+                                height: item.isLine ? '2px' : '8px', 
+                                backgroundColor: item.color,
+                                borderRadius: item.isLine ? '0' : '2px'
+                              }}></div>
+                              <span style={{ color: 'var(--text-muted)' }}>{item.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    }} />
+                    <Bar dataKey="A_Consumption" name="Consumption" stackId="a" fill="#3b82f6" />
+                    <Bar dataKey="B_Investment" name="Investment" stackId="a" fill="#8b5cf6" />
+                    <Bar dataKey="C_Government" name="Government" stackId="a" fill="#10b981" />
+                    <Bar dataKey="D_Exports" name="Exports" stackId="a" fill="#f59e0b" />
+                    <Bar dataKey="E_Imports" name="Imports" stackId="a" fill="#ef4444" />
                     <Line type="monotone" dataKey="Total GDP Growth" stroke="#ffffff" strokeWidth={2} dot={{ r: 3, fill: '#ffffff' }} />
-                    <Legend 
-                      payload={[
-                        { value: 'Consumption', type: 'rect', id: 'Consumption', color: '#3b82f6' },
-                        { value: 'Investment', type: 'rect', id: 'Investment', color: '#8b5cf6' },
-                        { value: 'Government', type: 'rect', id: 'Government', color: '#10b981' },
-                        { value: 'Exports', type: 'rect', id: 'Exports', color: '#f59e0b' },
-                        { value: 'Imports', type: 'rect', id: 'Imports', color: '#ef4444' },
-                        { value: 'Total GDP Growth', type: 'line', id: 'Total GDP Growth', color: '#ffffff' }
-                      ]}
-                    />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>

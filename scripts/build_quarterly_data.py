@@ -272,8 +272,16 @@ def main():
             
             data = []
             for q, row in df.iterrows():
-                row_dict = row.to_dict()
-                row_dict["quarter"] = q
+                # Force specific key order using prefixes to bypass automatic library sorting
+                row_dict = {
+                    "A_Consumption": float(round(row["Consumption"], 2)),
+                    "B_Investment": float(round(row["Investment"], 2)),
+                    "C_Government": float(round(row["Government"], 2)),
+                    "D_Exports": float(round(row["Exports"], 2)),
+                    "E_Imports": float(round(row["Imports"], 2)),
+                    "Total GDP Growth": float(round(row["Total GDP Growth"], 2)),
+                    "quarter": q
+                }
                 data.append(row_dict)
             return data
 
@@ -352,11 +360,11 @@ def main():
 
             # Time Series Chart: Already uses contributions from demand_ts (fetch_recent(contrib_tickers))
             # Just ensure the latest_quarter payload summary also reflects these contributions
-            payload["macro_overview"]["components"]["consumption"]["contribution_to_gdp"] = round(latest_d["Consumption"], 2)
-            payload["macro_overview"]["components"]["investment"]["contribution_to_gdp"] = round(latest_d["Investment"], 2)
-            payload["macro_overview"]["components"]["government"]["contribution_to_gdp"] = round(latest_d["Government"], 2)
-            payload["macro_overview"]["components"]["exports"]["contribution_to_gdp"] = round(latest_d["Exports"], 2)
-            payload["macro_overview"]["components"]["imports"]["contribution_to_gdp"] = round(latest_d["Imports"], 2)
+            payload["macro_overview"]["components"]["consumption"]["contribution_to_gdp"] = round(latest_d["A_Consumption"], 2)
+            payload["macro_overview"]["components"]["investment"]["contribution_to_gdp"] = round(latest_d["B_Investment"], 2)
+            payload["macro_overview"]["components"]["government"]["contribution_to_gdp"] = round(latest_d["C_Government"], 2)
+            payload["macro_overview"]["components"]["exports"]["contribution_to_gdp"] = round(latest_d["D_Exports"], 2)
+            payload["macro_overview"]["components"]["imports"]["contribution_to_gdp"] = round(latest_d["E_Imports"], 2)
     except Exception as e:
         print(f"Warning: Failed to override with BEA headline data: {e}")
 
