@@ -106,9 +106,9 @@ function App() {
           <div className="brand-icon">
             <Activity size={24} />
           </div>
-          <div>
-            <h1 className="brand-title">Business Cycle Monitor</h1>
-            <span className="brand-subtitle">US Quarterly Structural Snapshot</span>
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <h1 className="brand-title" style={{ whiteSpace: 'nowrap' }}>BCA Monitor</h1>
+            <span className="brand-subtitle">US Structural Snapshot</span>
           </div>
         </div>
         <div className="header-status">
@@ -173,10 +173,10 @@ function App() {
               <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>Demand Contributions to Growth</h3>
               <div className="chart-container">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={data.time_series.demand_contributions} stackOffset="sign" margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                  <ComposedChart data={data.time_series.demand_contributions} stackOffset="sign" margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
-                    <XAxis dataKey="quarter" stroke="var(--text-muted)" fontSize={12} />
-                    <YAxis stroke="var(--text-muted)" fontSize={12} />
+                    <XAxis dataKey="quarter" stroke="var(--text-muted)" fontSize={10} tick={{ fontSize: 10 }} />
+                    <YAxis stroke="var(--text-muted)" fontSize={10} tick={{ fontSize: 10 }} />
                     <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} />
                     <Legend />
                     <Bar dataKey="Consumption" stackId="a" fill="#3b82f6" />
@@ -223,10 +223,10 @@ function App() {
               
               <div style={{ flex: 1, minHeight: '250px', marginBottom: '1.5rem', minWidth: 0 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data.wedge_decomposition.cf_time_series} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                  <LineChart data={data.wedge_decomposition.cf_time_series} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
-                    <XAxis dataKey="quarter" stroke="var(--text-muted)" fontSize={12} />
-                    <YAxis stroke="var(--text-muted)" fontSize={12} domain={['auto', 'auto']} />
+                    <XAxis dataKey="quarter" stroke="var(--text-muted)" fontSize={10} tick={{ fontSize: 10 }} />
+                    <YAxis stroke="var(--text-muted)" fontSize={10} domain={['auto', 'auto']} tick={{ fontSize: 10 }} />
                     <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} />
                     <Legend />
                     <Line type="monotone" dataKey="Data" stroke="#ffffff" strokeWidth={3} dot={false} />
