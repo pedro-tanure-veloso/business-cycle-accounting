@@ -4,16 +4,19 @@ import {
   AlertTriangle, Clock, ActivitySquare
 } from 'lucide-react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line
+  BarChart, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, Legend
 } from 'recharts';
 import './App.css';
 
 // Mock types for the JSON data contract
 interface BCAData {
   quarter: string;
+  macro_quarter: string;
   macro_overview: {
     gdp_growth_qoq: number;
+    gdi_growth_qoq: number;
+    supply_growth_qoq: number;
     gdp_growth_yoy: number;
     components: {
       consumption: { growth_qoq: number; contribution_to_gdp: number };
@@ -26,6 +29,10 @@ interface BCAData {
       investment: number;
       consumption: number;
     };
+  };
+  time_series: {
+    demand_contributions: Array<{ quarter: string; Consumption: number; Investment: number; Government: number; "Net Exports": number; "Total GDP Growth": number }>;
+    supply_contributions: Array<{ quarter: string; Goods: number; Services: number; Government: number }>;
   };
   wedge_decomposition: {
     current_levels: Record<string, { sd_from_mean: number; percentile: number; trend: string }>;
@@ -81,11 +88,14 @@ function App() {
     value: value * 100 // convert to percentage
   }));
 
-  const renderTrend = (value: number) => {
+  const renderArrow = (value: number) => {
     return value >= 0 
-      ? <span className="kpi-change positive"><TrendingUp size={16} /> +{(value * 100).toFixed(1)}%</span>
-      : <span className="kpi-change negative"><TrendingDown size={16} /> {(value * 100).toFixed(1)}%</span>;
+      ? <TrendingUp size={28} color="var(--success)" style={{ marginLeft: '0.5rem' }} />
+      : <TrendingDown size={28} color="var(--danger)" style={{ marginLeft: '0.5rem' }} />;
   };
+
+  const annualizeRate = (val: number) => (Math.pow(1 + val, 4) - 1) * 100;
+  const annualizeContrib = (val: number) => val * 4;
 
   return (
     <div className="app-container">
@@ -102,7 +112,7 @@ function App() {
         </div>
         <div className="header-status">
           <div className="status-dot"></div>
-          <span>Updated: {data.quarter} (NIPA Release)</span>
+          <span>Updated: {data.macro_quarter || data.quarter} (NIPA Release)</span>
         </div>
       </header>
 
@@ -116,26 +126,73 @@ function App() {
             <div className="section-divider"></div>
           </div>
           
-          <div className="grid-4">
+          <div className="grid-5">
             <div className="glass-panel kpi-card">
-              <span className="kpi-label">GDP Growth (QoQ)</span>
-              <span className="kpi-value">{(data.macro_overview.gdp_growth_qoq * 100).toFixed(1)}%</span>
-              {renderTrend(data.macro_overview.gdp_growth_qoq)}
+              <span className="kpi-label">GDP Growth</span>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span className="kpi-value">{annualizeRate(data.macro_overview.gdp_growth_qoq).toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.gdp_growth_qoq)}
+              </div>
             </div>
             <div className="glass-panel kpi-card">
-              <span className="kpi-label">Consumption Growth</span>
-              <span className="kpi-value">{(data.macro_overview.components.consumption.growth_qoq * 100).toFixed(1)}%</span>
-              {renderTrend(data.macro_overview.components.consumption.growth_qoq)}
+              <span className="kpi-label">Consumption</span>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span className="kpi-value">{annualizeRate(data.macro_overview.components.consumption.growth_qoq).toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.components.consumption.growth_qoq)}
+              </div>
             </div>
             <div className="glass-panel kpi-card">
-              <span className="kpi-label">Investment Growth</span>
-              <span className="kpi-value">{(data.macro_overview.components.investment.growth_qoq * 100).toFixed(1)}%</span>
-              {renderTrend(data.macro_overview.components.investment.growth_qoq)}
+              <span className="kpi-label">Investment</span>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span className="kpi-value">{annualizeRate(data.macro_overview.components.investment.growth_qoq).toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.components.investment.growth_qoq)}
+              </div>
             </div>
             <div className="glass-panel kpi-card">
-              <span className="kpi-label">Historical Percentile (GDP)</span>
-              <span className="kpi-value">{data.macro_overview.historical_percentiles.gdp}th</span>
-              <span className="kpi-change text-muted">Since 1980</span>
+              <span className="kpi-label">Government</span>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span className="kpi-value">{annualizeRate(data.macro_overview.components.government.growth_qoq).toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.components.government.growth_qoq)}
+              </div>
+            </div>
+            <div className="glass-panel kpi-card">
+              <span className="kpi-label">Net Exports</span>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span className="kpi-value">{annualizeContrib(data.macro_overview.components.net_exports.contribution_to_gdp).toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.components.net_exports.contribution_to_gdp)}
+              </div>
+            </div>
+            <div className="glass-panel kpi-card">
+              <span className="kpi-label">Income Optic (GDI)</span>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span className="kpi-value">{annualizeRate(data.macro_overview.gdi_growth_qoq).toFixed(1)}%</span>
+                {renderArrow(data.macro_overview.gdi_growth_qoq)}
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop: '1rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+            * Note: All macro overview figures represent QoQ annualized rates or contributions to GDP.
+          </div>
+
+          <div style={{ marginTop: '2rem' }}>
+            <div className="glass-panel">
+              <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>Demand Contributions to Growth</h3>
+              <div className="chart-container">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={data.time_series.demand_contributions} stackOffset="sign" margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
+                    <XAxis dataKey="quarter" stroke="var(--text-muted)" fontSize={12} />
+                    <YAxis stroke="var(--text-muted)" fontSize={12} />
+                    <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} />
+                    <Legend />
+                    <Bar dataKey="Consumption" stackId="a" fill="#3b82f6" />
+                    <Bar dataKey="Investment" stackId="a" fill="#8b5cf6" />
+                    <Bar dataKey="Government" stackId="a" fill="#10b981" />
+                    <Bar dataKey="Net Exports" stackId="a" fill="#f59e0b" />
+                    <Line type="monotone" dataKey="Total GDP Growth" stroke="#ffffff" strokeWidth={2} dot={{ r: 3, fill: '#ffffff' }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         </section>
@@ -147,13 +204,16 @@ function App() {
             <h2 className="section-title">Wedge Decomposition</h2>
             <div className="section-divider"></div>
           </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1.5rem', fontStyle: 'italic' }}>
+            * Note: Structural wedges are reported up to {data.quarter} due to auxiliary data release lags.
+          </div>
 
           <div className="grid-2">
             <div className="glass-panel">
               <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>f-Statistics: Output Explained by Wedge</h3>
               <div className="chart-container">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={phiChartData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                  <BarChart data={phiChartData} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" horizontal={true} vertical={false} />
                     <XAxis type="number" unit="%" stroke="var(--text-muted)" />
                     <YAxis dataKey="name" type="category" stroke="var(--text-muted)" />

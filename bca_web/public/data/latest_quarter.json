@@ -1,0 +1,251 @@
+{
+  "quarter": "2025Q3",
+  "macro_overview": {
+    "gdp_growth_qoq": 0.004963,
+    "gdi_growth_qoq": 0.0064,
+    "supply_growth_qoq": 0.004963,
+    "gdp_growth_yoy": -0.009,
+    "components": {
+      "consumption": {
+        "growth_qoq": 0.002689,
+        "contribution_to_gdp": 0.06
+      },
+      "investment": {
+        "growth_qoq": 0.00368,
+        "contribution_to_gdp": -0.02
+      },
+      "government": {
+        "growth_qoq": 0.00182,
+        "contribution_to_gdp": 0.1
+      },
+      "net_exports": {
+        "contribution_to_gdp": -0.00325
+      }
+    },
+    "historical_percentiles": {
+      "gdp": 62,
+      "investment": 36,
+      "consumption": 76
+    }
+  },
+  "time_series": {
+    "demand_contributions": [
+      {
+        "Consumption": 9.42,
+        "Investment": -0.78,
+        "Government": -0.85,
+        "Net Exports": -0.81,
+        "Total GDP Growth": 7.0,
+        "quarter": "2021Q2"
+      },
+      {
+        "Consumption": 2.24,
+        "Investment": 2.6,
+        "Government": -0.54,
+        "Net Exports": -0.96,
+        "Total GDP Growth": 3.3,
+        "quarter": "2021Q3"
+      },
+      {
+        "Consumption": 2.63,
+        "Investment": 4.71,
+        "Government": -0.01,
+        "Net Exports": -0.29,
+        "Total GDP Growth": 7.0,
+        "quarter": "2021Q4"
+      },
+      {
+        "Consumption": 0.22,
+        "Investment": 1.45,
+        "Government": -0.54,
+        "Net Exports": -2.15,
+        "Total GDP Growth": -1.0,
+        "quarter": "2022Q1"
+      },
+      {
+        "Consumption": 2.19,
+        "Investment": -1.69,
+        "Government": -0.26,
+        "Net Exports": 0.38,
+        "Total GDP Growth": 0.6,
+        "quarter": "2022Q2"
+      },
+      {
+        "Consumption": 1.27,
+        "Investment": -1.26,
+        "Government": 0.28,
+        "Net Exports": 2.63,
+        "Total GDP Growth": 2.9,
+        "quarter": "2022Q3"
+      },
+      {
+        "Consumption": 0.53,
+        "Investment": 1.43,
+        "Government": 0.69,
+        "Net Exports": 0.14,
+        "Total GDP Growth": 2.8,
+        "quarter": "2022Q4"
+      },
+      {
+        "Consumption": 2.99,
+        "Investment": -1.33,
+        "Government": 0.69,
+        "Net Exports": 0.58,
+        "Total GDP Growth": 2.9,
+        "quarter": "2023Q1"
+      },
+      {
+        "Consumption": 1.02,
+        "Investment": 1.27,
+        "Government": 0.56,
+        "Net Exports": -0.3,
+        "Total GDP Growth": 2.5,
+        "quarter": "2023Q2"
+      },
+      {
+        "Consumption": 2.08,
+        "Investment": 1.66,
+        "Government": 0.87,
+        "Net Exports": 0.09,
+        "Total GDP Growth": 4.7,
+        "quarter": "2023Q3"
+      },
+      {
+        "Consumption": 2.04,
+        "Investment": 0.65,
+        "Government": 0.79,
+        "Net Exports": -0.06,
+        "Total GDP Growth": 3.4,
+        "quarter": "2023Q4"
+      },
+      {
+        "Consumption": 1.17,
+        "Investment": -0.29,
+        "Government": 0.39,
+        "Net Exports": -0.42,
+        "Total GDP Growth": 0.8,
+        "quarter": "2024Q1"
+      },
+      {
+        "Consumption": 2.61,
+        "Investment": 1.44,
+        "Government": 0.57,
+        "Net Exports": -1.04,
+        "Total GDP Growth": 3.6,
+        "quarter": "2024Q2"
+      },
+      {
+        "Consumption": 2.66,
+        "Investment": 0.18,
+        "Government": 0.92,
+        "Net Exports": -0.41,
+        "Total GDP Growth": 3.3,
+        "quarter": "2024Q3"
+      },
+      {
+        "Consumption": 2.61,
+        "Investment": -1.26,
+        "Government": 0.57,
+        "Net Exports": -0.06,
+        "Total GDP Growth": 1.9,
+        "quarter": "2024Q4"
+      },
+      {
+        "Consumption": 0.42,
+        "Investment": 3.79,
+        "Government": -0.17,
+        "Net Exports": -4.68,
+        "Total GDP Growth": -0.6,
+        "quarter": "2025Q1"
+      },
+      {
+        "Consumption": 1.68,
+        "Investment": -2.66,
+        "Government": -0.01,
+        "Net Exports": 4.83,
+        "Total GDP Growth": 3.8,
+        "quarter": "2025Q2"
+      },
+      {
+        "Consumption": 2.34,
+        "Investment": 0.03,
+        "Government": 0.38,
+        "Net Exports": 1.62,
+        "Total GDP Growth": 4.4,
+        "quarter": "2025Q3"
+      },
+      {
+        "Consumption": 1.3,
+        "Investment": 0.4,
+        "Government": -0.99,
+        "Net Exports": -0.22,
+        "Total GDP Growth": 0.5,
+        "quarter": "2025Q4"
+      },
+      {
+        "Consumption": 1.08,
+        "Investment": 1.48,
+        "Government": 0.73,
+        "Net Exports": -1.3,
+        "Total GDP Growth": 2.0,
+        "quarter": "2026Q1"
+      }
+    ],
+    "supply_contributions": []
+  },
+  "wedge_decomposition": {
+    "current_levels": {
+      "efficiency": {
+        "sd_from_mean": 0.24,
+        "percentile": 58,
+        "trend": "improved"
+      },
+      "labor": {
+        "sd_from_mean": -0.94,
+        "percentile": 21,
+        "trend": "improved"
+      },
+      "investment": {
+        "sd_from_mean": 0.87,
+        "percentile": 78,
+        "trend": "worsened"
+      },
+      "government": {
+        "sd_from_mean": -0.61,
+        "percentile": 37,
+        "trend": "improved"
+      }
+    },
+    "phi_statistics": {
+      "efficiency": 0.05,
+      "labor": 0.01,
+      "investment": 0.62,
+      "government": 0.32
+    },
+    "historical_comparison": {
+      "most_analogous_episode": "2008Q4-2009Q2",
+      "similarity_score": 0.89
+    }
+  },
+  "macro_quarter": "2026Q1",
+  "hypothesis_layer": {
+    "pattern_identification": "The current configuration is dominated by a deteriorating labor wedge, strongly resembling the 2008-2009 recession dynamics. (Generated via Mock due to missing API Key/Library).",
+    "candidate_mechanisms": [
+      {
+        "wedge": "Labor",
+        "mechanism": "Wage rigidity / sticky wages",
+        "citations": [
+          "Hall (2005)",
+          "Shimer (2004)"
+        ],
+        "reasoning": "Persistent nominal wage growth in recent BLS reports."
+      }
+    ],
+    "what_to_watch": [
+      {
+        "mechanism": "Wage rigidity",
+        "indicator": "Watch the Atlanta Fed Wage Growth Tracker."
+      }
+    ]
+  }
+}

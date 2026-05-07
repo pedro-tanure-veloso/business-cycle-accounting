@@ -144,7 +144,7 @@ def build_us_dataset(
     fetcher = FredDataFetcher(api_key=fred_api_key)
 
     fetch_start = "1947-01-01"
-    fetch_end = "2024-12-31"
+    fetch_end = "2030-12-31"
     raw = fetcher.fetch_raw(start=fetch_start, end=fetch_end)
 
     # BEA-faithful sales tax (federal excise + state-local sales + state-local
@@ -154,7 +154,7 @@ def build_us_dataset(
     if use_bea_sales_tax:
         try:
             bea = BeaDataFetcher(api_key=bea_api_key)
-            stx = bea.fetch_us_sales_tax(start="1947-01-01", end="2024-12-31")
+            stx = bea.fetch_us_sales_tax(start="1947-01-01", end="2030-12-31")
             # Reindex onto the FRED quarter grid; BEA only covers 1947+ for
             # NIPA T30300 (state-local), and downstream sample window starts
             # 1980Q1 by default — outside coverage stays NaN.

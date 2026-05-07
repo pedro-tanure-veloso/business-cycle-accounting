@@ -105,9 +105,15 @@ def _mock_hypotheses():
 
 
 def main():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(REPO_ROOT / ".env")
+    except ImportError:
+        pass
+
     parser = argparse.ArgumentParser(description="BCA Pipeline Data Builder")
     parser.add_argument("--start", default="1980Q1", help="Sample start")
-    parser.add_argument("--end", default="2024Q1", help="Sample end")
+    parser.add_argument("--end", default="2030Q4", help="Sample end")
     parser.add_argument("--base", default="2019Q4", help="Base quarter")
     args = parser.parse_args()
 
@@ -175,10 +181,55 @@ def main():
         "government": round(phi_df.loc["government", "y"], 2)
     }
 
+    # 4.5 Fetch Income/Supply optics and Time Series from FRED
+    gdi_growth_qoq = gdp_growth_qoq
+    demand_ts = []
+    supply_ts = []
+    try:
+        from fredapi import Fred
+        fred = Fred(api_key=os.environ.get("FRED_API_KEY"))
+        # Income Optic (Real GDI, QoQ Annualized Percentage -> de-annualized to fraction)
+        gdi_series = fred.get_series("A261RL1Q225SBEA")
+        if not gdi_series.empty:
+            gdi_reported = gdi_series.dropna().iloc[-1]
+            gdi_growth_qoq = (1 + gdi_reported / 100)**0.25 - 1
+
+        demand_tickers = {
+            "Consumption": "DPCERY2Q224SBEA",
+            "Investment": "A006RY2Q224SBEA",
+            "Government": "A822RY2Q224SBEA",
+            "Net Exports": "A019RY2Q224SBEA",
+            "Total GDP Growth": "A191RL1Q225SBEA"
+        }
+        
+        def fetch_recent(tickers):
+            df = pd.DataFrame()
+            for name, ticker in tickers.items():
+                s = fred.get_series(ticker)
+                df[name] = s
+            df.index = df.index.to_period("Q").astype(str)
+            
+            df = df.tail(20) # Last 5 years
+            df = df.fillna(0)
+            
+            data = []
+            for q, row in df.iterrows():
+                row_dict = row.to_dict()
+                row_dict["quarter"] = q
+                data.append(row_dict)
+            return data
+
+        demand_ts = fetch_recent(demand_tickers)
+        print("Successfully fetched FRED time series for plotting.")
+    except Exception as e:
+        print(f"Warning: Failed to fetch FRED time series: {e}")
+
     payload = {
         "quarter": latest_q_str,
         "macro_overview": {
             "gdp_growth_qoq": round(gdp_growth_qoq, 4),
+            "gdi_growth_qoq": round(gdi_growth_qoq, 4),
+            "supply_growth_qoq": round(gdp_growth_qoq, 4), # Conceptually equals GDP
             "gdp_growth_yoy": round(gdp_growth_yoy, 4),
             "components": {
                 "consumption": {"growth_qoq": round(c_growth_qoq, 4), "contribution_to_gdp": round(c_growth_qoq * 0.68 * 100, 2)},
@@ -192,6 +243,10 @@ def main():
                 "consumption": compute_historical_percentile(c, c.iloc[-1])
             }
         },
+        "time_series": {
+            "demand_contributions": demand_ts,
+            "supply_contributions": supply_ts
+        },
         "wedge_decomposition": {
             "current_levels": current_levels,
             "phi_statistics": phi_stats,
@@ -202,9 +257,37 @@ def main():
         }
     }
 
+    # 4.7 Set macro_quarter for payload
+    macro_quarter = latest_q_str
+    if len(demand_ts) > 0:
+        macro_quarter = demand_ts[-1]["quarter"]
+    payload["macro_quarter"] = macro_quarter
+
     # 5. Call Gemini LLM for Hypotheses
     gemini_key = os.environ.get("GEMINI_API_KEY")
     payload["hypothesis_layer"] = generate_hypotheses(payload, gemini_key)
+
+    # 5.5 Overwrite the Macro Overview with official BEA headline data
+    try:
+        from fredapi import Fred
+        fred = Fred(api_key=os.environ.get("FRED_API_KEY"))
+        gdp_series = fred.get_series("A191RL1Q225SBEA")
+        if not gdp_series.empty:
+            q_str_series = gdp_series.index.to_period("Q").astype(str).tolist()
+            if macro_quarter in q_str_series:
+                idx = q_str_series.index(macro_quarter)
+                bea_gdp = gdp_series.iloc[idx]
+                payload["macro_overview"]["gdp_growth_qoq"] = round((1 + bea_gdp / 100)**0.25 - 1, 6)
+                payload["macro_overview"]["supply_growth_qoq"] = payload["macro_overview"]["gdp_growth_qoq"]
+        
+        if len(demand_ts) > 0:
+            latest_d = demand_ts[-1]
+            payload["macro_overview"]["components"]["consumption"]["growth_qoq"] = round((1 + latest_d["Consumption"]/100)**0.25 - 1, 6)
+            payload["macro_overview"]["components"]["investment"]["growth_qoq"] = round((1 + latest_d["Investment"]/100)**0.25 - 1, 6)
+            payload["macro_overview"]["components"]["government"]["growth_qoq"] = round((1 + latest_d["Government"]/100)**0.25 - 1, 6)
+            payload["macro_overview"]["components"]["net_exports"]["contribution_to_gdp"] = round(latest_d["Net Exports"] / 400, 6)
+    except Exception as e:
+        print(f"Warning: Failed to override with BEA headline data: {e}")
 
     # 6. Save JSON
     output_path = REPO_ROOT / "bca_web" / "public" / "data" / "latest_quarter.json"
