@@ -196,7 +196,7 @@ function App() {
               <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>Demand Contributions to Growth</h3>
               <div className="chart-container">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={data.time_series.demand_contributions} stackOffset="sign" margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
+                  <ComposedChart data={data.time_series.demand_contributions.slice(-8)} stackOffset="sign" margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
                     <XAxis dataKey="quarter" stroke="var(--text-muted)" fontSize={10} tick={{ fontSize: 10 }} />
                     <YAxis stroke="var(--text-muted)" fontSize={10} tick={{ fontSize: 10 }} />

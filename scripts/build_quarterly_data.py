@@ -7,6 +7,7 @@ Consolidated data script for the BCA dashboard.
 """
 
 import os
+import sys
 import json
 import pandas as pd
 import numpy as np
@@ -14,7 +15,8 @@ from pathlib import Path
 import argparse
 from datetime import datetime
 
-# Import from the local scripts/run_bca
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from scripts.run_bca import build_us_dataset, run_pipeline
 from bca_core.counterfactuals import f_statistics_bckm
 from bca_core.params import CalibrationParams
