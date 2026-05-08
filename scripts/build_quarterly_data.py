@@ -14,7 +14,7 @@ from pathlib import Path
 import argparse
 from datetime import datetime
 
-# Import from the local scripts/run_bca import build_us_dataset, run_pipeline
+# Import from the local scripts/run_bca
 from scripts.run_bca import build_us_dataset, run_pipeline
 from bca_core.counterfactuals import phi_statistics
 from bca_core.params import CalibrationParams
@@ -73,8 +73,9 @@ def main():
     try:
         df, meta = build_us_dataset(start=args.start, end=args.end, detrend_method="calgz", base_year_quarter=args.base)
         # Use n_shrink=5 for production precision (matches local build)
+        # We reuse the prod slug to allow caching if parameters haven't changed
         r = run_pipeline(df, meta, Path("."), f"prod_{args.start}_{args.end}", 
-                         verbose=True, n_shrink=5, no_cache_mle=True)
+                         verbose=True, n_shrink=5, no_cache_mle=False)
     except Exception as e:
         print(f"Failed to run BCA pipeline: {e}")
         print("Make sure you have FRED_API_KEY exported in your terminal.")
@@ -84,16 +85,17 @@ def main():
     y = df["y"]
     c = df["c"]
     x = df["x"]
+    g = df["g"]
     
     # BCA date (last available quarter in the BCA dataset)
     bca_q_str = str(df.index[-1].to_period("Q"))
 
-    # Growth rates (internal BCA data)
+    # Base Growth rates from internal BCA data (will serve as fallback)
     gdp_growth_qoq = y.pct_change().iloc[-1]
     gdp_growth_yoy = y.pct_change(4).iloc[-1]
     c_growth_qoq = c.pct_change().iloc[-1]
     x_growth_qoq = x.pct_change().iloc[-1]
-    g_growth_qoq = df["g"].pct_change().iloc[-1]
+    g_growth_qoq = g.pct_change().iloc[-1]
 
     # Current wedge states
     sw = r["states"]  # T x 5 [k, A, taul, taux, g]
@@ -192,14 +194,15 @@ def main():
             if df_fred.empty:
                 return []
                 
-            df_fred = df_fred.tail(20)
-            df_fred = df_fred.fillna(0)
+            df_fred = df_fred.tail(24) # Get enough history
+            df_fred = df_fred.ffill().fillna(0) # Robust fill
             
             res_list = []
             for idx, row in df_fred.iterrows():
                 q_str = f"{idx.year}Q{(idx.month-1)//3 + 1}"
                 row_dict = {"quarter": q_str}
                 # Map names to prefixes for chart ordering
+                # CRITICAL: Always ensure all keys are present for Recharts!
                 prefix_map = {
                     "Consumption": "A_Consumption",
                     "Investment": "B_Investment",
@@ -207,6 +210,10 @@ def main():
                     "NetExports": "D_Exports", 
                     "Total GDP Growth": "Total GDP Growth"
                 }
+                # Initialize with 0
+                for k in prefix_map.values():
+                    row_dict[k] = 0.0
+                
                 for orig_name, val in row.items():
                     key = prefix_map.get(orig_name, orig_name)
                     row_dict[key] = float(round(val, 2))
@@ -215,13 +222,11 @@ def main():
 
         demand_ts = fetch_data(contrib_tickers)
         
-        # For growth_ts, we don't need prefixes, just raw names
         growth_data = {}
         for name, ticker in growth_tickers.items():
             try:
                 s = fred.get_series(ticker)
-                growth_data[name] = s.iloc[-1]
-                # Track the latest quarter available in FRED headline data
+                growth_data[name] = s.dropna().iloc[-1]
                 q_macro = f"{s.index[-1].year}Q{(s.index[-1].month-1)//3 + 1}"
                 if q_macro > macro_q_str:
                     macro_q_str = q_macro
@@ -269,24 +274,33 @@ def main():
         def to_qoq(saar):
             return (1 + saar/100)**0.25 - 1
 
-        payload["macro_overview"]["gdp_growth_qoq"] = round(to_qoq(growth_data.get("GDP", 0)), 6)
+        if "GDP" in growth_data:
+            payload["macro_overview"]["gdp_growth_qoq"] = round(to_qoq(growth_data["GDP"]), 6)
         
         comps = payload["macro_overview"]["components"]
-        comps["consumption"]["growth_qoq"] = round(to_qoq(growth_data.get("Consumption", 0)), 6)
-        comps["investment"]["growth_qoq"] = round(to_qoq(growth_data.get("Investment", 0)), 6)
-        comps["government"]["growth_qoq"] = round(to_qoq(growth_data.get("Government", 0)), 6)
-        comps["exports"]["growth_qoq"] = round(to_qoq(growth_data.get("Exports", 0)), 6)
-        comps["imports"]["growth_qoq"] = round(to_qoq(growth_data.get("Imports", 0)), 6)
+        if "Consumption" in growth_data:
+            comps["consumption"]["growth_qoq"] = round(to_qoq(growth_data["Consumption"]), 6)
+        if "Investment" in growth_data:
+            comps["investment"]["growth_qoq"] = round(to_qoq(growth_data["Investment"]), 6)
+        if "Government" in growth_data:
+            comps["government"]["growth_qoq"] = round(to_qoq(growth_data["Government"]), 6)
+        if "Exports" in growth_data:
+            comps["exports"]["growth_qoq"] = round(to_qoq(growth_data["Exports"]), 6)
+        if "Imports" in growth_data:
+            comps["imports"]["growth_qoq"] = round(to_qoq(growth_data["Imports"]), 6)
         
     if demand_ts:
         latest_d_contrib = demand_ts[-1]
-        
         comps = payload["macro_overview"]["components"]
-        comps["consumption"]["contribution_to_gdp"] = latest_d_contrib.get("A_Consumption", 0)
-        comps["investment"]["contribution_to_gdp"] = latest_d_contrib.get("B_Investment", 0)
-        comps["government"]["contribution_to_gdp"] = latest_d_contrib.get("C_Government", 0)
-        comps["exports"]["contribution_to_gdp"] = latest_d_contrib.get("D_Exports", 0)
-        comps["imports"]["contribution_to_gdp"] = 0 
+        # Only overwrite if the keys exist in the fetched data
+        if "A_Consumption" in latest_d_contrib:
+            comps["consumption"]["contribution_to_gdp"] = latest_d_contrib["A_Consumption"]
+        if "B_Investment" in latest_d_contrib:
+            comps["investment"]["contribution_to_gdp"] = latest_d_contrib["B_Investment"]
+        if "C_Government" in latest_d_contrib:
+            comps["government"]["contribution_to_gdp"] = latest_d_contrib["C_Government"]
+        if "D_Exports" in latest_d_contrib:
+            comps["exports"]["contribution_to_gdp"] = latest_d_contrib["D_Exports"]
 
     # Call Gemini for analysis
     gemini_key = os.environ.get("GEMINI_API_KEY")

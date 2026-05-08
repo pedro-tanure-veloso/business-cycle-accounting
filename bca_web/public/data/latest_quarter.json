@@ -6,20 +6,20 @@
     "gdp_growth_yoy": -0.0122,
     "components": {
       "consumption": {
-        "growth_qoq": 0.0,
+        "growth_qoq": 0.003976,
         "contribution_to_gdp": 1.08
       },
       "investment": {
         "growth_qoq": 0.021074,
-        "contribution_to_gdp": 0
+        "contribution_to_gdp": 1.48
       },
       "government": {
-        "growth_qoq": 0.010823,
+        "growth_qoq": 0.0524,
         "contribution_to_gdp": 0.73
       },
       "exports": {
         "growth_qoq": 0.030798,
-        "contribution_to_gdp": 0
+        "contribution_to_gdp": -1.3
       },
       "imports": {
         "growth_qoq": 0.049675,
@@ -35,123 +35,195 @@
   "time_series": {
     "demand_contributions": [
       {
+        "quarter": "2020Q2",
+        "A_Consumption": -21.62,
+        "B_Investment": -8.92,
+        "C_Government": 1.82,
+        "D_Exports": 0.74,
+        "Total GDP Growth": -28.0
+      },
+      {
+        "quarter": "2020Q3",
+        "A_Consumption": 24.95,
+        "B_Investment": 13.54,
+        "C_Government": -1.14,
+        "D_Exports": -2.5,
+        "Total GDP Growth": 34.9
+      },
+      {
+        "quarter": "2020Q4",
+        "A_Consumption": 3.6,
+        "B_Investment": 2.46,
+        "C_Government": 0.08,
+        "D_Exports": -1.53,
+        "Total GDP Growth": 4.6
+      },
+      {
+        "quarter": "2021Q1",
+        "A_Consumption": 6.05,
+        "B_Investment": -0.4,
+        "C_Government": 1.05,
+        "D_Exports": -1.01,
+        "Total GDP Growth": 5.7
+      },
+      {
         "quarter": "2021Q2",
         "A_Consumption": 9.42,
+        "B_Investment": -0.78,
         "C_Government": -0.85,
+        "D_Exports": -0.81,
         "Total GDP Growth": 7.0
       },
       {
         "quarter": "2021Q3",
         "A_Consumption": 2.24,
+        "B_Investment": 2.6,
         "C_Government": -0.54,
+        "D_Exports": -0.96,
         "Total GDP Growth": 3.3
       },
       {
         "quarter": "2021Q4",
         "A_Consumption": 2.63,
+        "B_Investment": 4.71,
         "C_Government": -0.01,
+        "D_Exports": -0.29,
         "Total GDP Growth": 7.0
       },
       {
         "quarter": "2022Q1",
         "A_Consumption": 0.22,
+        "B_Investment": 1.45,
         "C_Government": -0.54,
+        "D_Exports": -2.15,
         "Total GDP Growth": -1.0
       },
       {
         "quarter": "2022Q2",
         "A_Consumption": 2.19,
+        "B_Investment": -1.69,
         "C_Government": -0.26,
+        "D_Exports": 0.38,
         "Total GDP Growth": 0.6
       },
       {
         "quarter": "2022Q3",
         "A_Consumption": 1.27,
+        "B_Investment": -1.26,
         "C_Government": 0.28,
+        "D_Exports": 2.63,
         "Total GDP Growth": 2.9
       },
       {
         "quarter": "2022Q4",
         "A_Consumption": 0.53,
+        "B_Investment": 1.43,
         "C_Government": 0.69,
+        "D_Exports": 0.14,
         "Total GDP Growth": 2.8
       },
       {
         "quarter": "2023Q1",
         "A_Consumption": 2.99,
+        "B_Investment": -1.33,
         "C_Government": 0.69,
+        "D_Exports": 0.58,
         "Total GDP Growth": 2.9
       },
       {
         "quarter": "2023Q2",
         "A_Consumption": 1.02,
+        "B_Investment": 1.27,
         "C_Government": 0.56,
+        "D_Exports": -0.3,
         "Total GDP Growth": 2.5
       },
       {
         "quarter": "2023Q3",
         "A_Consumption": 2.08,
+        "B_Investment": 1.66,
         "C_Government": 0.87,
+        "D_Exports": 0.09,
         "Total GDP Growth": 4.7
       },
       {
         "quarter": "2023Q4",
         "A_Consumption": 2.04,
+        "B_Investment": 0.65,
         "C_Government": 0.79,
+        "D_Exports": -0.06,
         "Total GDP Growth": 3.4
       },
       {
         "quarter": "2024Q1",
         "A_Consumption": 1.17,
+        "B_Investment": -0.29,
         "C_Government": 0.39,
+        "D_Exports": -0.42,
         "Total GDP Growth": 0.8
       },
       {
         "quarter": "2024Q2",
         "A_Consumption": 2.61,
+        "B_Investment": 1.44,
         "C_Government": 0.57,
+        "D_Exports": -1.04,
         "Total GDP Growth": 3.6
       },
       {
         "quarter": "2024Q3",
         "A_Consumption": 2.66,
+        "B_Investment": 0.18,
         "C_Government": 0.92,
+        "D_Exports": -0.41,
         "Total GDP Growth": 3.3
       },
       {
         "quarter": "2024Q4",
         "A_Consumption": 2.61,
+        "B_Investment": -1.26,
         "C_Government": 0.57,
+        "D_Exports": -0.06,
         "Total GDP Growth": 1.9
       },
       {
         "quarter": "2025Q1",
         "A_Consumption": 0.42,
+        "B_Investment": 3.79,
         "C_Government": -0.17,
+        "D_Exports": -4.68,
         "Total GDP Growth": -0.6
       },
       {
         "quarter": "2025Q2",
         "A_Consumption": 1.68,
+        "B_Investment": -2.66,
         "C_Government": -0.01,
+        "D_Exports": 4.83,
         "Total GDP Growth": 3.8
       },
       {
         "quarter": "2025Q3",
         "A_Consumption": 2.34,
+        "B_Investment": 0.03,
         "C_Government": 0.38,
+        "D_Exports": 1.62,
         "Total GDP Growth": 4.4
       },
       {
         "quarter": "2025Q4",
         "A_Consumption": 1.3,
+        "B_Investment": 0.4,
         "C_Government": -0.99,
+        "D_Exports": -0.22,
         "Total GDP Growth": 0.5
       },
       {
         "quarter": "2026Q1",
         "A_Consumption": 1.08,
+        "B_Investment": 1.48,
         "C_Government": 0.73,
+        "D_Exports": -1.3,
         "Total GDP Growth": 2.0
       }
     ],
