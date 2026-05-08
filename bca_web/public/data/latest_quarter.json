@@ -125,14 +125,14 @@
       }
     },
     "phi_statistics": {
-      "efficiency": 0.17,
+      "efficiency": 0.18,
       "labor": 0.02,
-      "investment": 0.08,
+      "investment": 0.07,
       "government": 0.73
     },
     "cf_time_series": [
       {
-        "quarter": "2024Q1",
+        "quarter": "2023Q1",
         "Data": 100.0,
         "Efficiency": 100.0,
         "Labor": 100.0,
@@ -140,112 +140,147 @@
         "Government": 100.0
       },
       {
+        "quarter": "2023Q2",
+        "Data": 100.01,
+        "Efficiency": 98.94,
+        "Labor": 102.82,
+        "Investment": 97.99,
+        "Government": 100.41
+      },
+      {
+        "quarter": "2023Q3",
+        "Data": 100.47,
+        "Efficiency": 104.15,
+        "Labor": 93.24,
+        "Investment": 104.75,
+        "Government": 98.91
+      },
+      {
+        "quarter": "2023Q4",
+        "Data": 100.61,
+        "Efficiency": 103.59,
+        "Labor": 94.98,
+        "Investment": 103.28,
+        "Government": 99.23
+      },
+      {
+        "quarter": "2024Q1",
+        "Data": 100.36,
+        "Efficiency": 101.19,
+        "Labor": 98.91,
+        "Investment": 100.38,
+        "Government": 100.17
+      },
+      {
         "quarter": "2024Q2",
-        "Data": 100.31,
-        "Efficiency": 98.44,
-        "Labor": 105.21,
-        "Investment": 96.3,
-        "Government": 100.64
+        "Data": 100.66,
+        "Efficiency": 99.62,
+        "Labor": 104.06,
+        "Investment": 96.67,
+        "Government": 100.81
       },
       {
         "quarter": "2024Q3",
-        "Data": 100.57,
-        "Efficiency": 98.05,
-        "Labor": 107.17,
-        "Investment": 94.97,
-        "Government": 100.91
+        "Data": 100.93,
+        "Efficiency": 99.22,
+        "Labor": 106.0,
+        "Investment": 95.34,
+        "Government": 101.08
       },
       {
         "quarter": "2024Q4",
-        "Data": 100.61,
-        "Efficiency": 96.86,
-        "Labor": 109.84,
-        "Investment": 93.26,
-        "Government": 101.6
+        "Data": 100.97,
+        "Efficiency": 98.02,
+        "Labor": 108.64,
+        "Investment": 93.62,
+        "Government": 101.78
       },
       {
         "quarter": "2025Q1",
-        "Data": 98.55,
-        "Efficiency": 82.21,
-        "Labor": 150.82,
-        "Investment": 75.03,
-        "Government": 106.22
+        "Data": 98.9,
+        "Efficiency": 83.19,
+        "Labor": 149.17,
+        "Investment": 75.32,
+        "Government": 106.4
       },
       {
         "quarter": "2025Q2",
-        "Data": 98.94,
-        "Efficiency": 92.91,
-        "Labor": 114.47,
-        "Investment": 90.84,
-        "Government": 102.74
+        "Data": 99.29,
+        "Efficiency": 94.02,
+        "Labor": 113.22,
+        "Investment": 91.19,
+        "Government": 102.92
       },
       {
         "quarter": "2025Q3",
-        "Data": 99.33,
-        "Efficiency": 98.9,
-        "Labor": 100.63,
-        "Investment": 99.15,
-        "Government": 101.08
+        "Data": 99.69,
+        "Efficiency": 100.08,
+        "Labor": 99.53,
+        "Investment": 99.53,
+        "Government": 101.25
       }
     ]
   },
   "hypothesis_layer": {
-    "pattern_identification": "The US economy from 2024Q1 to 2025Q3 is primarily characterized by significant fluctuations driven by the Government Wedge, accounting for the vast majority of output variance (0.73). The Efficiency Wedge also plays a notable, albeit secondary, role (0.17), indicating changes in productivity or resource allocation as a factor. Currently, efficiency and investment conditions appear more favorable than their historical averages (positive deviations of 1.41 and 0.95 respectively), suggesting positive shocks in these areas. Conversely, labor market distortions and the overall impact of government actions are slightly less pronounced than average (negative deviations of -0.6 and -0.23 respectively). The Labor and Investment Wedges explain only a minor portion of overall output fluctuations.",
+    "pattern_identification": "The US economy between 2023Q1 and 2025Q3 exhibited remarkable output stability, with an observed data range of only 2.1. This flatness, however, masks powerful and largely offsetting forces at play. A substantially expansionary pull from the labor wedge (counterfactual peak swing of +49.2) was significantly counteracted by strong contractionary pressures from the investment wedge (a -24.7 swing) and the efficiency wedge (a -16.8 swing). The government wedge provided a milder expansionary impetus (+6.4). The high f-statistic for the government wedge in this period, given its comparatively modest swing and the very flat observed data, likely reflects its counterfactual path being less volatile than other wedges, rather than it being the primary driver of overall output stability. The dominant pattern is one of large, conflicting cyclical forces creating a net neutral effect on aggregate output.",
     "candidate_mechanisms": [
       {
-        "wedge": "Government Wedge",
-        "mechanism": "Fiscal policy shocks, including changes in government spending, taxation, or regulatory policies affecting aggregate demand and supply.",
+        "wedge": "Labor",
+        "mechanism": "Labor market efficiency and household labor supply decisions.",
         "citations": [
+          "Mortensen & Pissarides (1994)",
+          "Shimer (2005)",
+          "Hall (2005)"
+        ],
+        "reasoning": "A strongly expansionary labor counterfactual, despite the wedge being below its mean, indicates underlying forces that significantly boosted labor input or its effective contribution to output. This could stem from improved matching efficiency in the labor market, reduced search frictions, or shifts in household preferences or incentives to supply labor."
+      },
+      {
+        "wedge": "Investment",
+        "mechanism": "Financial market frictions, investment-specific uncertainty, or capital adjustment costs.",
+        "citations": [
+          "Bernanke, Gertler, & Gilchrist (1999)",
+          "Jermann (1998)",
+          "Chari, Kehoe, & McGrattan (2007)"
+        ],
+        "reasoning": "The strong contractionary pull from the investment wedge, coupled with its above-mean deviation, suggests conditions that significantly deterred capital formation. This points to tightened credit conditions, increased perceived risk/uncertainty making investment less attractive, or elevated costs associated with adjusting the capital stock."
+      },
+      {
+        "wedge": "Efficiency",
+        "mechanism": "Resource misallocation, productivity slowdowns, or supply-side shocks.",
+        "citations": [
+          "Restuccia & Rogerson (2008)",
+          "Chari, Kehoe, & McGrattan (2007)",
+          "Prescott (1986)"
+        ],
+        "reasoning": "The substantial contractionary impact from the efficiency wedge, alongside its above-mean deviation, indicates a significant drag on aggregate productivity. This could be due to persistent supply chain disruptions, misallocation of capital and labor across sectors, or a broader slowdown in technological progress or adoption."
+      },
+      {
+        "wedge": "Government",
+        "mechanism": "Targeted fiscal policy or changes in public good provision.",
+        "citations": [
+          "Barro (1990)",
           "Ramey (2011)",
-          "Fatas and Mihov (2001)"
+          "Christiano, Eichenbaum, & Rebelo (2011)"
         ],
-        "reasoning": "The exceptionally high f-stat (0.73) for the Government Wedge signifies that variations in government actions are the predominant source of business cycle fluctuations during this period. This suggests that changes in fiscal policy (e.g., significant government spending programs, tax reforms) or shifts in the regulatory environment have had the most substantial impact on economic output and its volatility. The current slightly below-average deviation (-0.23) indicates that the overall level of government-induced distortion might be marginally less than its historical average, yet the variability of these policies remains the primary driver of economic cycles."
-      },
-      {
-        "wedge": "Efficiency Wedge",
-        "mechanism": "Technology shocks, misallocation of resources due to financial frictions, or changes in market power and markups among firms.",
-        "citations": [
-          "Prescott (1986)",
-          "Chari, Kehoe, and McGrattan (2007)",
-          "Bernanke, Gertler, and Gilchrist (1999)"
-        ],
-        "reasoning": "The Efficiency Wedge, while secondary, explains a notable portion of output fluctuations (0.17). The significant positive current deviation (1.41 standard deviations above mean) suggests that the economy is currently experiencing higher-than-average aggregate productivity or more efficient resource utilization. This could stem from positive technological advancements, improved financial conditions easing resource allocation across firms and sectors, or perhaps a decrease in market power leading to more efficient production and lower markups."
-      },
-      {
-        "wedge": "Investment Wedge",
-        "mechanism": "Financial market imperfections affecting firms' ability to finance investment, or variations in capital adjustment costs.",
-        "citations": [
-          "Bernanke, Gertler, and Gilchrist (1999)",
-          "Jermann (1998)"
-        ],
-        "reasoning": "Although the Investment Wedge is a minor overall contributor to output fluctuations (0.08), its current positive deviation (0.95 standard deviations above mean) indicates that factors influencing investment efficiency or opportunities are currently more favorable than average. This might suggest a period of easier access to credit, lower costs of capital, or reduced frictions in undertaking new investment projects, leading to higher-than-average efficient investment levels and contributing positively to current output."
-      },
-      {
-        "wedge": "Labor Wedge",
-        "mechanism": "Labor market frictions (e.g., search and matching inefficiencies), sticky wages, or labor income taxation.",
-        "citations": [
-          "Mortensen and Pissarides (1994)",
-          "Shimer (2005)"
-        ],
-        "reasoning": "The very low f-stat (0.02) demonstrates that the Labor Wedge is not a significant driver of business cycle fluctuations in this period. The negative current deviation (-0.6 standard deviations below mean) further suggests that labor market distortions (such as high unemployment benefits, high labor taxes, or severe matching inefficiencies) are currently less pronounced than their historical average, implying a relatively well-functioning or less distorted labor market during this period."
+        "reasoning": "The mildly expansionary counterfactual, with the wedge below its mean, suggests a modest positive contribution from government activity, perhaps through specific spending initiatives or tax adjustments that moderately stimulate demand or efficiency."
       }
     ],
     "what_to_watch": [
       {
-        "mechanism": "Fiscal policy shocks",
-        "indicator": "Government spending announcements, legislative activity on tax reforms, federal budget deficit/surplus data, CBO budget outlooks, Treasury bond yields."
+        "mechanism": "Labor market efficiency and household labor supply decisions.",
+        "indicator": "Job Openings (JOLTS), Initial Jobless Claims, Labor Force Participation Rate"
       },
       {
-        "mechanism": "Technology shocks, misallocation, market power",
-        "indicator": "Business R&D spending, venture capital funding, corporate profit margins, capacity utilization rates, multi-factor productivity growth statistics, financial market stress indices (e.g., Chicago Fed National Financial Conditions Index)."
+        "mechanism": "Financial market frictions, investment-specific uncertainty, or capital adjustment costs.",
+        "indicator": "Durable Goods Orders (Non-defense Capital Goods ex-Aircraft), Commercial & Industrial (C&I) Loan Growth, Corporate Bond Spreads"
       },
       {
-        "mechanism": "Financial market imperfections affecting investment",
-        "indicator": "Corporate bond spreads and yields, bank lending standards surveys (e.g., Senior Loan Officer Opinion Survey), business fixed investment data, capital goods new orders, housing starts, equity market volatility."
+        "mechanism": "Resource misallocation, productivity slowdowns, or supply-side shocks.",
+        "indicator": "ISM Manufacturing & Services Supplier Deliveries Index, Quarterly Unit Labor Costs, Capacity Utilization Rate"
       },
       {
-        "mechanism": "Labor market frictions",
-        "indicator": "Job openings (JOLTS), unemployment rate, labor force participation rate, wage growth (e.g., average hourly earnings), Employment Cost Index, legislative changes impacting labor laws or taxation."
+        "mechanism": "Targeted fiscal policy or changes in public good provision.",
+        "indicator": "Monthly Treasury Statement (Federal Outlays), Congressional Budget Office (CBO) projections, State & Local Government Payrolls"
       }
     ]
   }
