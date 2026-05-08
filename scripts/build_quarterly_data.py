@@ -236,9 +236,20 @@ def main():
     macro_q_str = bca_q_str # Default fallback
     
     try:
-        from fredapi import Fred
-        fred = Fred(api_key=os.environ.get("FRED_API_KEY"))
-        
+        # Use FRED's public CSV endpoint — no API key, no auth, no rate-limit
+        # surprises. The fredapi SDK proved flaky in CI: A006RY2Q224SBEA,
+        # A019RY2Q224SBEA, and A191RL1Q225SBEA all returned empty for
+        # several runs even though the same ticker IDs serve full data on
+        # fredgraph.csv. CSV is the durable fix.
+        def _fetch_series(ticker):
+            url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={ticker}"
+            df = pd.read_csv(url)
+            date_col = df.columns[0]
+            df[date_col] = pd.to_datetime(df[date_col])
+            s = pd.to_numeric(df[ticker], errors="coerce")
+            s.index = df[date_col]
+            return s.dropna()
+
         # Tickers for the stacked bar chart (Contributions to GDP Growth)
         contrib_tickers = {
             "Consumption": "DPCERY2Q224SBEA",
@@ -257,12 +268,12 @@ def main():
             "Imports": "A021RL1Q158SBEA",
             "GDP": "A191RL1Q225SBEA"
         }
-        
+
         def fetch_data(tickers):
             df_fred = pd.DataFrame()
             for name, ticker in tickers.items():
                 try:
-                    s = fred.get_series(ticker)
+                    s = _fetch_series(ticker)
                     df_fred[name] = s
                 except Exception as e:
                     print(f"Warning: Failed to fetch {name} ({ticker}): {e}")
@@ -319,8 +330,8 @@ def main():
         growth_data = {}
         for name, ticker in growth_tickers.items():
             try:
-                s = fred.get_series(ticker)
-                growth_data[name] = s.dropna().iloc[-1]
+                s = _fetch_series(ticker)
+                growth_data[name] = s.iloc[-1]
                 q_macro = f"{s.index[-1].year}Q{(s.index[-1].month-1)//3 + 1}"
                 if q_macro > macro_q_str:
                     macro_q_str = q_macro
