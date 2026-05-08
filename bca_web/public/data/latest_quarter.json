@@ -104,19 +104,19 @@
   "wedge_decomposition": {
     "current_levels": {
       "efficiency": {
-        "sd_from_mean": 1.41,
-        "percentile": 92,
+        "sd_from_mean": -1.26,
+        "percentile": 3,
         "trend": "improved"
       },
       "labor": {
-        "sd_from_mean": -0.6,
-        "percentile": 28,
+        "sd_from_mean": -1.02,
+        "percentile": 22,
         "trend": "worsened"
       },
       "investment": {
-        "sd_from_mean": 0.95,
-        "percentile": 80,
-        "trend": "improved"
+        "sd_from_mean": -0.7,
+        "percentile": 22,
+        "trend": "worsened"
       },
       "government": {
         "sd_from_mean": -0.23,
@@ -125,10 +125,10 @@
       }
     },
     "phi_statistics": {
-      "efficiency": 0.18,
-      "labor": 0.02,
-      "investment": 0.07,
-      "government": 0.73
+      "efficiency": 0.89,
+      "labor": 0.04,
+      "investment": 0.03,
+      "government": 0.05
     },
     "cf_time_series": [
       {
@@ -142,145 +142,137 @@
       {
         "quarter": "2023Q2",
         "Data": 100.01,
-        "Efficiency": 98.94,
-        "Labor": 102.82,
-        "Investment": 97.99,
-        "Government": 100.41
+        "Efficiency": 100.05,
+        "Labor": 99.98,
+        "Investment": 100.02,
+        "Government": 99.93
       },
       {
         "quarter": "2023Q3",
         "Data": 100.47,
-        "Efficiency": 104.15,
-        "Labor": 93.24,
-        "Investment": 104.75,
-        "Government": 98.91
+        "Efficiency": 100.33,
+        "Labor": 99.84,
+        "Investment": 100.07,
+        "Government": 100.15
       },
       {
         "quarter": "2023Q4",
         "Data": 100.61,
-        "Efficiency": 103.59,
-        "Labor": 94.98,
-        "Investment": 103.28,
-        "Government": 99.23
+        "Efficiency": 100.51,
+        "Labor": 99.85,
+        "Investment": 100.02,
+        "Government": 100.13
       },
       {
         "quarter": "2024Q1",
         "Data": 100.36,
-        "Efficiency": 101.19,
-        "Labor": 98.91,
-        "Investment": 100.38,
-        "Government": 100.17
+        "Efficiency": 100.18,
+        "Labor": 100.0,
+        "Investment": 99.9,
+        "Government": 100.13
       },
       {
         "quarter": "2024Q2",
         "Data": 100.66,
-        "Efficiency": 99.62,
-        "Labor": 104.06,
-        "Investment": 96.67,
-        "Government": 100.81
+        "Efficiency": 100.73,
+        "Labor": 99.92,
+        "Investment": 99.86,
+        "Government": 99.99
       },
       {
         "quarter": "2024Q3",
         "Data": 100.93,
-        "Efficiency": 99.22,
-        "Labor": 106.0,
-        "Investment": 95.34,
-        "Government": 101.08
+        "Efficiency": 100.92,
+        "Labor": 100.08,
+        "Investment": 99.76,
+        "Government": 99.97
       },
       {
         "quarter": "2024Q4",
         "Data": 100.97,
-        "Efficiency": 98.02,
-        "Labor": 108.64,
-        "Investment": 93.62,
-        "Government": 101.78
+        "Efficiency": 100.96,
+        "Labor": 100.19,
+        "Investment": 99.55,
+        "Government": 100.02
       },
       {
         "quarter": "2025Q1",
         "Data": 98.9,
-        "Efficiency": 83.19,
-        "Labor": 149.17,
-        "Investment": 75.32,
-        "Government": 106.4
+        "Efficiency": 99.18,
+        "Labor": 100.22,
+        "Investment": 100.2,
+        "Government": 99.03
       },
       {
         "quarter": "2025Q2",
         "Data": 99.29,
-        "Efficiency": 94.02,
-        "Labor": 113.22,
-        "Investment": 91.19,
-        "Government": 102.92
+        "Efficiency": 99.09,
+        "Labor": 99.97,
+        "Investment": 100.0,
+        "Government": 99.93
       },
       {
         "quarter": "2025Q3",
         "Data": 99.69,
-        "Efficiency": 100.08,
-        "Labor": 99.53,
-        "Investment": 99.53,
-        "Government": 101.25
+        "Efficiency": 99.53,
+        "Labor": 99.57,
+        "Investment": 99.95,
+        "Government": 100.31
       }
     ]
   },
   "hypothesis_layer": {
-    "pattern_identification": "The US economy between 2023Q1 and 2025Q3 exhibited remarkable output stability, with an observed data range of only 2.1. This flatness, however, masks powerful and largely offsetting forces at play. A substantially expansionary pull from the labor wedge (counterfactual peak swing of +49.2) was significantly counteracted by strong contractionary pressures from the investment wedge (a -24.7 swing) and the efficiency wedge (a -16.8 swing). The government wedge provided a milder expansionary impetus (+6.4). The high f-statistic for the government wedge in this period, given its comparatively modest swing and the very flat observed data, likely reflects its counterfactual path being less volatile than other wedges, rather than it being the primary driver of overall output stability. The dominant pattern is one of large, conflicting cyclical forces creating a net neutral effect on aggregate output.",
+    "pattern_identification": "The US economy is experiencing significant and largely offsetting forces over the 2023Q1-2025Q3 window. A strong underlying expansionary impulse from the Efficiency wedge (evidenced by a +1.0 counterfactual peak swing) is being substantially counteracted by a equally strong contractionary pull from the Government wedge (-1.0 counterfactual peak swing). Additional contractionary pressures are observed from the Investment (-0.5 counterfactual peak swing) and Labor (-0.4 counterfactual peak swing) wedges. Despite these diverse and counteracting pulls, the Efficiency wedge remains the primary driver explaining the observed output fluctuations, as corroborated by its dominant f-statistic of 0.89.",
     "candidate_mechanisms": [
       {
-        "wedge": "Labor",
-        "mechanism": "Labor market efficiency and household labor supply decisions.",
+        "wedge": "Efficiency",
+        "mechanism": "Technological progress, productivity enhancements, and efficient resource reallocation",
         "citations": [
-          "Mortensen & Pissarides (1994)",
-          "Shimer (2005)",
-          "Hall (2005)"
+          "Chari, Kehoe, McGrattan (2007)"
         ],
-        "reasoning": "A strongly expansionary labor counterfactual, despite the wedge being below its mean, indicates underlying forces that significantly boosted labor input or its effective contribution to output. This could stem from improved matching efficiency in the labor market, reduced search frictions, or shifts in household preferences or incentives to supply labor."
+        "reasoning": "The robust positive counterfactual swing and the highest f-statistic indicate that fundamental efficiency improvements or TFP growth are providing a substantial expansionary force, contributing significantly to output fluctuations despite other headwinds."
+      },
+      {
+        "wedge": "Labor",
+        "mechanism": "Labor market frictions, changes in labor supply incentives, or shifts in the bargaining power between firms and workers",
+        "citations": [
+          "Mortensen & Pissarides (1994)"
+        ],
+        "reasoning": "The negative counterfactual swing and current below-mean deviation suggest that distortions or inefficiencies in the labor market are acting as a contractionary force, possibly hindering employment or optimal labor allocation."
       },
       {
         "wedge": "Investment",
-        "mechanism": "Financial market frictions, investment-specific uncertainty, or capital adjustment costs.",
+        "mechanism": "Financial market imperfections, elevated uncertainty, or credit constraints affecting capital formation",
         "citations": [
-          "Bernanke, Gertler, & Gilchrist (1999)",
-          "Jermann (1998)",
-          "Chari, Kehoe, & McGrattan (2007)"
+          "Bernanke, Gertler, Gilchrist (1999)"
         ],
-        "reasoning": "The strong contractionary pull from the investment wedge, coupled with its above-mean deviation, suggests conditions that significantly deterred capital formation. This points to tightened credit conditions, increased perceived risk/uncertainty making investment less attractive, or elevated costs associated with adjusting the capital stock."
-      },
-      {
-        "wedge": "Efficiency",
-        "mechanism": "Resource misallocation, productivity slowdowns, or supply-side shocks.",
-        "citations": [
-          "Restuccia & Rogerson (2008)",
-          "Chari, Kehoe, & McGrattan (2007)",
-          "Prescott (1986)"
-        ],
-        "reasoning": "The substantial contractionary impact from the efficiency wedge, alongside its above-mean deviation, indicates a significant drag on aggregate productivity. This could be due to persistent supply chain disruptions, misallocation of capital and labor across sectors, or a broader slowdown in technological progress or adoption."
+        "reasoning": "The contractionary counterfactual swing points to factors impeding investment, such as tightened financial conditions, increased perceived risk by firms, or higher costs of capital, thereby restraining potential output."
       },
       {
         "wedge": "Government",
-        "mechanism": "Targeted fiscal policy or changes in public good provision.",
+        "mechanism": "Changes in government spending (expenditure shocks), taxation policies (tax shocks), or increased fiscal policy uncertainty",
         "citations": [
-          "Barro (1990)",
-          "Ramey (2011)",
-          "Christiano, Eichenbaum, & Rebelo (2011)"
+          "Ramey (2011)"
         ],
-        "reasoning": "The mildly expansionary counterfactual, with the wedge below its mean, suggests a modest positive contribution from government activity, perhaps through specific spending initiatives or tax adjustments that moderately stimulate demand or efficiency."
+        "reasoning": "The significant negative counterfactual swing implies that fiscal policy, either through reduced government demand, higher taxes, or increased uncertainty about future policy, is exerting a strong contractionary pressure on the economy."
       }
     ],
     "what_to_watch": [
       {
-        "mechanism": "Labor market efficiency and household labor supply decisions.",
-        "indicator": "Job Openings (JOLTS), Initial Jobless Claims, Labor Force Participation Rate"
+        "mechanism": "Efficiency",
+        "indicator": "R&D spending, patent applications, venture capital investment, business formation rates, industry-specific productivity reports"
       },
       {
-        "mechanism": "Financial market frictions, investment-specific uncertainty, or capital adjustment costs.",
-        "indicator": "Durable Goods Orders (Non-defense Capital Goods ex-Aircraft), Commercial & Industrial (C&I) Loan Growth, Corporate Bond Spreads"
+        "mechanism": "Labor",
+        "indicator": "Unemployment rate, JOLTS job openings, average hourly earnings, initial jobless claims, labor force participation rate"
       },
       {
-        "mechanism": "Resource misallocation, productivity slowdowns, or supply-side shocks.",
-        "indicator": "ISM Manufacturing & Services Supplier Deliveries Index, Quarterly Unit Labor Costs, Capacity Utilization Rate"
+        "mechanism": "Investment",
+        "indicator": "Business fixed investment (GDP component), durable goods orders (ex-aircraft/defense), capacity utilization, corporate profit margins, credit spreads, Senior Loan Officer Opinion Survey (SLOOS) on lending standards"
       },
       {
-        "mechanism": "Targeted fiscal policy or changes in public good provision.",
-        "indicator": "Monthly Treasury Statement (Federal Outlays), Congressional Budget Office (CBO) projections, State & Local Government Payrolls"
+        "mechanism": "Government",
+        "indicator": "Government consumption and gross investment (GDP component), federal budget balance, tax receipts, legislative activity related to fiscal policy"
       }
     ]
   }
