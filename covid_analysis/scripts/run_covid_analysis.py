@@ -11,12 +11,15 @@ subsequent runs the cached parquets are loaded directly.
 Usage:
     FRED_API_KEY=... python covid_analysis/scripts/run_covid_analysis.py
 
-Outputs (written to covid_analysis/figures/):
-    wedges_us_2010_2023.png   — 4-panel wedge time series
-    figure_2B_covid.png       — CF efficiency decomposition
-    figure_2C_covid.png       — CF output decomposition
-    figure_2D_covid.png       — CF hours decomposition
-    figure_2E_covid.png       — CF investment decomposition
+Outputs (written to covid_analysis/figures/, each emitted in two
+trend variants — full-window calgz and pre-COVID-fit calgz; the
+latter is suffixed ``_preCOVID``):
+    wedges_us_2010_2023.png   — 4-panel wedge time series (A, τ_l, τ_x, g)
+    figure_A_covid.png        — Output, labor, and investment, 2019Q4–2023Q4
+    figure_B_covid.png        — Output and wedges over the COVID window
+    figure_2C_covid.png       — CF output-components decomposition
+    figure_2D_covid.png       — CF labor-components decomposition
+    figure_2E_covid.png       — CF investment-components decomposition
 """
 from __future__ import annotations
 
