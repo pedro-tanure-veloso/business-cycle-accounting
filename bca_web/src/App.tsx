@@ -373,6 +373,18 @@ function App() {
         )}
 
       </main>
+      <footer style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--text-muted)', fontSize: '0.875rem', borderTop: '1px solid var(--border-color)', marginTop: '2rem' }}>
+        Developed by{' '}
+        <a
+          href="https://sites.google.com/view/ptanurev/home"
+          target="_blank"
+          rel="noreferrer noopener"
+          style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}
+        >
+          Pedro Veloso
+        </a>
+        {' '}with Claude and Gemini
+      </footer>
     </div>
   );
 }
