@@ -1,294 +1,224 @@
 #!/usr/bin/env python3
 """
-build_quarterly_data.py — Stage 2 Data Pipeline
-
-This script runs the BCA core estimation, calculates all the necessary 
-macroeconomic statistics for the current quarter, generates structural 
-hypotheses using the Gemini API, and exports a static JSON file for the 
-React frontend (Stage 3).
-
-Usage:
-    python scripts/build_quarterly_data.py --start 1980Q1 --end 2024Q4 --base 2019Q4
+Consolidated data script for the BCA dashboard.
+1. Runs the BCA pipeline to get structural wedges and counterfactuals.
+2. Fetches latest FRED/BEA data for the macro overview and demand charts.
+3. Merges everything into a single JSON for the frontend.
 """
 
 import os
 import json
-import argparse
-from pathlib import Path
-import numpy as np
 import pandas as pd
+import numpy as np
+from pathlib import Path
+import argparse
 from datetime import datetime
 
-# Import BCA Core modules
-import sys
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT))
+# Import from the local scripts/run_bca.py
+from scripts.run_bca import build_us_dataset, run_pipeline
+from bca_core.counterfactuals import phi_statistics
+from bca_core.params import CalibrationParams
 
-from bca_core.data.pipeline import build_us_dataset
-from scripts.run_bca import run_pipeline, phi_statistics
+# Root of the repo
+REPO_ROOT = Path(__file__).parent.parent
 
-def compute_historical_percentile(series: pd.Series, current_val: float) -> int:
-    """
-    Computes the percentile rank of the current value relative to the historical series.
-    Used for the 'Historical Context' indicators in the dashboard.
-    """
-    return int((series < current_val).mean() * 100)
+def compute_historical_percentile(series, val):
+    """Compute where val sits in the historical distribution of series."""
+    return int((series < val).mean() * 100)
 
-def generate_hypotheses(stats_payload: dict, gemini_api_key: str) -> dict:
-    """
-    Orchestrates the AI Hypothesis Layer by sending structural BCA findings to Gemini.
-    
-    Args:
-        stats_payload: A dictionary containing the current quarter's macro and wedge stats.
-        gemini_api_key: The API key for Google GenAI.
+def generate_hypotheses(stats_payload, gemini_key=None):
+    """Call Gemini Flash to identify patterns and mechanisms."""
+    if not gemini_key:
+        print("No GEMINI_API_KEY found. Skipping hypothesis generation.")
+        return {}
+
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=gemini_key)
+        model = genai.GenerativeModel('gemini-2.0-flash')
         
-    Returns:
-        A dictionary following the hypothesis schema (pattern, mechanisms, indicator-to-watch).
-    """
-    try:
-        from google import genai
-        from google.genai import types
-        client = genai.Client(api_key=gemini_api_key)
-    except ImportError:
-        print("google-genai not installed. Returning mock hypotheses.")
-        return _mock_hypotheses()
+        prompt = f"""
+        You are an expert macroeconomist specializing in Business Cycle Accounting (BCA).
+        Based on the following quarterly BCA results, provide a brief analysis.
+        
+        Data: {json.dumps(stats_payload)}
+        
+        Provide your response in JSON format with these keys:
+        - pattern_identification: A 2-3 sentence summary of which wedges are driving current output fluctuations.
+        - candidate_mechanisms: A list of 2 objects (wedge name and potential real-world mechanism) with citations and reasoning.
+        - what_to_watch: A list of 3 indicators to monitor in the coming months.
+        """
+        
+        response = model.generate_content(prompt)
+        # Extract JSON from response
+        text = response.text
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0]
+        return json.loads(text)
     except Exception as e:
-        print(f"Error initializing Gemini client: {e}. Returning mock hypotheses.")
-        return _mock_hypotheses()
-
-    prompt = f"""
-    You are an expert macroeconomist specializing in business cycle accounting (BCA).
-    
-    Here is the structural snapshot of the US economy. The following statistics are evaluated for the period 2024Q1 to {stats_payload['quarter']}:
-    - Efficiency Wedge f-stat (output explained): {stats_payload['wedge_decomposition']['phi_statistics']['efficiency']:.2f}
-    - Labor Wedge f-stat: {stats_payload['wedge_decomposition']['phi_statistics']['labor']:.2f}
-    - Investment Wedge f-stat: {stats_payload['wedge_decomposition']['phi_statistics']['investment']:.2f}
-    - Government Wedge f-stat: {stats_payload['wedge_decomposition']['phi_statistics']['government']:.2f}
-    
-    Current wedge standard deviations from mean:
-    Efficiency: {stats_payload['wedge_decomposition']['current_levels']['efficiency']['sd_from_mean']}
-    Labor: {stats_payload['wedge_decomposition']['current_levels']['labor']['sd_from_mean']}
-    Investment: {stats_payload['wedge_decomposition']['current_levels']['investment']['sd_from_mean']}
-    Government: {stats_payload['wedge_decomposition']['current_levels']['government']['sd_from_mean']}
-
-    Generate a structured JSON response identifying the pattern, candidate mechanisms based on the BCA literature (e.g. Mortensen & Pissarides, Bernanke Gertler Gilchrist, etc.), and what high-frequency indicators to watch. 
-    IMPORTANT FOR CITATIONS: On candidate mechanisms, cite at most 3 papers, and strictly format them using only the author's last name and year of publication (e.g., 'Hall (2005)').
-    Make sure to follow this exact JSON schema:
-    {{
-      "pattern_identification": "string",
-      "candidate_mechanisms": [
-        {{"wedge": "string", "mechanism": "string", "citations": ["string"], "reasoning": "string"}}
-      ],
-      "what_to_watch": [
-        {{"mechanism": "string", "indicator": "string"}}
-      ]
-    }}
-    """
-
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash', # Falling back to flash to avoid 429 RESOURCE_EXHAUSTED
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-            ),
-        )
-        return json.loads(response.text)
-    except Exception as e:
-        print(f"Gemini API call failed: {e}. Returning mock hypotheses.")
-        return _mock_hypotheses()
-
-def _mock_hypotheses():
-    return {
-        "pattern_identification": "The current configuration is dominated by a deteriorating labor wedge, strongly resembling the 2008-2009 recession dynamics. (Generated via Mock due to missing API Key/Library).",
-        "candidate_mechanisms": [
-            {
-                "wedge": "Labor",
-                "mechanism": "Wage rigidity / sticky wages",
-                "citations": ["Hall (2005)", "Shimer (2004)"],
-                "reasoning": "Persistent nominal wage growth in recent BLS reports."
-            }
-        ],
-        "what_to_watch": [
-            {
-                "mechanism": "Wage rigidity",
-                "indicator": "Watch the Atlanta Fed Wage Growth Tracker."
-            }
-        ]
-    }
-
+        print(f"Warning: Gemini hypothesis generation failed: {e}")
+        return {}
 
 def main():
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(REPO_ROOT / ".env")
-    except ImportError:
-        pass
-
-    parser = argparse.ArgumentParser(description="BCA Pipeline Data Builder")
-    parser.add_argument("--start", default="1980Q1", help="Sample start")
-    parser.add_argument("--end", default="2030Q4", help="Sample end")
-    parser.add_argument("--base", default="2019Q4", help="Base quarter")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--start", default="1980Q1")
+    parser.add_argument("--end", default="2030Q4")
+    parser.add_argument("--base", default="2012Q1")
     args = parser.parse_args()
 
     print(f"Building BCA data from {args.start} to {args.end}...")
-    
+
     # 1. Run BCA Pipeline
     try:
         df, meta = build_us_dataset(start=args.start, end=args.end, detrend_method="calgz", base_year_quarter=args.base)
+        # Use n_shrink=2 for fast production runs
         r = run_pipeline(df, meta, Path("."), "temp_slug", verbose=False, n_shrink=2)
     except Exception as e:
         print(f"Failed to run BCA pipeline: {e}")
         print("Make sure you have FRED_API_KEY exported in your terminal.")
-        sys.exit(1)
+        return
 
-    # 2. Extract Data
-    dates = df.index
-    latest_date = dates[-1]
-    latest_q_str = f"{latest_date.year}Q{latest_date.quarter}"
+    # 2. Extract Key Results
+    y = df["y"]
+    c = df["c"]
+    x = df["x"]
     
-    y = df['y']
-    c = df.get('c', df['y'] * 0.6) # Approximation if c not explicitly returned
-    x = df['x']
-    g = df['g']
+    # Growth rates (internal BCA data)
+    gdp_growth_qoq = y.pct_change().iloc[-1]
+    gdp_growth_yoy = y.pct_change(4).iloc[-1]
+    c_growth_qoq = c.pct_change().iloc[-1]
+    x_growth_qoq = x.pct_change().iloc[-1]
+    g_growth_qoq = df["g"].pct_change().iloc[-1]
 
-    # 3. Calculate Macro Overview
-    # QoQ growth (log difference approx)
-    gdp_growth_qoq = y.iloc[-1] - y.iloc[-2]
-    gdp_growth_yoy = y.iloc[-1] - y.iloc[-5] if len(y) >= 5 else 0
-
-    c_growth_qoq = c.iloc[-1] - c.iloc[-2]
-    x_growth_qoq = x.iloc[-1] - x.iloc[-2]
-    g_growth_qoq = g.iloc[-1] - g.iloc[-2]
-
-    # 4. Calculate Wedge Decomposition
-    states = r["states"]
-    lz = states[:, 1]
-    taul = states[:, 2]
-    taux = states[:, 3]
-    lg = states[:, 4]
-
-    # z-scores for current level
-    # Helper to calculate z-scores and trends for wedges
-    def get_z_stats(series, name):
-        """
-        Calculates standard deviation from the mean, historical percentile, 
-        and a 'trend' label (improved/worsened) for a given structural wedge series.
-        """
+    # Current wedge states
+    sw = r["states"]  # T x 5 [k, A, taul, taux, g]
+    names = ["Efficiency", "Labor", "Investment", "Government"]
+    current_levels = {}
+    for i, name in enumerate(names):
+        series = sw[:, i+1]
         val = series[-1]
-        mean = np.mean(series)
-        sd = np.std(series)
-        z = (val - mean) / sd
-        pct = int((series < val).mean() * 100)
-        trend = "improved" if series[-1] > series[-2] else "worsened"
-        if abs(series[-1] - series[-2]) < 0.05 * sd: trend = "flat"
-        return {"sd_from_mean": round(z, 2), "percentile": pct, "trend": trend}
+        mean = series.mean()
+        std = series.std()
+        sd_from_mean = (val - mean) / std if std > 0 else 0
+        current_levels[name.lower()] = {
+            "sd_from_mean": round(float(sd_from_mean), 2),
+            "percentile": int((series < val).mean() * 100),
+            "trend": "improved" if (val > series[-2] if name == "Efficiency" else val < series[-2]) else "worsened"
+        }
 
-    current_levels = {
-        "efficiency": get_z_stats(lz, "efficiency"),
-        "labor": get_z_stats(taul, "labor"),
-        "investment": get_z_stats(taux, "investment"),
-        "government": get_z_stats(lg, "government")
-    }
+    # Variance decomposition (phi stats)
+    phi_df = phi_statistics(r["data_hat"], r["cfs"])
+    phi_stats = {}
+    for name in ["Efficiency", "Labor", "Investment", "Government"]:
+        phi_stats[name.lower()] = round(float(phi_df.loc[name.lower(), "y"]), 2)
 
-    # Phi stats
-    try:
-        phi_start_idx = list(dates).index(pd.Timestamp('2024-01-01'))
-    except ValueError:
-        phi_start_idx = 0
-    
-    phi_df = phi_statistics(r["data_hat"], r["cfs"], window=(phi_start_idx, len(dates) - 1))
-    phi_stats = {
-        "efficiency": round(phi_df.loc["efficiency", "y"], 2),
-        "labor": round(phi_df.loc["labor", "y"], 2),
-        "investment": round(phi_df.loc["investment", "y"], 2),
-        "government": round(phi_df.loc["government", "y"], 2)
-    }
-
-    # 4.2 CF Time Series for UI
+    # Counterfactual Time Series (Normalize to 100 at start of recent window)
+    recent_idx = -7 # Last 7 quarters
     cf_ts = []
-    if phi_start_idx > 0:
-        mask = slice(phi_start_idx, len(dates))
-        sub_dates = dates[mask]
-        
-        # Convert log-differences back to levels (anchored at 100 at the start of the window)
-        # for high-fidelity visualization in the React dashboard.
-        def to_level(series_log, anchor_idx):
-            return 100.0 * np.exp(series_log[mask] - series_log[anchor_idx])
+    t_labels = df.index[recent_idx:].to_period("Q").astype(str).tolist()
+    
+    # Base levels for normalization
+    y_base = y.iloc[recent_idx]
+    
+    # Map wedges to counterfactual names in r["cfs"]
+    cf_map = {
+        "Efficiency": "efficiency",
+        "Labor": "labor",
+        "Investment": "investment",
+        "Government": "government"
+    }
 
-        data_level = to_level(r["data_hat"]["y"], phi_start_idx)
-        eff_level = to_level(r["cfs"]["efficiency"]["y"], phi_start_idx)
-        lab_level = to_level(r["cfs"]["labor"]["y"], phi_start_idx)
-        inv_level = to_level(r["cfs"]["investment"]["y"], phi_start_idx)
-        gov_level = to_level(r["cfs"]["government"]["y"], phi_start_idx)
-        
-        for i, d in enumerate(sub_dates):
-            cf_ts.append({
-                "quarter": f"{d.year}Q{d.quarter}",
-                "Data": float(round(data_level[i], 2)),
-                "Efficiency": float(round(eff_level[i], 2)),
-                "Labor": float(round(lab_level[i], 2)),
-                "Investment": float(round(inv_level[i], 2)),
-                "Government": float(round(gov_level[i], 2))
-            })
+    for i in range(abs(recent_idx)):
+        idx = recent_idx + i
+        row = {
+            "quarter": t_labels[i],
+            "Data": round(float(y.iloc[idx] / y_base * 100), 2),
+        }
+        for name, cf_key in cf_map.items():
+            val = r["cfs"][cf_key]["y"][idx]
+            base_val = r["cfs"][cf_key]["y"][recent_idx]
+            row[name] = round(float(np.exp(val - base_val) * 100), 2)
+            
+        cf_ts.append(row)
 
-    # 4.5 Fetch Income/Supply optics and Time Series from FRED
-    demand_ts = []
-    supply_ts = []
+    # 3. Fetch latest FRED Data for Demand Overview
+    latest_q_str = str(df.index[-1].to_period("Q"))
+    
     try:
         from fredapi import Fred
         fred = Fred(api_key=os.environ.get("FRED_API_KEY"))
         
         # Tickers for the stacked bar chart (Contributions to GDP Growth)
-        # Matches BEA Table 1.1.2
+        # USER REQUESTED TICKERS
         contrib_tickers = {
             "Consumption": "DPCERY2Q224SBEA",
             "Investment": "A006RY2Q224SBEA",
             "Government": "A822RY2Q224SBEA",
-            "Exports": "A020RY2Q224SBEA",
-            "Imports": "A021RY2Q224SBEA",
+            "NetExports": "A019RY2Q224SBEA",
             "Total GDP Growth": "A191RL1Q225SBEA"
         }
 
         # Tickers for the KPI cards (Growth Rate % Change SAAR)
-        # Matches BEA Table 1.1.1
+        # USER REQUESTED TICKERS
         growth_tickers = {
             "Consumption": "DPCERL1Q225SBEA",
             "Investment": "A006RL1Q225SBEA",
             "Government": "A822RL1Q225SBEA",
-            "Exports": "A020RO1Q156NBEA",
-            "Imports": "A021RO1Q156NBEA"
+            "Exports": "A020RL1Q158SBEA",
+            "Imports": "A021RL1Q158SBEA",
+            "GDP": "A191RL1Q225SBEA"
         }
         
-        def fetch_recent(tickers):
-            df = pd.DataFrame()
+        def fetch_data(tickers):
+            df_fred = pd.DataFrame()
             for name, ticker in tickers.items():
-                s = fred.get_series(ticker)
-                df[name] = s
-            df.index = df.index.to_period("Q").astype(str)
+                try:
+                    s = fred.get_series(ticker)
+                    df_fred[name] = s
+                except Exception as e:
+                    print(f"Warning: Failed to fetch {name} ({ticker}): {e}")
             
-            df = df.tail(20) # Last 5 years
-            df = df.fillna(0)
+            if df_fred.empty:
+                return []
+                
+            df_fred = df_fred.tail(20)
+            df_fred = df_fred.fillna(0)
             
-            data = []
-            for q, row in df.iterrows():
-                # Force specific key order using prefixes to bypass automatic library sorting
-                row_dict = {
-                    "A_Consumption": float(round(row["Consumption"], 2)),
-                    "B_Investment": float(round(row["Investment"], 2)),
-                    "C_Government": float(round(row["Government"], 2)),
-                    "D_Exports": float(round(row["Exports"], 2)),
-                    "E_Imports": float(round(row["Imports"], 2)),
-                    "Total GDP Growth": float(round(row["Total GDP Growth"], 2)),
-                    "quarter": q
+            res_list = []
+            for idx, row in df_fred.iterrows():
+                q_str = f"{idx.year}Q{(idx.month-1)//3 + 1}"
+                row_dict = {"quarter": q_str}
+                # Map names to prefixes for chart ordering
+                # D_Exports will be used for Net Exports for now to keep frontend compatibility
+                prefix_map = {
+                    "Consumption": "A_Consumption",
+                    "Investment": "B_Investment",
+                    "Government": "C_Government",
+                    "NetExports": "D_Exports", 
+                    "Total GDP Growth": "Total GDP Growth"
                 }
-                data.append(row_dict)
-            return data
+                for orig_name, val in row.items():
+                    key = prefix_map.get(orig_name, orig_name)
+                    row_dict[key] = float(round(val, 2))
+                res_list.append(row_dict)
+            return res_list
 
-        demand_ts = fetch_recent(contrib_tickers)
-        print("Successfully fetched FRED time series for plotting.")
+        demand_ts = fetch_data(contrib_tickers)
+        
+        # For growth_ts, we don't need prefixes, just raw names
+        growth_data = {}
+        for name, ticker in growth_tickers.items():
+            try:
+                s = fred.get_series(ticker)
+                growth_data[name] = s.iloc[-1]
+            except Exception as e:
+                print(f"Warning: Failed to fetch growth card {name}: {e}")
+        
+        print("Successfully fetched FRED time series.")
     except Exception as e:
         print(f"Warning: Failed to fetch FRED time series: {e}")
+        demand_ts = []
+        growth_data = {}
 
     payload = {
         "quarter": latest_q_str,
@@ -296,9 +226,9 @@ def main():
             "gdp_growth_qoq": round(gdp_growth_qoq, 4),
             "gdp_growth_yoy": round(gdp_growth_yoy, 4),
             "components": {
-                "consumption": {"growth_qoq": round(c_growth_qoq, 4), "contribution_to_gdp": round(c_growth_qoq * 0.68 * 100, 2)},
-                "investment": {"growth_qoq": round(x_growth_qoq, 4), "contribution_to_gdp": round(x_growth_qoq * 0.17 * 100, 2)},
-                "government": {"growth_qoq": round(g_growth_qoq, 4), "contribution_to_gdp": round(g_growth_qoq * 0.18 * 100, 2)},
+                "consumption": {"growth_qoq": round(c_growth_qoq, 4), "contribution_to_gdp": 0},
+                "investment": {"growth_qoq": round(x_growth_qoq, 4), "contribution_to_gdp": 0},
+                "government": {"growth_qoq": round(g_growth_qoq, 4), "contribution_to_gdp": 0},
                 "exports": {"growth_qoq": 0, "contribution_to_gdp": 0},
                 "imports": {"growth_qoq": 0, "contribution_to_gdp": 0}
             },
@@ -310,7 +240,7 @@ def main():
         },
         "time_series": {
             "demand_contributions": demand_ts,
-            "supply_contributions": supply_ts
+            "supply_contributions": []
         },
         "wedge_decomposition": {
             "current_levels": current_levels,
@@ -319,63 +249,47 @@ def main():
         }
     }
 
-    # 4.7 Set macro_quarter for payload
-    macro_quarter = latest_q_str
-    if len(demand_ts) > 0:
-        macro_quarter = demand_ts[-1]["quarter"]
-    payload["macro_quarter"] = macro_quarter
+    # Overwrite with official FRED/BEA data where possible
+    if growth_data:
+        def to_qoq(saar):
+            return (1 + saar/100)**0.25 - 1
 
-    # 5. Call Gemini LLM for Hypotheses
+        payload["macro_overview"]["gdp_growth_qoq"] = round(to_qoq(growth_data.get("GDP", 0)), 6)
+        payload["macro_overview"]["supply_growth_qoq"] = payload["macro_overview"]["gdp_growth_qoq"]
+        
+        comps = payload["macro_overview"]["components"]
+        comps["consumption"]["growth_qoq"] = round(to_qoq(growth_data.get("Consumption", 0)), 6)
+        comps["investment"]["growth_qoq"] = round(to_qoq(growth_data.get("Investment", 0)), 6)
+        comps["government"]["growth_qoq"] = round(to_qoq(growth_data.get("Government", 0)), 6)
+        comps["exports"]["growth_qoq"] = round(to_qoq(growth_data.get("Exports", 0)), 6)
+        comps["imports"]["growth_qoq"] = round(to_qoq(growth_data.get("Imports", 0)), 6)
+        
+    if demand_ts:
+        latest_d_contrib = demand_ts[-1]
+        latest_q = latest_d_contrib["quarter"]
+        
+        comps = payload["macro_overview"]["components"]
+        comps["consumption"]["contribution_to_gdp"] = latest_d_contrib.get("A_Consumption", 0)
+        comps["investment"]["contribution_to_gdp"] = latest_d_contrib.get("B_Investment", 0)
+        comps["government"]["contribution_to_gdp"] = latest_d_contrib.get("C_Government", 0)
+        # Net Exports mapped to exports contribution for now
+        comps["exports"]["contribution_to_gdp"] = latest_d_contrib.get("D_Exports", 0)
+        comps["imports"]["contribution_to_gdp"] = 0 # Net exports includes imports
+        
+        payload["quarter"] = latest_q
+        payload["macro_quarter"] = latest_q
+
+    # Call Gemini for analysis
     gemini_key = os.environ.get("GEMINI_API_KEY")
     payload["hypothesis_layer"] = generate_hypotheses(payload, gemini_key)
 
-    # 5.5 Overwrite the Macro Overview with official BEA headline data
-    try:
-        from fredapi import Fred
-        fred = Fred(api_key=os.environ.get("FRED_API_KEY"))
-        gdp_series = fred.get_series("A191RL1Q225SBEA")
-        if not gdp_series.empty:
-            q_str_series = gdp_series.index.to_period("Q").astype(str).tolist()
-            if macro_quarter in q_str_series:
-                idx = q_str_series.index(macro_quarter)
-                bea_gdp = gdp_series.iloc[idx]
-                payload["macro_overview"]["gdp_growth_qoq"] = round((1 + bea_gdp / 100)**0.25 - 1, 6)
-                payload["macro_overview"]["supply_growth_qoq"] = payload["macro_overview"]["gdp_growth_qoq"]
-        
-        if len(demand_ts) > 0:
-            latest_d = demand_ts[-1]
-            
-            # KPI Cards: Use growth_tickers for component-specific growth rates
-            try:
-                def to_qoq(saar):
-                    return (1 + saar/100)**0.25 - 1
-
-                payload["macro_overview"]["components"]["consumption"]["growth_qoq"] = round(to_qoq(fred.get_series(growth_tickers["Consumption"]).iloc[-1]), 6)
-                payload["macro_overview"]["components"]["investment"]["growth_qoq"] = round(to_qoq(fred.get_series(growth_tickers["Investment"]).iloc[-1]), 6)
-                payload["macro_overview"]["components"]["government"]["growth_qoq"] = round(to_qoq(fred.get_series(growth_tickers["Government"]).iloc[-1]), 6)
-                payload["macro_overview"]["components"]["exports"]["growth_qoq"] = round(to_qoq(fred.get_series(growth_tickers["Exports"]).iloc[-1]), 6)
-                payload["macro_overview"]["components"]["imports"]["growth_qoq"] = round(to_qoq(fred.get_series(growth_tickers["Imports"]).iloc[-1]), 6)
-            except Exception as e:
-                print(f"Warning: Failed to fetch growth KPIs: {e}")
-
-            # Time Series Chart: Already uses contributions from demand_ts (fetch_recent(contrib_tickers))
-            # Just ensure the latest_quarter payload summary also reflects these contributions
-            payload["macro_overview"]["components"]["consumption"]["contribution_to_gdp"] = round(latest_d["A_Consumption"], 2)
-            payload["macro_overview"]["components"]["investment"]["contribution_to_gdp"] = round(latest_d["B_Investment"], 2)
-            payload["macro_overview"]["components"]["government"]["contribution_to_gdp"] = round(latest_d["C_Government"], 2)
-            payload["macro_overview"]["components"]["exports"]["contribution_to_gdp"] = round(latest_d["D_Exports"], 2)
-            payload["macro_overview"]["components"]["imports"]["contribution_to_gdp"] = round(latest_d["E_Imports"], 2)
-    except Exception as e:
-        print(f"Warning: Failed to override with BEA headline data: {e}")
-
-    # 6. Save JSON
+    # Save to public/data
     output_path = REPO_ROOT / "bca_web" / "public" / "data" / "latest_quarter.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
     with open(output_path, "w") as f:
         json.dump(payload, f, indent=2)
     
-    print(f"\n✅ Successfully generated static JSON export at: {output_path}")
+    print(f"✅ Consolidated data saved to {output_path}")
 
 if __name__ == "__main__":
     main()

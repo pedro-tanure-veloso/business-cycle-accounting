@@ -206,8 +206,7 @@ function App() {
                         { label: 'Consumption', color: '#3b82f6' },
                         { label: 'Investment', color: '#8b5cf6' },
                         { label: 'Government', color: '#10b981' },
-                        { label: 'Exports', color: '#f59e0b' },
-                        { label: 'Imports', color: '#ef4444' },
+                        { label: 'Net Exports', color: '#f59e0b' },
                         { label: 'Total GDP Growth', color: '#ffffff', isLine: true }
                       ];
                       return (
@@ -229,8 +228,7 @@ function App() {
                     <Bar dataKey="A_Consumption" name="Consumption" stackId="a" fill="#3b82f6" />
                     <Bar dataKey="B_Investment" name="Investment" stackId="a" fill="#8b5cf6" />
                     <Bar dataKey="C_Government" name="Government" stackId="a" fill="#10b981" />
-                    <Bar dataKey="D_Exports" name="Exports" stackId="a" fill="#f59e0b" />
-                    <Bar dataKey="E_Imports" name="Imports" stackId="a" fill="#ef4444" />
+                    <Bar dataKey="D_Exports" name="Net Exports" stackId="a" fill="#f59e0b" />
                     <Line type="monotone" dataKey="Total GDP Growth" stroke="#ffffff" strokeWidth={2} dot={{ r: 3, fill: '#ffffff' }} />
                   </ComposedChart>
                 </ResponsiveContainer>

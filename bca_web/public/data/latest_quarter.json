@@ -1,69 +1,230 @@
 {
-  "quarter": "2025Q3",
+  "quarter": "2026Q1",
   "macro_overview": {
-    "gdp_growth_qoq": 0.010823,
-    "gdp_growth_yoy": -0.0092,
+    "gdp_growth_qoq": 0.004963,
+    "gdp_growth_yoy": -0.005,
     "components": {
       "consumption": {
-        "growth_qoq": 0.0009,
-        "contribution_to_gdp": 0.06
+        "growth_qoq": 0.003976,
+        "contribution_to_gdp": 1.08
       },
       "investment": {
-        "growth_qoq": -0.0012,
-        "contribution_to_gdp": -0.02
+        "growth_qoq": 0.021074,
+        "contribution_to_gdp": 1.48
       },
       "government": {
-        "growth_qoq": 0.0052,
-        "contribution_to_gdp": 0.09
+        "growth_qoq": 0.010823,
+        "contribution_to_gdp": 0.73
       },
       "exports": {
-        "growth_qoq": 0,
-        "contribution_to_gdp": 0
+        "growth_qoq": 0.030798,
+        "contribution_to_gdp": -1.3
       },
       "imports": {
-        "growth_qoq": 0,
+        "growth_qoq": 0.049675,
         "contribution_to_gdp": 0
       }
     },
     "historical_percentiles": {
-      "gdp": 62,
-      "investment": 36,
-      "consumption": 75
+      "gdp": 97,
+      "investment": 68,
+      "consumption": 98
     },
-    "supply_growth_qoq": 0.010823
+    "supply_growth_qoq": 0.004963
   },
   "time_series": {
-    "demand_contributions": [],
+    "demand_contributions": [
+      {
+        "quarter": "2021Q2",
+        "A_Consumption": 9.42,
+        "B_Investment": -0.78,
+        "C_Government": -0.85,
+        "D_Exports": -0.81,
+        "Total GDP Growth": 7.0
+      },
+      {
+        "quarter": "2021Q3",
+        "A_Consumption": 2.24,
+        "B_Investment": 2.6,
+        "C_Government": -0.54,
+        "D_Exports": -0.96,
+        "Total GDP Growth": 3.3
+      },
+      {
+        "quarter": "2021Q4",
+        "A_Consumption": 2.63,
+        "B_Investment": 4.71,
+        "C_Government": -0.01,
+        "D_Exports": -0.29,
+        "Total GDP Growth": 7.0
+      },
+      {
+        "quarter": "2022Q1",
+        "A_Consumption": 0.22,
+        "B_Investment": 1.45,
+        "C_Government": -0.54,
+        "D_Exports": -2.15,
+        "Total GDP Growth": -1.0
+      },
+      {
+        "quarter": "2022Q2",
+        "A_Consumption": 2.19,
+        "B_Investment": -1.69,
+        "C_Government": -0.26,
+        "D_Exports": 0.38,
+        "Total GDP Growth": 0.6
+      },
+      {
+        "quarter": "2022Q3",
+        "A_Consumption": 1.27,
+        "B_Investment": -1.26,
+        "C_Government": 0.28,
+        "D_Exports": 2.63,
+        "Total GDP Growth": 2.9
+      },
+      {
+        "quarter": "2022Q4",
+        "A_Consumption": 0.53,
+        "B_Investment": 1.43,
+        "C_Government": 0.69,
+        "D_Exports": 0.14,
+        "Total GDP Growth": 2.8
+      },
+      {
+        "quarter": "2023Q1",
+        "A_Consumption": 2.99,
+        "B_Investment": -1.33,
+        "C_Government": 0.69,
+        "D_Exports": 0.58,
+        "Total GDP Growth": 2.9
+      },
+      {
+        "quarter": "2023Q2",
+        "A_Consumption": 1.02,
+        "B_Investment": 1.27,
+        "C_Government": 0.56,
+        "D_Exports": -0.3,
+        "Total GDP Growth": 2.5
+      },
+      {
+        "quarter": "2023Q3",
+        "A_Consumption": 2.08,
+        "B_Investment": 1.66,
+        "C_Government": 0.87,
+        "D_Exports": 0.09,
+        "Total GDP Growth": 4.7
+      },
+      {
+        "quarter": "2023Q4",
+        "A_Consumption": 2.04,
+        "B_Investment": 0.65,
+        "C_Government": 0.79,
+        "D_Exports": -0.06,
+        "Total GDP Growth": 3.4
+      },
+      {
+        "quarter": "2024Q1",
+        "A_Consumption": 1.17,
+        "B_Investment": -0.29,
+        "C_Government": 0.39,
+        "D_Exports": -0.42,
+        "Total GDP Growth": 0.8
+      },
+      {
+        "quarter": "2024Q2",
+        "A_Consumption": 2.61,
+        "B_Investment": 1.44,
+        "C_Government": 0.57,
+        "D_Exports": -1.04,
+        "Total GDP Growth": 3.6
+      },
+      {
+        "quarter": "2024Q3",
+        "A_Consumption": 2.66,
+        "B_Investment": 0.18,
+        "C_Government": 0.92,
+        "D_Exports": -0.41,
+        "Total GDP Growth": 3.3
+      },
+      {
+        "quarter": "2024Q4",
+        "A_Consumption": 2.61,
+        "B_Investment": -1.26,
+        "C_Government": 0.57,
+        "D_Exports": -0.06,
+        "Total GDP Growth": 1.9
+      },
+      {
+        "quarter": "2025Q1",
+        "A_Consumption": 0.42,
+        "B_Investment": 3.79,
+        "C_Government": -0.17,
+        "D_Exports": -4.68,
+        "Total GDP Growth": -0.6
+      },
+      {
+        "quarter": "2025Q2",
+        "A_Consumption": 1.68,
+        "B_Investment": -2.66,
+        "C_Government": -0.01,
+        "D_Exports": 4.83,
+        "Total GDP Growth": 3.8
+      },
+      {
+        "quarter": "2025Q3",
+        "A_Consumption": 2.34,
+        "B_Investment": 0.03,
+        "C_Government": 0.38,
+        "D_Exports": 1.62,
+        "Total GDP Growth": 4.4
+      },
+      {
+        "quarter": "2025Q4",
+        "A_Consumption": 1.3,
+        "B_Investment": 0.4,
+        "C_Government": -0.99,
+        "D_Exports": -0.22,
+        "Total GDP Growth": 0.5
+      },
+      {
+        "quarter": "2026Q1",
+        "A_Consumption": 1.08,
+        "B_Investment": 1.48,
+        "C_Government": 0.73,
+        "D_Exports": -1.3,
+        "Total GDP Growth": 2.0
+      }
+    ],
     "supply_contributions": []
   },
   "wedge_decomposition": {
     "current_levels": {
       "efficiency": {
-        "sd_from_mean": 0.51,
-        "percentile": 61,
+        "sd_from_mean": 1.06,
+        "percentile": 95,
         "trend": "improved"
       },
       "labor": {
-        "sd_from_mean": -1.0,
-        "percentile": 19,
-        "trend": "improved"
-      },
-      "investment": {
-        "sd_from_mean": 0.89,
-        "percentile": 79,
+        "sd_from_mean": -0.94,
+        "percentile": 21,
         "trend": "worsened"
       },
-      "government": {
-        "sd_from_mean": -0.59,
-        "percentile": 38,
+      "investment": {
+        "sd_from_mean": 0.88,
+        "percentile": 79,
         "trend": "improved"
+      },
+      "government": {
+        "sd_from_mean": 0.07,
+        "percentile": 57,
+        "trend": "worsened"
       }
     },
     "phi_statistics": {
-      "efficiency": 0.02,
+      "efficiency": 0.06,
       "labor": 0.01,
-      "investment": 0.26,
-      "government": 0.71
+      "investment": 0.61,
+      "government": 0.32
     },
     "cf_time_series": [
       {
@@ -76,108 +237,54 @@
       },
       {
         "quarter": "2024Q2",
-        "Data": 100.39,
-        "Efficiency": 100.36,
-        "Labor": 101.08,
-        "Investment": 99.56,
+        "Data": 100.5,
+        "Efficiency": 100.07,
+        "Labor": 101.75,
+        "Investment": 99.27,
         "Government": 99.4
       },
       {
         "quarter": "2024Q3",
-        "Data": 100.74,
-        "Efficiency": 100.67,
-        "Labor": 101.44,
-        "Investment": 99.36,
-        "Government": 99.29
+        "Data": 100.97,
+        "Efficiency": 100.2,
+        "Labor": 102.48,
+        "Investment": 98.93,
+        "Government": 99.35
       },
       {
         "quarter": "2024Q4",
-        "Data": 100.86,
-        "Efficiency": 100.61,
-        "Labor": 101.65,
-        "Investment": 99.23,
-        "Government": 99.38
+        "Data": 101.19,
+        "Efficiency": 99.92,
+        "Labor": 102.95,
+        "Investment": 98.74,
+        "Government": 99.58
       },
       {
         "quarter": "2025Q1",
-        "Data": 98.89,
-        "Efficiency": 100.49,
-        "Labor": 105.14,
-        "Investment": 97.43,
-        "Government": 96.06
+        "Data": 99.3,
+        "Efficiency": 98.67,
+        "Labor": 109.51,
+        "Investment": 95.82,
+        "Government": 95.79
       },
       {
         "quarter": "2025Q2",
-        "Data": 99.36,
-        "Efficiency": 100.04,
-        "Labor": 100.51,
-        "Investment": 99.41,
-        "Government": 99.4
+        "Data": 99.87,
+        "Efficiency": 99.58,
+        "Labor": 101.66,
+        "Investment": 99.02,
+        "Government": 99.56
       },
       {
         "quarter": "2025Q3",
-        "Data": 99.84,
-        "Efficiency": 100.04,
-        "Labor": 98.65,
-        "Investment": 100.29,
-        "Government": 100.87
+        "Data": 100.46,
+        "Efficiency": 100.26,
+        "Labor": 98.46,
+        "Investment": 100.46,
+        "Government": 101.25
       }
     ]
   },
-  "macro_quarter": "2025Q3",
-  "hypothesis_layer": {
-    "pattern_identification": "The US economy from 2024Q1 to 2025Q3 is primarily characterized by significant contributions from the Government Wedge (71% of output explained) and the Investment Wedge (26% of output explained). The Efficiency and Labor Wedges have negligible explanatory power. Currently, the Government Wedge is significantly below its mean (-0.59 standard deviations), suggesting a less stimulative or contractionary fiscal stance, while the Investment Wedge is significantly above its mean (0.89 standard deviations), indicating heightened distortions or costs to investment.",
-    "candidate_mechanisms": [
-      {
-        "wedge": "Government Wedge",
-        "mechanism": "Contractionary fiscal policy or fiscal uncertainty",
-        "citations": [
-          "Barro (1981)",
-          "Ramey & Shapiro (1998)",
-          "Blanchard & Perotti (2002)"
-        ],
-        "reasoning": "With the Government Wedge explaining the largest share of output fluctuations and currently being below its mean, it suggests that reduced government spending or increased taxation, relative to its historical average, is acting as a significant drag on economic activity. Alternatively, fiscal policy uncertainty could be dampening private sector activity."
-      },
-      {
-        "wedge": "Investment Wedge",
-        "mechanism": "Financial market imperfections, credit constraints, or elevated risk premia",
-        "citations": [
-          "Bernanke, Gertler, & Gilchrist (1999)",
-          "Jermann & Quadrini (2012)",
-          "Christiano, Motto, & Rostagno (2014)"
-        ],
-        "reasoning": "The Investment Wedge, explaining a notable portion of output and currently being well above its mean, points to increased costs, barriers, or uncertainty associated with capital formation. This could stem from tighter credit conditions, higher borrowing costs, or heightened risk perceptions making firms less willing or able to invest."
-      }
-    ],
-    "what_to_watch": [
-      {
-        "mechanism": "Contractionary fiscal policy or fiscal uncertainty",
-        "indicator": "Federal, state, and local government spending data (e.g., consumption, investment, transfers)."
-      },
-      {
-        "mechanism": "Contractionary fiscal policy or fiscal uncertainty",
-        "indicator": "Monthly and quarterly tax revenue collections (e.g., income, corporate, sales taxes)."
-      },
-      {
-        "mechanism": "Contractionary fiscal policy or fiscal uncertainty",
-        "indicator": "Legislative developments and announcements regarding budget proposals, debt ceiling, and new fiscal programs."
-      },
-      {
-        "mechanism": "Financial market imperfections, credit constraints, or elevated risk premia",
-        "indicator": "Corporate bond spreads (e.g., BAA-Treasury spread) and other measures of credit market tightness."
-      },
-      {
-        "mechanism": "Financial market imperfections, credit constraints, or elevated risk premia",
-        "indicator": "Senior Loan Officer Opinion Survey (SLOOS) on bank lending standards and demand for commercial & industrial loans."
-      },
-      {
-        "mechanism": "Financial market imperfections, credit constraints, or elevated risk premia",
-        "indicator": "Business fixed investment data (equipment, structures, intellectual property products) from GDP reports."
-      },
-      {
-        "mechanism": "Financial market imperfections, credit constraints, or elevated risk premia",
-        "indicator": "Equity market volatility indices (e.g., VIX) as a proxy for economic uncertainty."
-      }
-    ]
-  }
+  "macro_quarter": "2026Q1",
+  "hypothesis_layer": {}
 }
