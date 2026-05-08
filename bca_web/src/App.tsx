@@ -244,6 +244,9 @@ function App() {
             <h2 className="section-title">Wedge Decomposition</h2>
             <div className="section-divider"></div>
           </div>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9375rem', marginBottom: '1rem', lineHeight: 1.6 }}>
+            The panels below apply Business Cycle Accounting (<a href="https://doi.org/10.1111/j.1468-0262.2007.00768.x" target="_blank" rel="noreferrer noopener" style={{ color: 'var(--accent-primary)', textDecoration: 'none' }}>Chari, Kehoe &amp; McGrattan, 2007</a>), which rewrites a wide class of models of economic fluctuations as a single growth model with four time-varying wedges — efficiency, labor, investment, and government. Each wedge's counterfactual shows what output would have done if that wedge alone were active.
+          </p>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1.5rem', lineHeight: 1.55 }}>
             <strong style={{ color: 'var(--text-secondary)' }}>Series:</strong> detrended real GDP per working-age person (15-64), normalized to 2023Q1 = 100. <strong style={{ color: 'var(--text-secondary)' }}>Evaluation window:</strong> 2023Q1 → {data.quarter}. Both panels are anchored at 2023Q1. Structural wedges reported up to {data.quarter} due to auxiliary data release lags.
           </div>
