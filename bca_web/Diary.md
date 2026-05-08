@@ -9,6 +9,159 @@ invalidates them — in that case mark the old one `SUPERSEDED`.
 
 ---
 
+## 2026-05-08 — Eval window moved to 2023Q1; flat-data f-stat degeneracy surfaced; events-log generator scaffolded
+
+Follow-on to the 2026-05-07 entry. Verified the previous session's fixes
+end-to-end via `workflow_dispatch`, then iterated on what the new data
+revealed.
+
+### Workflow side: one more fix needed before the cron could run
+
+**`scripts/build_quarterly_data.py` failed CI with
+`ModuleNotFoundError: No module named 'scripts'`.** The script does
+`from scripts.run_bca import build_us_dataset, run_pipeline`, which
+requires the repo root on `sys.path`. When invoked as
+`python scripts/build_quarterly_data.py` (the workflow's invocation),
+Python puts `scripts/` on `sys.path` instead. Fixed by inserting
+`sys.path.insert(0, str(Path(__file__).resolve().parent.parent))` at
+the top of the script (commit `d39c856`). The Node.js 20 deprecation
+warning in the workflow log is unrelated noise.
+
+### What the post-fix data revealed: f-stat degeneracy in flat-data regimes
+
+After the workflow re-ran cleanly, the dashboard reported
+**phi=(eff:0.17, lab:0.02, inv:0.08, gov:0.73)** over 2024Q1–2025Q3
+— Government dominant by a 4× margin. But the cf-time-series panel told
+a very different story: data essentially flat (~98–100), labor cf
+peaking at +50 (output would have boomed under labor wedge alone),
+investment cf bottoming at −22 (output would have crashed under
+investment alone), efficiency cf at −15. Government cf was the only
+one that stayed near data, hugging 100 throughout.
+
+**Interpretation finding.** When observed output is approximately flat
+within the eval window, the inverse-SSR f-stat mechanically favors
+whichever counterfactual stayed *closest to flat* — i.e., the wedge
+that did the **least**, not the wedge that "explains" most. The
+Government=0.73 headline is a degenerate-ranking artifact, not
+evidence that fiscal/external channels drove output. The interesting
+signal in this regime is the **offsetting-wedge story** visible in the
+right panel: labor and investment moved aggressively in opposite
+directions, leaving observed output flat.
+
+This is methodological, not a bug. The f-stat formula is correct
+(BCKM Table 11 idiom). The degeneracy is intrinsic to inverse-SSR when
+the denominator (data variation within the window) is small. Two
+implications:
+1. The dashboard's *visual* hierarchy should privilege the cf-time-
+   series panel over the f-stat bar chart in flat-data regimes.
+2. The hypothesis-layer LLM needs this context or it will dutifully
+   write "Government wedge dominated" narratives when the truth is
+   "labor and investment offset."
+
+### Decisions taken this session
+
+**1. Eval window moved 2024Q1 → 2023Q1.** With ~7 quarters in the
+2024Q1+ window and observed output nearly flat, both the f-stat and
+the cf rebase were under-conditioned. 2023Q1 widens the window to ~11
+quarters and includes the 2023 banking-stress / Fed-tightening period,
+which has more output variation. User's prior on 2024Q1 (agentic-AI
+inflection) is still defensible but with this window length the f-stat
+fragility wins. The robustness sweep over alternative start dates
+(2022Q4 / 2023Q1 / 2024Q1) remains on the to-do list.
+
+**2. Unified the eval-window definition.** Previously `phi_start_idx`
+was anchored at 2024Q1 for the f-stat, while `recent_idx = -7` slug-
+sliced the cf time series independently — two different windows by
+construction. Replaced both with a single `eval_window_start =
+pd.Timestamp("2023-01-01")` and derived `win_start_idx`, `win_end_idx`
+from it; both panels are now provably computed off the same window.
+[`scripts/build_quarterly_data.py:184-225`].
+
+**3. Gemini prompt enriched with cf peak swings + methodological
+caveat.** The previous prompt fed only f-stats and SD-from-mean of
+wedges, so Gemini had no way to see "labor cf to 150, data flat = the
+offsetting story." Now the prompt also includes:
+   - Signed peak deviation of each cf from baseline within the window
+   - Observed data range across the window
+   - Explicit "read carefully before interpreting" block: when data is
+     near-flat, lead with offsetting-swings narrative; use f-stats to
+     corroborate, not as the headline.
+[`scripts/build_quarterly_data.py:52-110`].
+
+**4. UI: methodology caveat surfaced in the Wedge Decomposition
+section.** Above the plots, a one-line dynamic "Evaluation window:
+2023Q1 → {data.quarter}" header (renders 2025Q3 today; updates
+automatically). Below the plots, a "Caveat:" block explaining the
+inverse-SSR / flat-data degeneracy and pointing readers to the right
+panel for the offsetting-swings story. Chart title also updated to
+"Output Components (2023Q1 = 100)". [`bca_web/src/App.tsx:247-253`,
+`:268`, `:295-297`].
+
+**5. UI: defensive `.slice(-8)` cap on the demand chart.**
+Belt-and-suspenders so the right-side chart can never exceed 8
+quarters regardless of JSON length. [`bca_web/src/App.tsx:199`].
+
+**6. Standalone events-log generator: `scripts/generate_events.py`.**
+New script that, given a quarter (e.g. `2023Q1`), calls Gemini 2.5
+Flash with **Google Search grounding** (`tools=[GoogleSearch()]`) and
+appends a structured event log to `data/events.md`. Idempotent —
+scans existing `## YYYYQX` headers and skips quarters already present
+unless `--force`. Each quarter is generated **once and frozen**, so
+older entries don't drift between runs. The prompt enforces five
+fixed buckets (Monetary / Fiscal / Regulatory / Tech / Geopolitical),
+≤3 entries per bucket, dated to within a week, factual-only (no
+commentary or forecasts). The intent is to feed this log into a
+future revision of the hypothesis-generation prompt so candidate
+mechanisms are anchored to dated events rather than the LLM's
+narrative-of-the-moment training prior.
+
+  *Status*: scaffolded but not yet wired. To be tested on a separate
+  machine where `GEMINI_API_KEY` is exported, then integrated into the
+  workflow as a second pre-build step, then ingested by
+  `generate_hypotheses` in `build_quarterly_data.py`.
+
+### Open / to-do
+
+- **Test `generate_events.py` against 2023Q1** on a machine with
+  `GEMINI_API_KEY` exported. Inspect output for hallucination,
+  bucket discipline, date precision. If acceptable, backfill
+  2022Q1–2025Q3.
+- **Wire `data/events.md` into `generate_hypotheses`.** Pass the
+  current and prior quarter's event entries into the prompt;
+  instruct Gemini to tie each candidate mechanism to a specific
+  dated event whose quarter aligns with a wedge move.
+- **Add `generate_events.py` to the GH Actions workflow** as a
+  pre-`build_quarterly_data.py` step. Idempotent semantics mean it's
+  safe to run on every cron firing.
+- **f-stat robustness sweep** over 2022Q4 / 2023Q1 / 2024Q1 start
+  dates (carried over from 2026-05-07).
+- **Imports KPI sign at App.tsx:185** still shows green ↑ on rising
+  imports (carried over).
+- **YAxis units / chart titles** for the Demand chart (carried over).
+- **`pyproject.toml` `google-genai>=0.1` pin tightening**: verify after
+  next CI run that the resolver picks a version exposing
+  `client.models.generate_content` and `tools=[GoogleSearch()]`. If
+  flaky, bump to `>=0.3`.
+
+### Files touched
+
+- `scripts/build_quarterly_data.py`
+  - L9-19: `import sys`; insert repo root on `sys.path` before any
+    `scripts.*` / `bca_core.*` import (workflow `ModuleNotFoundError` fix)
+  - L52-110: prompt extended with cf peak swings, data range, and
+    methodological caveat
+  - L184-225: unified `eval_window_start = 2023-01-01` shared by the
+    f-stat anchor and the cf rebase
+- `bca_web/src/App.tsx`
+  - L199: `.slice(-8)` defensive cap on demand chart
+  - L247-253: dynamic Evaluation-window line
+  - L268: chart title 2024Q1 → 2023Q1
+  - L295-297: "Caveat:" block below the wedge plots
+- `scripts/generate_events.py` (new): events-log generator with Google
+  Search grounding, idempotent per quarter
+
+---
+
 ## 2026-05-07 — Three live bugs in the dashboard, two fixed in this session
 
 Triage of the live `latest_quarter.json` (auto-updated by GH Actions on

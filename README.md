@@ -3,7 +3,7 @@ title: "BCA — Business Cycle Accounting"
 topic: "project-overview"
 layer: "all"
 status: "active"
-last_updated: "2026-05-04"
+last_updated: "2026-05-08"
 ---
 
 # BCA — Business Cycle Accounting
@@ -89,9 +89,13 @@ primarily a labor-driven contraction. Details in
 scripts/                    User-facing entry points
   run_bca.py                ★ Main CLI — any US window, all outputs in one command
   build_quarterly_data.py   Stage 2 data pipeline (runs bca_core + Gemini LLM)
+  generate_events.py        Per-quarter macro event log via Gemini + Google Search grounding
   run_var_counterfactuals.py  Legacy BCKM-1980-2014 driver (parquet + figures)
   diagnose_counterfactuals.py PASS/FAIL diagnostics for the CF decomposition
   solow_residual_check.py     Solow residual sanity check
+
+data/                       Curated inputs to the dashboard pipeline
+  events.md                 Per-quarter macro event log (auto-generated, frozen)
 
 bca_core/                   Pure-Python computational core (no web deps)
   params.py                 CalibrationParams (BCKM Table 1 defaults)
