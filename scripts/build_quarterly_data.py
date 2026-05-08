@@ -134,7 +134,13 @@ def main():
 
     # 1. Run BCA Pipeline
     try:
-        df, meta = build_us_dataset(start=args.start, end=args.end, detrend_method="calgz", base_year_quarter=args.base)
+        df, meta = build_us_dataset(
+            start=args.start,
+            end=args.end,
+            detrend_method="calgz",
+            base_year_quarter=args.base,
+            labor_target_mean=0.24279,
+        )
         # Use n_shrink=5 for production precision (matches local build)
         # We reuse the prod slug to allow caching if parameters haven't changed
         r = run_pipeline(df, meta, Path("."), f"prod_{args.start}_{args.end}", 

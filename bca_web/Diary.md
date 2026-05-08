@@ -9,6 +9,134 @@ invalidates them — in that case mark the old one `SUPERSEDED`.
 
 ---
 
+## 2026-05-08 (later) — Smoking gun: dashboard MLE was in a broken basin all along
+
+Cross-checked the suspicious 2025Q1 labor cf spike (108.64 → 149.17 →
+113.22 → 99.53) by running `scripts/run_bca.py` with the same
+`--start 2010Q1 --end 2025Q4 --base 2012Q1 --window 2023Q1 2025Q3`
+arguments and diffing `counterfactuals.csv` against the dashboard's
+`cf_time_series`.
+
+**`run_bca.py` produced totally tame cf paths.** Labor cf at 2025Q1 came
+in at `cf_labor_y = 0.091222`, which rebased to 100 at 2023Q1 (anchor
+0.088620) is `exp(0.0026) * 100 = 100.26`. Compare to the dashboard's
+**149.17** — a 4× discrepancy. All four cfs over the eval window stayed
+within ±2 points of 100 in `run_bca.py`, vs ±50 in the dashboard.
+
+**Root cause: `scripts/build_quarterly_data.py` was missing
+`labor_target_mean=0.24279` in its `build_us_dataset()` call.**
+`run_bca.py:687` defaults to it; the dashboard pipeline didn't, so it
+fell through to `labor_target_mean=None` → raw FRED labor at ~80× the
+model SS scale (`ss["l"] ≈ 0.29`, raw FRED ≈ 23 hrs/wk/pop). Per
+CLAUDE.md's Layer-2 rule, this is **the** known-bad config: the SS-vs-
+data scale mismatch breaks Sbar warm-start.
+
+Concretely the dashboard's MLE log was emitting:
+
+```
+initmle fsolve: ier=5  ‖residual‖∞ = 3.30e+02
+initmle fsolve: failed convergence check, falling back to Sbar=zeros warm-start
+Sbar_init: log_z=+0.0000  τ_l=+0.0000  τ_x=+0.0000  log_g=+0.0000
+MLE restart 1/5 ... ll = 85.0193
+...
+Log-likelihood: +260.6031
+```
+
+vs `run_bca.py`'s healthy:
+
+```
+initmle fsolve: ier=1  ‖residual‖∞ = 8.44e-15
+Sbar_init: log_z=+0.0948  τ_l=+0.2383  τ_x=-0.0144  log_g=-2.2405
+MLE restart 1/5 ... ll = 713.5597
+...
+Log-likelihood: +767.3115
+```
+
+The 506-nat LL gap between the two basins was being silently produced
+quarter after quarter every time the GH Actions cron ran. The "spiky
+labor cf" was an artifact of the optimizer landing in nonsense θ-space
+because its warm-start was the zero-vector instead of the BCKM-
+empirically-anchored Sbar.
+
+### The fix and what it changed
+
+One-line patch to `scripts/build_quarterly_data.py:137`:
+
+```python
+df, meta = build_us_dataset(
+    start=args.start, end=args.end, detrend_method="calgz",
+    base_year_quarter=args.base,
+    labor_target_mean=0.24279,   # ← added
+)
+```
+
+After the fix, local rerun of `build_quarterly_data.py` reproduces
+`run_bca.py`'s LL (+767.3115) and Sbar bit-for-bit. cf paths over
+the eval window all collapse to within ±2pts of 100. φ-stat
+decomposition flips dramatically:
+
+| metric (y-row) | pre-fix | post-fix |
+|---|---|---|
+| efficiency | 0.18 | **0.89** |
+| labor      | 0.02 | 0.03 |
+| investment | 0.07 | 0.03 |
+| government | **0.73** | 0.05 |
+
+Pre-fix the f-stat was concentrated in Government (the wedge that did
+the *least* — flat-data degeneracy on top of a busted optimizer). Post-
+fix it's concentrated in Efficiency, which is consistent with A being
+the residual TFP-like channel that absorbs most innovations. **The
+"Government=73%" headline was 100% an artifact, not an economic
+signal.** Same goes for the Labor=149 cf spike at 2025Q1.
+
+### Implication: re-evaluate everything that's been generated since the dashboard launched
+
+Every `latest_quarter.json` produced by the GH Actions cron prior to
+this fix used the broken-basin MLE. That includes every set of
+hypotheses Gemini has been generating — they were anchored to wedge
+deviations and cf paths from the wrong basin. Once the workflow
+re-runs with the fix, the entire downstream layer (current_levels,
+phi_statistics, cf_time_series, hypothesis_layer) will be regenerated
+correctly.
+
+Restored the existing `latest_quarter.json` after the local diagnostic
+rerun so we don't push a JSON with empty hypothesis content (the local
+.env doesn't carry `GEMINI_API_KEY`). Next `workflow_dispatch` on the
+GH Actions runner will produce the clean replacement.
+
+### Why this slipped past us until now
+
+1. The `labor_target_mean=None` default in `build_us_dataset()` is the
+   correct behavior for *some* call sites (BCKM 1980-2014 paper-window
+   regression). Setting it on a Layer-2 window like 2010-2025 is the
+   non-default but is documented in CLAUDE.md as the "safe Layer-2
+   default" since 2026-05-01.
+2. `run_bca.py` already passes 0.24279; `build_quarterly_data.py` was
+   written before that rule was added and was never audited against
+   it.
+3. The bad MLE still produces a finite likelihood (+260) and finishes
+   without raising — the optimizer doesn't know it's in a wrong basin
+   unless you compare against ground truth. The cf paths "look weird"
+   but only diagnose-able by side-by-side with `run_bca.py`.
+
+### Files touched this round
+
+- `scripts/build_quarterly_data.py` — added `labor_target_mean=0.24279`
+- `bca_web/Diary.md` — this entry
+- (no JSON commit; let the cron regenerate)
+
+### Open from prior session
+
+- Imports KPI sign convention (App.tsx:185) — still pending
+- Demand chart YAxis units / titles — still pending
+- f-stat robustness sweep over multiple eval-window starts — still pending
+- Wire `data/events.md` into hypothesis prompt — still pending (events.md
+  not yet generated; user testing on another machine)
+- Add `generate_events.py` to GH workflow as pre-build step — still
+  pending
+
+---
+
 ## 2026-05-08 — Eval window moved to 2023Q1; flat-data f-stat degeneracy surfaced; events-log generator scaffolded
 
 Follow-on to the 2026-05-07 entry. Verified the previous session's fixes
