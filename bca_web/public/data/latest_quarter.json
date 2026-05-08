@@ -19,7 +19,7 @@
       },
       "exports": {
         "growth_qoq": 0.030798,
-        "contribution_to_gdp": -1.3
+        "contribution_to_gdp": 0.0
       },
       "imports": {
         "growth_qoq": 0.049675,
@@ -39,64 +39,64 @@
         "A_Consumption": 2.61,
         "B_Investment": 0.0,
         "C_Government": 0.57,
-        "D_Exports": -1.04,
-        "Total GDP Growth": 3.6
+        "D_Exports": 0.0,
+        "Total GDP Growth": 0.0
       },
       {
         "quarter": "2024Q3",
         "A_Consumption": 2.66,
         "B_Investment": 0.0,
         "C_Government": 0.92,
-        "D_Exports": -0.41,
-        "Total GDP Growth": 3.3
+        "D_Exports": 0.0,
+        "Total GDP Growth": 0.0
       },
       {
         "quarter": "2024Q4",
         "A_Consumption": 2.61,
         "B_Investment": 0.0,
         "C_Government": 0.57,
-        "D_Exports": -0.06,
-        "Total GDP Growth": 1.9
+        "D_Exports": 0.0,
+        "Total GDP Growth": 0.0
       },
       {
         "quarter": "2025Q1",
         "A_Consumption": 0.42,
         "B_Investment": 0.0,
         "C_Government": -0.17,
-        "D_Exports": -4.68,
-        "Total GDP Growth": -0.6
+        "D_Exports": 0.0,
+        "Total GDP Growth": 0.0
       },
       {
         "quarter": "2025Q2",
         "A_Consumption": 1.68,
         "B_Investment": 0.0,
         "C_Government": -0.01,
-        "D_Exports": 4.83,
-        "Total GDP Growth": 3.8
+        "D_Exports": 0.0,
+        "Total GDP Growth": 0.0
       },
       {
         "quarter": "2025Q3",
         "A_Consumption": 2.34,
         "B_Investment": 0.0,
         "C_Government": 0.38,
-        "D_Exports": 1.62,
-        "Total GDP Growth": 4.4
+        "D_Exports": 0.0,
+        "Total GDP Growth": 0.0
       },
       {
         "quarter": "2025Q4",
         "A_Consumption": 1.3,
         "B_Investment": 0.0,
         "C_Government": -0.99,
-        "D_Exports": -0.22,
-        "Total GDP Growth": 0.5
+        "D_Exports": 0.0,
+        "Total GDP Growth": 0.0
       },
       {
         "quarter": "2026Q1",
         "A_Consumption": 1.08,
         "B_Investment": 0.0,
         "C_Government": 0.73,
-        "D_Exports": -1.3,
-        "Total GDP Growth": 2.0
+        "D_Exports": 0.0,
+        "Total GDP Growth": 0.0
       }
     ],
     "supply_contributions": []
@@ -222,48 +222,62 @@
     ]
   },
   "hypothesis_layer": {
-    "pattern_identification": "The observed output over the 2023Q1-2025Q3 window was relatively flat, with a small data range of 1.1. Consequently, the f-statistics should be interpreted cautiously, as they reward counterfactuals that stayed closest to this flat path. The counterfactual mean deviations for all wedges are small (ranging from -0.2 to +0.1), indicating that, on average, no single wedge exerted a strong, sustained expansionary or contractionary pull. Instead, the net effects of the wedges across the window were largely balanced or reverted, contributing to the overall stable output. While the Efficiency wedge registers the highest f-statistic (0.61), this likely reflects its counterfactual path being the best fit for the small observed fluctuations rather than a strong average driving force. The Labor wedge exerted the largest (though still modest) average contractionary pull across the window.",
+    "pattern_identification": "The US economy experienced a relatively flat output path during the 2023Q1-2025Q3 period, with an observed data range of only 1.1. In this 'flat-data regime,' f-statistics are highly susceptible to degenerate rankings, meaning the high f-stat for Efficiency (0.61) should not be interpreted as evidence of it being a strong driver. Instead, the small mean deviations (Labor: -0.2, Government: -0.1, Efficiency: +0.1, Investment: -0.0) indicate a period characterized by a lack of strong, sustained impulses from any single wedge. While Labor and Government exerted a modest contractionary pull on average, these were largely offset by a slight positive impulse from Efficiency, leading to a generally inert overall economic trajectory. Investment's mean deviation indicates a neutral impact, suggesting its effects were balanced or reverted within the window.",
     "candidate_mechanisms": [
       {
         "wedge": "Efficiency",
-        "mechanism": "Slowdown in total factor productivity (TFP) growth, potentially exacerbated by regulatory uncertainty or sector-specific reallocations that depress aggregate efficiency. The negative current deviation suggests recent drag.",
+        "mechanism": "Represents changes in total factor productivity (TFP), technology, resource allocation efficiency, or markups. A slight positive mean deviation, despite the currently negative standard deviation, suggests minor underlying improvements or transient positive shocks that marginally supported output on average, but without strong, sustained momentum.",
         "citations": [
           "Chari, Kehoe, McGrattan (2007)",
-          "Prescott (1986)"
+          "Gali (1999)"
         ],
-        "reasoning": "Despite its small average impact over the window, the Efficiency wedge tracked output fluctuations best. A sustained dip in TFP or increased frictions in resource allocation (e.g., labor and capital) can manifest as a drag on efficiency, influencing the overall production frontier and factor utilization."
+        "reasoning": "Despite the f-statistic likely being degenerate given the flat data, the small positive average contribution from the efficiency wedge could reflect incremental technological progress, minor improvements in resource allocation, or fluctuating markups that collectively offered a mild, albeit limited, expansionary force."
       },
       {
         "wedge": "Labor",
-        "mechanism": "Increased labor market frictions, such as higher search and matching costs, skill mismatches, or higher effective labor income taxation. The current negative deviation and negative mean deviation suggest a persistent drag.",
+        "mechanism": "Reflects deviations from the efficient quantity of labor, often driven by labor market frictions (e.g., search costs, matching inefficiencies), distortionary labor income taxes, or shifts in worker bargaining power. The persistent negative mean deviation suggests factors discouraging labor supply or demand below its efficient level.",
         "citations": [
-          "Mortensen & Pissarides (1994)",
+          "Mortensen and Pissarides (1994)",
+          "Christiano and Eichenbaum (1992)",
           "Shimer (2005)"
         ],
-        "reasoning": "The labor wedge represents factors that drive a wedge between the marginal product of labor and the marginal rate of substitution between consumption and leisure. Its persistent, albeit modest, negative mean deviation points to either structural impediments in labor markets or higher disincentives to work/hire on average across the window."
+        "reasoning": "The sustained, albeit modest, negative pull from the labor wedge indicates that labor market dynamics, potentially including skill mismatches, wage stickiness, or effective labor taxation, systematically weighed on aggregate output by preventing the optimal utilization of labor resources."
       },
       {
         "wedge": "Investment",
-        "mechanism": "Elevated capital adjustment costs, heightened uncertainty regarding future returns on investment, or tighter financial conditions (credit supply constraints) making capital acquisition more expensive. The negative current deviation indicates a recent contractionary force.",
+        "mechanism": "Captures factors that create a wedge between the marginal product of capital and households' willingness to substitute consumption over time, including financial frictions, investment-specific technology shocks, or corporate tax policies. A neutral mean deviation implies these forces were largely balanced over the period.",
         "citations": [
           "Bernanke, Gertler, Gilchrist (1999)",
-          "Christiano & Eichenbaum (1992)"
+          "Jermann (1998)"
         ],
-        "reasoning": "The investment wedge captures distortions affecting firms' decisions to accumulate capital. While its average impact was neutral over the window, a negative current deviation suggests recent tightness. This could stem from higher real interest rates, reduced access to credit for firms, or uncertainty dampening long-term investment plans."
+        "reasoning": "The near-zero average impact of the investment wedge suggests that over this period, factors influencing capital formation (e.g., credit conditions, perceived risk, capital cost) were largely offsetting or reverted within the window, leading to no net expansionary or contractionary impulse on average."
+      },
+      {
+        "wedge": "Government",
+        "mechanism": "Represents deviations from the efficient level of government spending, often due to distortionary taxation, inefficient public good provision, or fiscal policy uncertainty. The mild negative mean deviation suggests government actions, on average, exerted a slight drag on economic activity.",
+        "citations": [
+          "Barro (1990)",
+          "Christiano and Eichenbaum (1992)"
+        ],
+        "reasoning": "The slight negative average contribution from the government wedge implies that fiscal policy or public sector efficiency may have slightly dampened economic activity on average over the period, possibly through the effects of taxation or the composition/efficiency of government expenditures."
       }
     ],
     "what_to_watch": [
       {
-        "mechanism": "TFP and Regulatory Uncertainty",
-        "indicator": "Business surveys (e.g., ISM Manufacturing/Services PMIs, especially new orders and production), quarterly productivity growth data, R&D expenditure trends, and major regulatory announcements."
+        "mechanism": "Efficiency",
+        "indicator": "Nonfarm business productivity growth, R&D spending as a share of GDP, corporate profit margins, diffusion indices of technological adoption, measures of business dynamism (e.g., firm entry/exit rates)."
       },
       {
-        "mechanism": "Labor Market Frictions",
-        "indicator": "Job Openings and Labor Turnover Survey (JOLTS) metrics (job openings, hires, quits), unemployment rate, labor force participation rate, average hourly earnings growth, and initial jobless claims."
+        "mechanism": "Labor",
+        "indicator": "Unemployment rate, labor force participation rate, real wage growth, JOLTS job openings and quits rates, initial jobless claims, surveys on labor market tightness or hiring intentions."
       },
       {
-        "mechanism": "Investment and Financial Conditions",
-        "indicator": "Business fixed investment data, interest rate spreads (e.g., corporate bond spreads), bank lending surveys (e.g., Senior Loan Officer Opinion Survey), and durable goods orders (specifically non-defense capital goods excluding aircraft)."
+        "mechanism": "Investment",
+        "indicator": "Business fixed investment (structures, equipment, intellectual property), capacity utilization rates, corporate bond spreads, Senior Loan Officer Opinion Survey on Bank Lending Practices (SLOOS), capital goods orders (non-defense, ex-aircraft)."
+      },
+      {
+        "mechanism": "Government",
+        "indicator": "Government consumption and investment components of GDP, federal and state/local tax revenue data, budget balance trends, and key fiscal policy announcements or legislative changes."
       }
     ]
   }
