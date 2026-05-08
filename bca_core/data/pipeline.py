@@ -38,6 +38,7 @@ def build_us_dataset(
     g_source: str = "fred",
     y_source: str = "fred",
     x_source: str = "fred",
+    pop_source: str | None = None,
     mle_window: tuple[str, str] | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """
@@ -102,6 +103,16 @@ def build_us_dataset(
         ``X = rCD + rGPDI + rGI − (rCD/(rCND+rCS+rCD))·rSTX_real``
         (chain-real components from :meth:`BeaDataFetcher.fetch_real_components`).
         Requires a BEA API key.
+    pop_source : optional override for the working-age-pop FRED ticker.
+        One of ``"oecd_nsa"``, ``"oecd_sa"`` (the FRED_SERIES default),
+        ``"bea_nipa"``, or ``"bls_civ16"``. See
+        :data:`bca_core.data.fred.POP_SOURCES` for the registry and
+        validated trade-offs. ``None`` (default) uses the value already in
+        ``FRED_SERIES``. Use ``"bea_nipa"`` for cycle-frequency Layer-2
+        analysis where OECD's annual-Q1 splice noise (~1pp/yr) is
+        unacceptable; accept Layer-1 BCKM regression degradation
+        (Table-11 gap 0.015 → 0.073, τ_x weight drops 0.32 → 0.25) as the
+        cost of the smoother denominator.
     mle_window : optional ``(start, end)`` quarter-string pair (e.g.
         ``("2010Q1", "2019Q4")``) restricting the calgz slope fit to a
         sub-window of the full sample. The fitted trend is then
@@ -145,7 +156,7 @@ def build_us_dataset(
 
     fetch_start = "1947-01-01"
     fetch_end = "2030-12-31"
-    raw = fetcher.fetch_raw(start=fetch_start, end=fetch_end)
+    raw = fetcher.fetch_raw(start=fetch_start, end=fetch_end, pop_source=pop_source)
 
     # BEA-faithful sales tax (federal excise + state-local sales + state-local
     # excise; BCKM `usdata.m:39` rSTX). Quarterly SAAR, replaces the FRED

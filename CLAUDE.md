@@ -3,7 +3,7 @@ title: "BCA Project — Claude Working Instructions"
 topic: "meta"
 layer: "all"
 status: "internal"
-last_updated: "2026-05-03"
+last_updated: "2026-05-08"
 ---
 
 # BCA Project — Claude Working Instructions
@@ -145,6 +145,97 @@ The point: every iteration we lose facts to context compaction. This section
 is the durable memory.
 
 ### Findings (most recent first)
+
+- **2026-05-08 (later) — Splice-smoothing the OECD-SA series with PCHIP
+  through Q4 anchors is the right answer; reverted dashboard from
+  `bea_nipa` to `oecd_smoothed`. Universe-correct AND splice-free.**
+  User flagged that `bea_nipa` (`B230RC0Q173SBEA`) is total US resident
+  population — includes 0-15 children and 65+ retirees. As boomers retire
+  the per-capita denominator grows from a non-working cohort, biasing the
+  trend over long windows (1980-2014 τ_x weight already drops 0.31 → 0.25
+  vs OECD per the prior finding). The cleaner fix: keep OECD MEI 15-64
+  universe and remove the publishing artifact in post-processing.
+  ``_smooth_annual_splice`` (`bca_core/data/fred.py`) anchors PchipInterpolator
+  at Q4 of each year (post-Q1-benchmark settled level) plus the trailing
+  observation when the year is incomplete, then evaluates at quarter
+  midpoints. Validation:
+
+  | metric | raw `oecd_sa` | `oecd_smoothed` (PCHIP-Q4) | `bea_nipa` |
+  |---|---|---|---|
+  | 1990-2024 Q1 QoQ-log std | 0.394% | **0.133%** | 0.137% |
+  | 1990-2024 Q2 QoQ-log std | 0.107% | 0.150% | — |
+  | 2025Q1 raw WAP QoQ-log | +1.006% | **+0.229%** | — |
+  | 2025Q1 dashboard y QoQ-log | −1.814% | **−1.029%** | −1.025% |
+  | annual mean preservation (1980-2024) | — | mean 0.03%, max 0.22% | — |
+  | Layer-2 COVID smoke (sign agreement) | passes | passes | passes |
+
+  Tried two smoothing variants: cubic-spline through annual means
+  (`bc_type='natural'`) — partially smooths but bakes the splice into
+  each year's mean (2025Q1 smoothed QoQ +0.378% — still elevated); PCHIP
+  through Q4 anchors — clean splice removal (+0.229% Q1 QoQ) and monotone
+  (no overshoot, defensible for a population series). Picked PCHIP. The
+  trailing-observation anchor lets the smoother handle in-progress years
+  (e.g. when last data is 2025Q3, anchors are Q4-2024 and Q3-2025).
+  91/91 fast tests pass; dashboard build produces the right cycle path.
+  Dashboard UI now shows a methodology note (`bca_web/src/App.tsx`
+  Wedge Decomposition section) explaining the smoothing.
+
+- **2026-05-08 — Working-age-pop denominator: switched dashboard to BEA NIPA
+  total-pop (`B230RC0Q173SBEA`) and switched the Layer-1 default to OECD-SA
+  (`LFWA64TTUSQ647S`). The dashboard's −2.05% Q1 2025 y QoQ spike was an
+  annual OECD splice, not a real shock.** (SUPERSEDED by PCHIP-smoothed
+  oecd_sa above — same diagnosis but cleaner remediation.) The dashboard `df["y"]`
+  (real-per-capita GDP) showed −2.05% QoQ at 2025Q1 while headline real GDP
+  fell only −0.6% SAAR (−0.15% QoQ). Decomposition: real GDP per cap drops
+  ≈ +1.34pp came from the WAP denominator stepping up at 2025Q1, every Q1
+  since 2010 shows the same artifact. Root cause: `LFWA64TTUSQ647N` (OECD
+  MEI 15-64, NSA) splices in Census-control benchmark updates as a single
+  step at the Q1 release each year. Survey of universe-correct alternatives
+  (validated 2026-05-08, see `bca_core/data/fred.py:POP_SOURCES`):
+
+  | pop_source  | ticker            | L1 BCKM gap (vs Table 11) | 2025Q1 y QoQ | Layer-2 COVID |
+  |---|---|---|---|---|
+  | oecd_nsa (was)  | LFWA64TTUSQ647N | 0.025                  | −2.03%       | passes |
+  | oecd_sa  (new default) | LFWA64TTUSQ647S | **0.015 (best)**  | −1.71%       | passes |
+  | bea_nipa (dashboard)   | B230RC0Q173SBEA | 0.073 (worst)     | **−0.75% (best)** | passes |
+  | bls_civ16              | CNP16OV         | 0.071             | −1.82%       | passes |
+
+  Trade-off: OECD 15-64 best matches BCKM `usdata.m`'s working-age universe
+  (16+ minus 65+ plus armed forces — the exact universe is unrecoverable
+  from FRED since CNP65OV was retired); BEA NIPA total-pop has dramatically
+  smoother Census-derived intercensals (no annual benchmark step) but
+  includes the 65+ cohort, biasing the calgz trend on long windows
+  (1980-2014 τ_x weight drops 0.31 → 0.25). **Decision**: opt-in via
+  `pop_source` parameter on `build_us_dataset` and `fetch_raw`. Default
+  is `oecd_sa` (Layer-1 BCKM regression and Layer-2 COVID); dashboard
+  pipeline (`scripts/build_quarterly_data.py`) opts into `bea_nipa` for
+  cycle-frequency cleanliness. **Layer-2 COVID smoke test passes for all
+  four candidates** — `Δlog_z(2021Q3) ≈ +0.02..+0.024` (TFP rebound, all
+  positive), `Δτ_l(2020Q2) ≈ +0.13..+0.14` (labor *tax* widens during
+  lockdown — sign convention: τ_l is the tax wedge, `(1−τ_l)` falls).
+  Cached BCKM and COVID parquets remain pinned (`bckm_replication/data/
+  us_1980_2014_calgz.parquet`, `covid_analysis/data/
+  us_2010_2023_calgz*.parquet`), so regression tests run on frozen data
+  and are not invalidated by the new defaults. 79/79 fast tests pass;
+  dashboard end-to-end produces 2024Q4 → 2025Q1 y QoQ = −0.764%, matching
+  headline GDP. Sign-convention correction noted: earlier diary mentions
+  implying "τ_l should fall during COVID" were sign-conventionally
+  backwards — the *tax* wedge widens (positive Δ) when labor collapses.
+
+- **2026-05-08 — `labor_target_mean=0.24279` recovers the headline
+  decomposition (Government=73% → Efficiency=89%) on the dashboard.** Prior
+  to this fix, the dashboard's headline cf-share path collapsed to ±50 of
+  100 across the four wedges with Government dominating. Setting
+  `labor_target_mean=0.24279` (the BCKM-empirical anchor — the model's
+  `ss["l"] ≈ 0.29` and raw FRED hours/pop is ~23, an 80× scale mismatch
+  that breaks wedge extraction) restores: Efficiency 89%, Investment 6%,
+  Labor 4%, Government 1% on the latest-quarter board, with cf paths
+  collapsing from ±50 to within ±2 of 100 — the published BCKM order of
+  magnitude. Verified end-to-end through `scripts/build_quarterly_data.py`
+  → `bca_web/public/data/latest_quarter.json`. The `labor_target_mean`
+  rule from "Scope of BCKM-replication-specific rules" applies to **all**
+  US windows, not just Layer-1 — the rule's earlier "raw labor" hint was
+  superseded by this finding.
 
 - **2026-05-01 — Joint BEA migration walkdown: every BEA toggle makes
   the LL gap WORSE. FRED defaults are the best operating point.

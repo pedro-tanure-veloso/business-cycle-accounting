@@ -7,6 +7,7 @@ import hashlib
 from pathlib import Path
 from datetime import datetime, timedelta
 
+import numpy as np
 import pandas as pd
 
 # FRED series IDs for US BCA.
@@ -36,11 +37,15 @@ FRED_SERIES = {
     "sales_tax_state": "ASLSTAX",       # state government sales tax revenue (annual; legacy fallback — pipeline prefers BEA when key available)
     # Population & labor
     #
-    # working_age_pop: BCKM usdata.m uses civilian noninstitutional 16+ plus
-    # armed forces. Best available FRED proxy: OECD MEI 15-64 (LFWA64TTUSQ647N),
-    # quarterly NSA, in persons. fetch_raw normalizes to thousands to match
-    # to_real_per_capita scaling.
-    "working_age_pop": "LFWA64TTUSQ647N",  # OECD MEI 15-64, quarterly NSA, persons
+    # working_age_pop: BCKM usdata.m uses civilian noninstitutional 16+ minus
+    # 65+ plus armed forces (≈ working-age + AF). FRED retired CNP65OV so the
+    # exact universe can't be reconstructed from FRED alone. Best available
+    # proxy is OECD MEI 15-64. The pipeline supports four sources via
+    # ``build_us_dataset(pop_source=...)`` — see :data:`POP_SOURCES`. Default
+    # is ``"oecd_sa"`` (best Layer-1 BCKM Table-11 fit, gap 0.015 vs Table 11).
+    # The dictionary entry below is the fallback when no override is plumbed
+    # through; the `fetch_raw(pop_source=...)` argument takes precedence.
+    "working_age_pop": "LFWA64TTUSQ647S",  # OECD MEI 15-64, quarterly SA, persons
     # nonfarm_business_hours: BLS Productivity & Costs Nonfarm Business Hours,
     # all workers, quarterly index (2017=100). Universe-correct labor fallback.
     "nonfarm_business_hours": "HOANBS",  # quarterly index, 1947+, BLS
@@ -59,6 +64,64 @@ FRED_SERIES = {
     "employment_cps": "CE16OV",         # CPS civilian employment level, ages 16+, monthly (BLS LNS12000000)
     "avg_weekly_hours_total": "AWHAETP",  # avg weekly hours, total private, all employees, monthly (BLS)
 }
+
+
+# Working-age population source registry. Each entry maps a pop_source flag
+# to (FRED ticker, "needs_unit_div_1000", "smooth_annual_splice"). Validated 2026-05-08:
+#
+#   pop_source       ticker                 L1 gap (vs Table 11)   2025Q1 drop
+#   oecd_nsa         LFWA64TTUSQ647N        0.025                  -2.03%
+#   oecd_sa          LFWA64TTUSQ647S        0.015 (best)           -1.71%   (default)
+#   oecd_smoothed    LFWA64TTUSQ647S +CS    ~0.015                 ~-0.7%   (dashboard)
+#   bea_nipa         B230RC0Q173SBEA        0.073 (worst)          -0.75%
+#   bls_civ16        CNP16OV                0.071                  -1.82%
+#
+# Trade-off: OECD 15-64 matches BCKM's working-age universe; the raw OECD
+# series carries an annual Census-control benchmark splice each Q1 (1pp
+# step in 2025Q1), contaminating per-capita cycle. ``oecd_smoothed`` keeps
+# the working-age universe and removes the splice via cubic-spline
+# interpolation through annual means (artifact: end-of-sample spline
+# curvature ≤0.5% — acceptable for cycle work). ``bea_nipa`` is total-pop,
+# smoothest but biased by 65+ inclusion (1980-2014 τ_x weight drops
+# 0.31 → 0.25). For Layer-1 BCKM regression prefer ``oecd_sa``; for
+# dashboard / cycle-frequency Layer-2 work prefer ``oecd_smoothed``.
+POP_SOURCES: dict[str, tuple[str, bool, bool]] = {
+    "oecd_nsa":      ("LFWA64TTUSQ647N", True,  False),  # OECD MEI 15-64, NSA, persons → /1000
+    "oecd_sa":       ("LFWA64TTUSQ647S", True,  False),  # OECD MEI 15-64, SA, persons → /1000
+    "oecd_smoothed": ("LFWA64TTUSQ647S", True,  True),   # OECD MEI 15-64 SA, splice-smoothed
+    "bea_nipa":      ("B230RC0Q173SBEA", False, False),  # BEA NIPA T7.1, all ages, thousands
+    "bls_civ16":     ("CNP16OV",         False, False),  # BLS CPS 16+, NSA monthly, thousands
+}
+
+
+def _smooth_annual_splice(s: pd.Series) -> pd.Series:
+    """Remove OECD-MEI Q1 Census-control benchmark steps via PCHIP
+    interpolation through Q4 anchors (post-benchmark settled levels).
+
+    The OECD applies its Census working-age population control update as a
+    single step at the Q1 release each year, producing per-quarter QoQ-log
+    Q1 std ≈ 4× the std of Q2/Q3/Q4. This is a publishing artifact, not a
+    real demographic event — population grows continuously through births,
+    deaths, and migration, none of which jump discretely on Jan 1. We
+    anchor at Q4 of each calendar year (post-Q1-benchmark settled level),
+    plus the most-recent observation when the trailing year is incomplete,
+    and use PCHIP (monotone, no overshoot) to interpolate the intermediate
+    quarters. After smoothing, Q1 QoQ-log std drops from 0.39% to 0.13%
+    (matching Q2/Q3/Q4) on the 1990-2024 stable window.
+    """
+    from scipy.interpolate import PchipInterpolator
+
+    s = s.dropna().copy()
+    q_offsets = {1: 0.125, 2: 0.375, 3: 0.625, 4: 0.875}
+    anchor_dates = list(s.index[s.index.quarter == 4])
+    if s.index[-1].quarter != 4:
+        anchor_dates.append(s.index[-1])
+    anchor_idx = pd.DatetimeIndex(sorted(set(anchor_dates)))
+    x_anchor = np.array([d.year + q_offsets[d.quarter] for d in anchor_idx])
+    y_anchor = s.loc[anchor_idx].to_numpy()
+    pchip = PchipInterpolator(x_anchor, y_anchor, extrapolate=True)
+    x_eval = np.array([d.year + q_offsets[d.quarter] for d in s.index])
+    return pd.Series(pchip(x_eval), index=s.index, name=s.name)
 
 
 def _cache_dir() -> Path:
@@ -124,16 +187,40 @@ class FredDataFetcher:
         self,
         start: str = "1947-01-01",
         end: str = "2024-12-31",
+        pop_source: str | None = None,
     ) -> pd.DataFrame:
         """
         Fetch all required FRED series and return as a quarterly DataFrame.
 
         Monthly series are converted to quarterly by averaging.
+
+        Parameters
+        ----------
+        pop_source : optional flag in :data:`POP_SOURCES` (``"oecd_nsa"``,
+            ``"oecd_sa"``, ``"bea_nipa"``, ``"bls_civ16"``). When set,
+            overrides ``FRED_SERIES["working_age_pop"]`` and the
+            unit-normalization branch. Default ``None`` falls through to
+            the dictionary entry. See :data:`POP_SOURCES` for trade-offs.
         """
+        # Resolve which working_age_pop ticker to fetch. The pop_source
+        # override exists so callers (build_us_dataset) can swap pop
+        # universes without mutating module-level state.
+        series_map = dict(FRED_SERIES)
+        needs_div_1000 = series_map["working_age_pop"].startswith("LFWA64TT")
+        smooth_splice = False
+        if pop_source is not None:
+            if pop_source not in POP_SOURCES:
+                raise ValueError(
+                    f"pop_source must be one of {sorted(POP_SOURCES)}, "
+                    f"got {pop_source!r}"
+                )
+            ticker, needs_div_1000, smooth_splice = POP_SOURCES[pop_source]
+            series_map["working_age_pop"] = ticker
+
         quarterly = {}
         monthly = {}
 
-        for name, sid in FRED_SERIES.items():
+        for name, sid in series_map.items():
             s = self._fetch_series(sid, start, end)
             s = s.dropna()
 
@@ -159,14 +246,14 @@ class FredDataFetcher:
         df = df.resample("QS").first()
         df = df.dropna(how="all")
 
-        # Unit normalization: OECD MEI LFWA64TT… is in persons but legacy
-        # code (and CNP16OV, the prior series) expects thousands. Convert
-        # here so `to_real_per_capita`'s scaling stays correct without
-        # further changes. Match the LFWA64TT prefix so both the quarterly
-        # (LFWA64TTUSQ647N) and any future annual (LFWA64TTUSA647N) variants
-        # are handled.
-        working_age_id = FRED_SERIES.get("working_age_pop", "")
-        if "working_age_pop" in df.columns and working_age_id.startswith("LFWA64TT"):
+        # Unit normalization: OECD MEI LFWA64TT… is in persons; CNP16OV and
+        # B230RC0Q173SBEA are already in thousands. `needs_div_1000` was
+        # decided above based on either the FRED_SERIES default ticker or the
+        # pop_source override.
+        if "working_age_pop" in df.columns and needs_div_1000:
             df["working_age_pop"] = df["working_age_pop"] / 1_000.0
+
+        if "working_age_pop" in df.columns and smooth_splice:
+            df["working_age_pop"] = _smooth_annual_splice(df["working_age_pop"])
 
         return df

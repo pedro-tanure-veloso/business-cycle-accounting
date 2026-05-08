@@ -140,6 +140,11 @@ def main():
             detrend_method="calgz",
             base_year_quarter=args.base,
             labor_target_mean=0.24279,
+            # OECD MEI 15-64 SA with annual-splice smoothing: PCHIP
+            # through Q4 anchors removes the ~1pp Q1 Census-control
+            # benchmark step while preserving BCKM's working-age universe.
+            # See bca_core/data/fred.py POP_SOURCES + _smooth_annual_splice.
+            pop_source="oecd_smoothed",
         )
         # Use n_shrink=5 for production precision (matches local build)
         # We reuse the prod slug to allow caching if parameters haven't changed

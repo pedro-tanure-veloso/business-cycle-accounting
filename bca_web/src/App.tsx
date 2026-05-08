@@ -288,6 +288,9 @@ function App() {
           <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '1.5rem', lineHeight: 1.55 }}>
             <strong style={{ color: 'var(--text-secondary)' }}>Caveat:</strong> the share metric (left) uses inverse-SSR — when observed output (white line, right) is near-flat, it mechanically favors whichever counterfactual stayed closest to flat, often the wedge that did the <em>least</em>. In that regime the right panel is more informative: large offsetting swings describe what each wedge would have done acting alone, even when its share is small.
           </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', marginTop: '0.75rem', lineHeight: 1.55 }}>
+            <strong style={{ color: 'var(--text-secondary)' }}>Per-capita denominator:</strong> OECD MEI working-age (15-64) population, smoothed to remove the ~1pp Q1 step that the annual Census-control benchmark release injects into the raw series.
+          </div>
         </section>
 
         {/* WEDGE EXPLANATION BOX */}

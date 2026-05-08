@@ -9,6 +9,172 @@ invalidates them — in that case mark the old one `SUPERSEDED`.
 
 ---
 
+## 2026-05-08 (latest) — Splice-smoothed OECD-SA (PCHIP through Q4 anchors); reverted dashboard from bea_nipa
+
+User flagged unease about `bea_nipa` (`B230RC0Q173SBEA`) — it's *total*
+US resident population, includes 0-15 children and 65+ retirees. Boomer
+retirement makes the per-capita denominator grow from a non-working
+cohort. The right fix is to keep BCKM's working-age universe (OECD MEI
+15-64) and remove the publishing artifact in post-processing.
+
+Implemented `_smooth_annual_splice` in `bca_core/data/fred.py`:
+PchipInterpolator anchored at Q4 of each calendar year (post-Q1-benchmark
+settled level), plus the trailing observation when the year is incomplete,
+evaluated at quarter midpoints. PCHIP is monotone — no overshoot — which
+matters for a population series that should grow smoothly. Wired as a
+new `pop_source="oecd_smoothed"` option in `POP_SOURCES`. Dashboard
+(`scripts/build_quarterly_data.py`) opts in.
+
+### Variant comparison (prototyped before picking PCHIP):
+
+| variant | 2025Q1 WAP smoothed QoQ-log | Q1 std (1990-2024) | overshoot? |
+|---|---|---|---|
+| raw `oecd_sa` | +1.006% | 0.394% | n/a |
+| cubic spline through annual means | +0.378% | 0.148% | yes |
+| cubic spline through Q4 anchors | −0.008% | 0.138% | yes |
+| **PCHIP through Q4 anchors** ✅ | **+0.229%** | **0.133%** | no |
+
+The annual-mean spline bakes the Q1 splice into the year's mean, leaving
+residual elevation. The Q4-anchored PCHIP captures only the post-
+benchmark settled levels and monotonically interpolates between them —
+intra-year QoQ now resembles Q2/Q3/Q4's natural noise band.
+
+### End-to-end validation:
+
+| metric | raw `oecd_sa` | `oecd_smoothed` | `bea_nipa` |
+|---|---|---|---|
+| 2025Q1 dashboard y QoQ | −1.814% | **−1.029%** | −1.025% |
+| Layer-1 BCKM gap (Table 11) | 0.015 | ~0.015 (cached parquet) | 0.073 |
+| Layer-2 COVID smoke | passes | passes | passes |
+| annual mean preservation 1980-2024 | n/a | mean 0.03%, max 0.22% | n/a |
+| 91/91 fast tests | pass | pass | pass |
+
+`oecd_smoothed` matches `bea_nipa`'s cycle-cleanliness (−1.03% Q1 2025)
+without the universe contamination. Reverted dashboard pop_source from
+`bea_nipa` → `oecd_smoothed`. Default for Layer-1 BCKM and Layer-2
+COVID still `oecd_sa` (no smoothing — the cached parquets pin the
+regression test on raw data anyway).
+
+### Dashboard UI:
+
+Added a methodology footnote below the existing "Caveat" line in the
+Wedge Decomposition section (`bca_web/src/App.tsx`) explaining the
+per-capita denominator choice and what the smoothing does. Users now
+see why 2025Q1 prints −1.0% rather than −1.8%.
+
+### End-of-sample handling:
+
+The trailing-observation-as-anchor rule lets PCHIP gracefully handle
+in-progress years. With data ending 2025Q3, anchors are
+{..., 2024Q4, 2025Q3}; PCHIP between them produces 2025Q1, Q2, Q3
+smoothed values. As Q4 arrives, the 2025Q3 trailing anchor is replaced
+by 2025Q4 and the interior re-interpolates. Slight artifact at very
+end-of-sample (2025Q2 +0.488%, 2025Q3 +0.603% by construction) is
+acceptable — the splice mass spreads forward and we don't get the Q1
++1pp step.
+
+---
+
+## 2026-05-08 (even later) — WAP source switch: oecd_nsa → bea_nipa for the dashboard
+
+**SUPERSEDED 2026-05-08 (latest) — PCHIP-smoothed oecd_sa is the final
+answer; the bea_nipa unease (universe pollution from 65+) is resolved
+by smoothing oecd_sa rather than switching universe.**
+
+Diagnosing why detrended `y` showed a −2.05% QoQ drop at 2025Q1 when
+headline GDP only fell −0.6% SAAR (−0.15% QoQ) led to a deeper data-
+construction issue. Decomposition of the −2.05% drop:
+
+- Headline real GDP QoQ: −0.17%
+- Working-age pop QoQ: **+1.34%** (LFWA64TTUSQ647N at 2025Q1)
+- Per-capita real GDP QoQ: −1.49%
+- calgz trend subtraction: ~−0.47%
+- Total expected: −1.96%, observed −2.05%, residual −0.09% from
+  durables/sales-tax adj (~negligible).
+
+**The +1.34% pop jump in a single quarter is an OECD MEI annual-benchmark
+splice** — Census-derived population controls are applied at the year-
+boundary release rather than smoothly across the year. Verified at every
+prior Q1 (2024Q1 = −0.11%, 2023Q1 = +0.62%). Year-end OECD reframings
+inject one bad quarter per year of fake cyclical signal into per-capita
+aggregates.
+
+Also caught: the trailing `N` in `LFWA64TTUSQ647N` means **NSA**, while
+every other series in the per-capita pipeline (GDP, GPDI, PCE\*, GCE,
+PAYEMS, AWHNONAG, CE16OV, AWHAETP) is **SA**. The mismatch is real but
+secondary — population isn't truly seasonal, so SA filtering only damps
+the splice noise from +1.34% to +1.01%.
+
+### Survey of FRED-available WAP candidates (validated 2026-05-08):
+
+| pop_source | ticker | L1 BCKM gap (vs Table 11) | 2025Q1 y QoQ |
+|---|---|---|---|
+| oecd_nsa (was default) | LFWA64TTUSQ647N | 0.025 | −2.03% |
+| **oecd_sa** (new fallback default) | LFWA64TTUSQ647S | **0.015** ✅ | −1.71% |
+| **bea_nipa** (dashboard) | B230RC0Q173SBEA | 0.073 ⚠️ | **−0.75%** ✅ |
+| bls_civ16 | CNP16OV | 0.071 | −1.82% |
+
+Layer-1 BCKM regression test on US 1980Q1–2014Q4: re-ran each source
+fresh (no cache parquet) at BCKM-θ from `bca_core/constants.py`. The
+oecd_sa toggle is a strict improvement on Layer-1 vs the previous
+oecd_nsa default — gap drops from 0.025 to 0.015, with τ_x weight
+landing exactly on Table 11's 0.32. **bea_nipa fails Layer-1**: gap
+balloons to 0.073, with τ_x weight collapsing 0.31 → 0.25 because BEA
+NIPA total-pop includes the rapidly growing 65+ cohort (~25M → 50M
+1980-2014), biasing the calgz trend.
+
+Layer-2 COVID smoke test on US 2010Q1–2023Q4 (pre-COVID mle_window):
+all three sources produce nearly identical wedge magnitudes (Δlog_z 2021Q3 =
++0.020/+0.021/+0.024; Δτ_l 2020Q2 = +0.134/+0.145/+0.144; Δlog_g post-
+ARPA = −0.152 across all three). **Layer-2 is robust to the change at
+the qualitative level.** The numerical sign of Δτ_l is positive at 2020Q2
+because the labor *tax* wedge widens during a labor collapse (`(1−τ_l)`
+falls). Earlier diary mentions implying "τ_l should fall during COVID"
+were sign-conventionally backwards; the new test verifies signs match
+the BCKM "tax" convention, which all three sources do.
+
+### Decision
+
+1. **Default in `bca_core/data/fred.py:FRED_SERIES`**: switch from
+   `LFWA64TTUSQ647N` to `LFWA64TTUSQ647S`. Free win on Layer-1 (gap
+   0.025 → 0.015) and modest cycle-cleanliness improvement (−2.03% →
+   −1.71% at 2025Q1). No downside.
+2. **Dashboard `scripts/build_quarterly_data.py`**: opt into
+   `pop_source="bea_nipa"`. The dashboard's audience is "what's
+   happening this quarter", where one bad quarter per year of OECD
+   splice noise is unacceptable. The Layer-1 BCKM regression cost
+   doesn't apply because the dashboard runs Layer-2.
+3. **Toggle plumbing**: new `pop_source` parameter on
+   `build_us_dataset()` and `FredDataFetcher.fetch_raw()`, backed by
+   `bca_core.data.fred.POP_SOURCES` registry mapping flag →
+   `(ticker, needs_div_1000)`. Module-level `FRED_SERIES["working_age_pop"]`
+   is the fallback when no override is plumbed through.
+4. **Cached parquets are NOT invalidated**.
+   `bckm_replication/data/us_1980_2014_calgz.parquet` and
+   `covid_analysis/data/us_2010_2023_calgz*.parquet` were built when
+   the default was oecd_nsa, and the test fixtures load via
+   `data_path=...` which short-circuits before `fetch_raw`. The
+   regression tests therefore continue to pass against the pinned
+   dataset — the new default will only take effect on fresh builds
+   (cache miss). If you want to retire the oecd_nsa cache, delete the
+   parquets and re-run the test driver.
+
+Verification: 79/79 fast tests pass under `pytest -m "not slow"`. End-
+to-end build of the dashboard window with `pop_source="bea_nipa"`
+produces `2024Q4 → 2025Q1 y QoQ = −0.764%`, matching headline GDP
+−0.6% SAAR within rounding (durables/sales-tax adjustments + per-capita
+decomposition fully accounted).
+
+Implication for downstream consumers: the cached BCKM 1980-2014 parquet
+keeps the regression test alive forever even if FRED retires
+LFWA64TTUSQ647N or further changes its OECD MEI methodology — but the
+moment we delete that cache, the regression target moves to oecd_sa.
+The 0.025 → 0.015 gap improvement should be locked in via a fresh
+parquet rebuild + commit before that retirement happens, otherwise
+we're storing a known-suboptimal denominator in the regression target.
+
+---
+
 ## 2026-05-08 (later) — Smoking gun: dashboard MLE was in a broken basin all along
 
 Cross-checked the suspicious 2025Q1 labor cf spike (108.64 → 149.17 →
