@@ -14,7 +14,7 @@ from pathlib import Path
 import argparse
 from datetime import datetime
 
-# Import from the local scripts/run_bca.py
+# Import from the local scripts/run_bca import build_us_dataset, run_pipeline
 from scripts.run_bca import build_us_dataset, run_pipeline
 from bca_core.counterfactuals import phi_statistics
 from bca_core.params import CalibrationParams
@@ -61,8 +61,9 @@ def generate_hypotheses(stats_payload, gemini_key=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--start", default="1980Q1")
-    parser.add_argument("--end", default="2030Q4")
+    # Use 2010Q1 start for modern cycle stability
+    parser.add_argument("--start", default="2010Q1")
+    parser.add_argument("--end", default="2025Q4")
     parser.add_argument("--base", default="2012Q1")
     args = parser.parse_args()
 
@@ -71,8 +72,9 @@ def main():
     # 1. Run BCA Pipeline
     try:
         df, meta = build_us_dataset(start=args.start, end=args.end, detrend_method="calgz", base_year_quarter=args.base)
-        # Use n_shrink=2 for fast production runs
-        r = run_pipeline(df, meta, Path("."), "temp_slug", verbose=False, n_shrink=2)
+        # Use n_shrink=5 for production precision (matches local build)
+        r = run_pipeline(df, meta, Path("."), f"prod_{args.start}_{args.end}", 
+                         verbose=True, n_shrink=5, no_cache_mle=True)
     except Exception as e:
         print(f"Failed to run BCA pipeline: {e}")
         print("Make sure you have FRED_API_KEY exported in your terminal.")
@@ -83,6 +85,9 @@ def main():
     c = df["c"]
     x = df["x"]
     
+    # BCA date (last available quarter in the BCA dataset)
+    bca_q_str = str(df.index[-1].to_period("Q"))
+
     # Growth rates (internal BCA data)
     gdp_growth_qoq = y.pct_change().iloc[-1]
     gdp_growth_yoy = y.pct_change(4).iloc[-1]
@@ -107,7 +112,15 @@ def main():
         }
 
     # Variance decomposition (phi stats)
-    phi_df = phi_statistics(r["data_hat"], r["cfs"])
+    # USER REQUEST: Display results from 2024Q1 onwards
+    phi_start_dt = pd.Timestamp("2024-01-01")
+    phi_mask = df.index >= phi_start_dt
+    
+    # Slice r["data_hat"] and r["cfs"] for phi calculation
+    data_hat_phi = {k: v[phi_mask] for k, v in r["data_hat"].items()}
+    cfs_phi = {k: {vk: vv[phi_mask] for vk, vv in v.items()} for k, v in r["cfs"].items()}
+    
+    phi_df = phi_statistics(data_hat_phi, cfs_phi)
     phi_stats = {}
     for name in ["Efficiency", "Labor", "Investment", "Government"]:
         phi_stats[name.lower()] = round(float(phi_df.loc[name.lower(), "y"]), 2)
@@ -142,14 +155,13 @@ def main():
         cf_ts.append(row)
 
     # 3. Fetch latest FRED Data for Demand Overview
-    latest_q_str = str(df.index[-1].to_period("Q"))
+    macro_q_str = bca_q_str # Default fallback
     
     try:
         from fredapi import Fred
         fred = Fred(api_key=os.environ.get("FRED_API_KEY"))
         
         # Tickers for the stacked bar chart (Contributions to GDP Growth)
-        # USER REQUESTED TICKERS
         contrib_tickers = {
             "Consumption": "DPCERY2Q224SBEA",
             "Investment": "A006RY2Q224SBEA",
@@ -159,7 +171,6 @@ def main():
         }
 
         # Tickers for the KPI cards (Growth Rate % Change SAAR)
-        # USER REQUESTED TICKERS
         growth_tickers = {
             "Consumption": "DPCERL1Q225SBEA",
             "Investment": "A006RL1Q225SBEA",
@@ -189,7 +200,6 @@ def main():
                 q_str = f"{idx.year}Q{(idx.month-1)//3 + 1}"
                 row_dict = {"quarter": q_str}
                 # Map names to prefixes for chart ordering
-                # D_Exports will be used for Net Exports for now to keep frontend compatibility
                 prefix_map = {
                     "Consumption": "A_Consumption",
                     "Investment": "B_Investment",
@@ -211,6 +221,10 @@ def main():
             try:
                 s = fred.get_series(ticker)
                 growth_data[name] = s.iloc[-1]
+                # Track the latest quarter available in FRED headline data
+                q_macro = f"{s.index[-1].year}Q{(s.index[-1].month-1)//3 + 1}"
+                if q_macro > macro_q_str:
+                    macro_q_str = q_macro
             except Exception as e:
                 print(f"Warning: Failed to fetch growth card {name}: {e}")
         
@@ -221,7 +235,8 @@ def main():
         growth_data = {}
 
     payload = {
-        "quarter": latest_q_str,
+        "quarter": bca_q_str,
+        "macro_quarter": macro_q_str,
         "macro_overview": {
             "gdp_growth_qoq": round(gdp_growth_qoq, 4),
             "gdp_growth_yoy": round(gdp_growth_yoy, 4),
@@ -255,7 +270,6 @@ def main():
             return (1 + saar/100)**0.25 - 1
 
         payload["macro_overview"]["gdp_growth_qoq"] = round(to_qoq(growth_data.get("GDP", 0)), 6)
-        payload["macro_overview"]["supply_growth_qoq"] = payload["macro_overview"]["gdp_growth_qoq"]
         
         comps = payload["macro_overview"]["components"]
         comps["consumption"]["growth_qoq"] = round(to_qoq(growth_data.get("Consumption", 0)), 6)
@@ -266,18 +280,13 @@ def main():
         
     if demand_ts:
         latest_d_contrib = demand_ts[-1]
-        latest_q = latest_d_contrib["quarter"]
         
         comps = payload["macro_overview"]["components"]
         comps["consumption"]["contribution_to_gdp"] = latest_d_contrib.get("A_Consumption", 0)
         comps["investment"]["contribution_to_gdp"] = latest_d_contrib.get("B_Investment", 0)
         comps["government"]["contribution_to_gdp"] = latest_d_contrib.get("C_Government", 0)
-        # Net Exports mapped to exports contribution for now
         comps["exports"]["contribution_to_gdp"] = latest_d_contrib.get("D_Exports", 0)
-        comps["imports"]["contribution_to_gdp"] = 0 # Net exports includes imports
-        
-        payload["quarter"] = latest_q
-        payload["macro_quarter"] = latest_q
+        comps["imports"]["contribution_to_gdp"] = 0 
 
     # Call Gemini for analysis
     gemini_key = os.environ.get("GEMINI_API_KEY")

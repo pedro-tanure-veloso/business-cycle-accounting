@@ -1,16 +1,17 @@
 {
-  "quarter": "2026Q1",
+  "quarter": "2025Q3",
+  "macro_quarter": "2026Q1",
   "macro_overview": {
     "gdp_growth_qoq": 0.004963,
-    "gdp_growth_yoy": -0.005,
+    "gdp_growth_yoy": -0.0122,
     "components": {
       "consumption": {
-        "growth_qoq": 0.003976,
+        "growth_qoq": 0.0,
         "contribution_to_gdp": 1.08
       },
       "investment": {
         "growth_qoq": 0.021074,
-        "contribution_to_gdp": 1.48
+        "contribution_to_gdp": 0
       },
       "government": {
         "growth_qoq": 0.010823,
@@ -18,7 +19,7 @@
       },
       "exports": {
         "growth_qoq": 0.030798,
-        "contribution_to_gdp": -1.3
+        "contribution_to_gdp": 0
       },
       "imports": {
         "growth_qoq": 0.049675,
@@ -26,172 +27,131 @@
       }
     },
     "historical_percentiles": {
-      "gdp": 97,
-      "investment": 68,
-      "consumption": 98
-    },
-    "supply_growth_qoq": 0.004963
+      "gdp": 63,
+      "investment": 47,
+      "consumption": 68
+    }
   },
   "time_series": {
     "demand_contributions": [
       {
         "quarter": "2021Q2",
         "A_Consumption": 9.42,
-        "B_Investment": -0.78,
         "C_Government": -0.85,
-        "D_Exports": -0.81,
         "Total GDP Growth": 7.0
       },
       {
         "quarter": "2021Q3",
         "A_Consumption": 2.24,
-        "B_Investment": 2.6,
         "C_Government": -0.54,
-        "D_Exports": -0.96,
         "Total GDP Growth": 3.3
       },
       {
         "quarter": "2021Q4",
         "A_Consumption": 2.63,
-        "B_Investment": 4.71,
         "C_Government": -0.01,
-        "D_Exports": -0.29,
         "Total GDP Growth": 7.0
       },
       {
         "quarter": "2022Q1",
         "A_Consumption": 0.22,
-        "B_Investment": 1.45,
         "C_Government": -0.54,
-        "D_Exports": -2.15,
         "Total GDP Growth": -1.0
       },
       {
         "quarter": "2022Q2",
         "A_Consumption": 2.19,
-        "B_Investment": -1.69,
         "C_Government": -0.26,
-        "D_Exports": 0.38,
         "Total GDP Growth": 0.6
       },
       {
         "quarter": "2022Q3",
         "A_Consumption": 1.27,
-        "B_Investment": -1.26,
         "C_Government": 0.28,
-        "D_Exports": 2.63,
         "Total GDP Growth": 2.9
       },
       {
         "quarter": "2022Q4",
         "A_Consumption": 0.53,
-        "B_Investment": 1.43,
         "C_Government": 0.69,
-        "D_Exports": 0.14,
         "Total GDP Growth": 2.8
       },
       {
         "quarter": "2023Q1",
         "A_Consumption": 2.99,
-        "B_Investment": -1.33,
         "C_Government": 0.69,
-        "D_Exports": 0.58,
         "Total GDP Growth": 2.9
       },
       {
         "quarter": "2023Q2",
         "A_Consumption": 1.02,
-        "B_Investment": 1.27,
         "C_Government": 0.56,
-        "D_Exports": -0.3,
         "Total GDP Growth": 2.5
       },
       {
         "quarter": "2023Q3",
         "A_Consumption": 2.08,
-        "B_Investment": 1.66,
         "C_Government": 0.87,
-        "D_Exports": 0.09,
         "Total GDP Growth": 4.7
       },
       {
         "quarter": "2023Q4",
         "A_Consumption": 2.04,
-        "B_Investment": 0.65,
         "C_Government": 0.79,
-        "D_Exports": -0.06,
         "Total GDP Growth": 3.4
       },
       {
         "quarter": "2024Q1",
         "A_Consumption": 1.17,
-        "B_Investment": -0.29,
         "C_Government": 0.39,
-        "D_Exports": -0.42,
         "Total GDP Growth": 0.8
       },
       {
         "quarter": "2024Q2",
         "A_Consumption": 2.61,
-        "B_Investment": 1.44,
         "C_Government": 0.57,
-        "D_Exports": -1.04,
         "Total GDP Growth": 3.6
       },
       {
         "quarter": "2024Q3",
         "A_Consumption": 2.66,
-        "B_Investment": 0.18,
         "C_Government": 0.92,
-        "D_Exports": -0.41,
         "Total GDP Growth": 3.3
       },
       {
         "quarter": "2024Q4",
         "A_Consumption": 2.61,
-        "B_Investment": -1.26,
         "C_Government": 0.57,
-        "D_Exports": -0.06,
         "Total GDP Growth": 1.9
       },
       {
         "quarter": "2025Q1",
         "A_Consumption": 0.42,
-        "B_Investment": 3.79,
         "C_Government": -0.17,
-        "D_Exports": -4.68,
         "Total GDP Growth": -0.6
       },
       {
         "quarter": "2025Q2",
         "A_Consumption": 1.68,
-        "B_Investment": -2.66,
         "C_Government": -0.01,
-        "D_Exports": 4.83,
         "Total GDP Growth": 3.8
       },
       {
         "quarter": "2025Q3",
         "A_Consumption": 2.34,
-        "B_Investment": 0.03,
         "C_Government": 0.38,
-        "D_Exports": 1.62,
         "Total GDP Growth": 4.4
       },
       {
         "quarter": "2025Q4",
         "A_Consumption": 1.3,
-        "B_Investment": 0.4,
         "C_Government": -0.99,
-        "D_Exports": -0.22,
         "Total GDP Growth": 0.5
       },
       {
         "quarter": "2026Q1",
         "A_Consumption": 1.08,
-        "B_Investment": 1.48,
         "C_Government": 0.73,
-        "D_Exports": -1.3,
         "Total GDP Growth": 2.0
       }
     ],
@@ -200,31 +160,31 @@
   "wedge_decomposition": {
     "current_levels": {
       "efficiency": {
-        "sd_from_mean": 1.06,
-        "percentile": 95,
+        "sd_from_mean": 1.44,
+        "percentile": 87,
         "trend": "improved"
       },
       "labor": {
-        "sd_from_mean": -0.94,
-        "percentile": 21,
+        "sd_from_mean": -0.63,
+        "percentile": 26,
         "trend": "worsened"
       },
       "investment": {
-        "sd_from_mean": 0.88,
-        "percentile": 79,
+        "sd_from_mean": 1.28,
+        "percentile": 87,
         "trend": "improved"
       },
       "government": {
-        "sd_from_mean": 0.07,
-        "percentile": 57,
+        "sd_from_mean": -0.24,
+        "percentile": 47,
         "trend": "worsened"
       }
     },
     "phi_statistics": {
-      "efficiency": 0.06,
-      "labor": 0.01,
-      "investment": 0.61,
-      "government": 0.32
+      "efficiency": 0.0,
+      "labor": 0.0,
+      "investment": 0.13,
+      "government": 0.87
     },
     "cf_time_series": [
       {
@@ -237,54 +197,53 @@
       },
       {
         "quarter": "2024Q2",
-        "Data": 100.5,
-        "Efficiency": 100.07,
-        "Labor": 101.75,
-        "Investment": 99.27,
-        "Government": 99.4
+        "Data": 100.32,
+        "Efficiency": 100.67,
+        "Labor": 101.1,
+        "Investment": 99.03,
+        "Government": 99.6
       },
       {
         "quarter": "2024Q3",
-        "Data": 100.97,
-        "Efficiency": 100.2,
-        "Labor": 102.48,
-        "Investment": 98.93,
-        "Government": 99.35
+        "Data": 100.61,
+        "Efficiency": 100.95,
+        "Labor": 101.72,
+        "Investment": 98.5,
+        "Government": 99.6
       },
       {
         "quarter": "2024Q4",
-        "Data": 101.19,
-        "Efficiency": 99.92,
-        "Labor": 102.95,
-        "Investment": 98.74,
-        "Government": 99.58
+        "Data": 100.65,
+        "Efficiency": 100.29,
+        "Labor": 102.67,
+        "Investment": 97.64,
+        "Government": 100.28
       },
       {
         "quarter": "2025Q1",
-        "Data": 99.3,
-        "Efficiency": 98.67,
-        "Labor": 109.51,
-        "Investment": 95.82,
-        "Government": 95.79
+        "Data": 98.58,
+        "Efficiency": 96.97,
+        "Labor": 110.22,
+        "Investment": 93.22,
+        "Government": 99.18
       },
       {
         "quarter": "2025Q2",
-        "Data": 99.87,
-        "Efficiency": 99.58,
-        "Labor": 101.66,
-        "Investment": 99.02,
-        "Government": 99.56
+        "Data": 98.98,
+        "Efficiency": 97.55,
+        "Labor": 103.51,
+        "Investment": 97.24,
+        "Government": 101.1
       },
       {
         "quarter": "2025Q3",
-        "Data": 100.46,
-        "Efficiency": 100.26,
-        "Labor": 98.46,
-        "Investment": 100.46,
-        "Government": 101.25
+        "Data": 99.39,
+        "Efficiency": 98.64,
+        "Labor": 100.23,
+        "Investment": 99.23,
+        "Government": 101.67
       }
     ]
   },
-  "macro_quarter": "2026Q1",
   "hypothesis_layer": {}
 }
