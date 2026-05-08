@@ -302,18 +302,18 @@ function App() {
             <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <ActivitySquare size={20} color="var(--accent-primary)" /> What do these wedges represent?
             </h3>
-            <div className="grid-2" style={{ gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '1.25rem 1.75rem' }}>
               <div>
-                <strong style={{ color: 'white' }}>Efficiency Wedge:</strong> Acts like a technology parameter. It captures anything that lowers aggregate productivity (e.g., input financing frictions, resource misallocation, or trade disruptions).
+                <strong style={{ color: '#3b82f6' }}>Efficiency Wedge:</strong> Acts like a technology parameter. It captures anything that lowers aggregate productivity (e.g., input financing frictions, resource misallocation, or trade disruptions).
               </div>
               <div>
-                <strong style={{ color: 'white' }}>Labor Wedge:</strong> Acts like a tax on labor income. It represents anything that drives a wedge between the marginal rate of substitution and the marginal product of labor (e.g., search frictions, sticky wages, labor taxes).
+                <strong style={{ color: '#10b981' }}>Labor Wedge:</strong> Acts like a tax on labor income. It represents anything that drives a wedge between the marginal rate of substitution and the marginal product of labor (e.g., search frictions, sticky wages, labor taxes).
               </div>
               <div>
-                <strong style={{ color: 'white' }}>Investment Wedge:</strong> Acts like a tax on investment. It captures anything that makes it harder or more expensive to turn today's resources into tomorrow's capital (distortions to the intertemporal Euler equation), such as firm financing frictions, liquidity constraints, or uncertainty shocks.
+                <strong style={{ color: '#8b5cf6' }}>Investment Wedge:</strong> Acts like a tax on investment. It captures anything that makes it harder or more expensive to turn today's resources into tomorrow's capital, such as firm financing frictions, liquidity constraints, or uncertainty shocks.
               </div>
               <div>
-                <strong style={{ color: 'white' }}>Government Wedge:</strong> Represents output that is absorbed outside of domestic private consumption and investment. It is measured directly from the data as the sum of government consumption and net exports.
+                <strong style={{ color: '#f59e0b' }}>Government Wedge:</strong> Represents output that is absorbed outside of domestic private consumption and investment. It is measured directly from the data as the sum of government consumption and net exports.
               </div>
             </div>
           </div>
