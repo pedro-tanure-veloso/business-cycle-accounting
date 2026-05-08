@@ -51,24 +51,53 @@ def generate_hypotheses(stats_payload, gemini_key=None):
 
     phi = stats_payload['wedge_decomposition']['phi_statistics']
     lvl = stats_payload['wedge_decomposition']['current_levels']
+    cf_ts = stats_payload['wedge_decomposition']['cf_time_series']
+
+    # Peak swing of each counterfactual relative to baseline (window start = 100).
+    # Captures the "what would output have done under THIS wedge alone" signal that
+    # f-stats lose when observed data is nearly flat.
+    data_path = [row["Data"] for row in cf_ts]
+    data_range = round(max(data_path) - min(data_path), 1)
+    def _peak_dev(name):
+        path = [row[name] for row in cf_ts]
+        peak = max(path, key=lambda v: abs(v - 100))
+        return round(peak - 100, 1)
+    swings = {n: _peak_dev(n) for n in ["Efficiency", "Labor", "Investment", "Government"]}
+
     prompt = f"""
     You are an expert macroeconomist specializing in business cycle accounting (BCA).
 
-    Here is the structural snapshot of the US economy. The following statistics are evaluated for the period 2024Q1 to {stats_payload['quarter']}:
-    - Efficiency Wedge f-stat (output explained): {phi['efficiency']:.2f}
-    - Labor Wedge f-stat: {phi['labor']:.2f}
-    - Investment Wedge f-stat: {phi['investment']:.2f}
-    - Government Wedge f-stat: {phi['government']:.2f}
+    Structural snapshot of the US economy, evaluated 2023Q1 to {stats_payload['quarter']}:
+
+    f-statistics (share of output fluctuation attributed to each wedge):
+    - Efficiency: {phi['efficiency']:.2f}
+    - Labor:      {phi['labor']:.2f}
+    - Investment: {phi['investment']:.2f}
+    - Government: {phi['government']:.2f}
 
     Current wedge standard deviations from mean:
-    Efficiency: {lvl['efficiency']['sd_from_mean']}
-    Labor: {lvl['labor']['sd_from_mean']}
-    Investment: {lvl['investment']['sd_from_mean']}
-    Government: {lvl['government']['sd_from_mean']}
+    - Efficiency: {lvl['efficiency']['sd_from_mean']}
+    - Labor:      {lvl['labor']['sd_from_mean']}
+    - Investment: {lvl['investment']['sd_from_mean']}
+    - Government: {lvl['government']['sd_from_mean']}
 
-    Generate a structured JSON response identifying the pattern, candidate mechanisms based on the BCA literature (e.g. Mortensen & Pissarides, Bernanke Gertler Gilchrist, etc.), and what high-frequency indicators to watch.
+    Counterfactual peak swings (window start = 100; signed deviation at the path's most extreme point):
+    - Efficiency cf:  {swings['Efficiency']:+.1f}
+    - Labor cf:       {swings['Labor']:+.1f}
+    - Investment cf:  {swings['Investment']:+.1f}
+    - Government cf:  {swings['Government']:+.1f}
+    - Observed data range across window: {data_range:.1f}
+
+    Methodological caveat — read carefully before interpreting:
+    - The f-statistic uses inverse-SSR, so it rewards the counterfactual closest to observed data. When the data range is small (output ~ flat), the f-stat mechanically favors whichever cf stayed closest to flat — often the wedge that did the LEAST. That is a degenerate ranking, not evidence the wedge "drove" output.
+    - In the flat-data regime, the meaningful signal lives in the cf SWINGS. Large OFFSETTING swings (e.g. labor cf strongly expansionary while investment cf strongly contractionary) tell the underlying story even when f-stats favor an inert wedge. Read each swing as "what would output have done under THIS wedge alone" — it describes the wedge's pull, not the realized fluctuation.
+    - The eval window is only 7 quarters, so f-stat rankings are fragile to start-date choice. Treat any single-wedge headline cautiously.
+
+    In your pattern_identification, lead with the offsetting-swings narrative when |swing| of multiple wedges is large relative to the data range. Use f-stats to corroborate, not as the headline.
+
+    Generate a structured JSON response identifying the pattern, candidate mechanisms grounded in the BCA literature (e.g. Mortensen & Pissarides, Bernanke Gertler Gilchrist, Chari Kehoe McGrattan), and what high-frequency indicators to watch.
     IMPORTANT FOR CITATIONS: On candidate mechanisms, cite at most 3 papers, and strictly format them using only the author's last name and year of publication (e.g., 'Hall (2005)').
-    Make sure to follow this exact JSON schema:
+    Follow this exact JSON schema:
     {{
       "pattern_identification": "string",
       "candidate_mechanisms": [
@@ -152,46 +181,43 @@ def main():
     # f_statistics_bckm rebases each path to its window-start value so
     # the SSR measures within-window shape, not the level offset that
     # cf paths have accumulated since the MLE sample start.
-    phi_start_dt = pd.Timestamp("2024-01-01")
-    phi_start_idx = int(np.argmax(df.index >= phi_start_dt))
-    phi_end_idx = len(df) - 1
+    eval_window_start = pd.Timestamp("2023-01-01")
+    eval_window_label = "2023Q1"
+    win_start_idx = int(np.argmax(df.index >= eval_window_start))
+    win_end_idx = len(df) - 1
 
     phi_df = f_statistics_bckm(
         r["data_hat"], r["cfs"],
-        window=(phi_start_idx, phi_end_idx),
-        anchor=phi_start_idx,
+        window=(win_start_idx, win_end_idx),
+        anchor=win_start_idx,
     )
     phi_stats = {}
     for name in ["Efficiency", "Labor", "Investment", "Government"]:
         phi_stats[name.lower()] = round(float(phi_df.loc[name.lower(), "y"]), 2)
 
-    # Counterfactual Time Series (Normalize to 100 at start of recent window)
-    recent_idx = -7 # Last 7 quarters
+    # Counterfactual time series, rebased to 100 at the same window start used
+    # for the f-stat anchor — so the dashboard's right panel and left panel
+    # are computed off the exact same evaluation window.
     cf_ts = []
-    t_labels = df.index[recent_idx:].to_period("Q").astype(str).tolist()
-    
-    # Base levels for normalization
-    y_base = y.iloc[recent_idx]
-    
-    # Map wedges to counterfactual names in r["cfs"]
+    t_labels = df.index[win_start_idx:win_end_idx + 1].to_period("Q").astype(str).tolist()
+    y_base = y.iloc[win_start_idx]
     cf_map = {
         "Efficiency": "efficiency",
         "Labor": "labor",
         "Investment": "investment",
-        "Government": "government"
+        "Government": "government",
     }
 
-    for i in range(abs(recent_idx)):
-        idx = recent_idx + i
+    for i, idx in enumerate(range(win_start_idx, win_end_idx + 1)):
         row = {
             "quarter": t_labels[i],
             "Data": round(float(y.iloc[idx] / y_base * 100), 2),
         }
         for name, cf_key in cf_map.items():
             val = r["cfs"][cf_key]["y"][idx]
-            base_val = r["cfs"][cf_key]["y"][recent_idx]
+            base_val = r["cfs"][cf_key]["y"][win_start_idx]
             row[name] = round(float(np.exp(val - base_val) * 100), 2)
-            
+
         cf_ts.append(row)
 
     # 3. Fetch latest FRED Data for Demand Overview

@@ -244,8 +244,8 @@ function App() {
             <h2 className="section-title">Wedge Decomposition</h2>
             <div className="section-divider"></div>
           </div>
-          <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1.5rem', fontStyle: 'italic' }}>
-            * Note: Structural wedges are reported up to {data.quarter} due to auxiliary data release lags.
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1.5rem', lineHeight: 1.55 }}>
+            <strong style={{ color: 'var(--text-secondary)' }}>Evaluation window:</strong> 2023Q1 → {data.quarter}. Both panels are anchored at 2023Q1. Structural wedges reported up to {data.quarter} due to auxiliary data release lags.
           </div>
 
           <div className="grid-2">
@@ -265,7 +265,7 @@ function App() {
             </div>
 
             <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-              <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>Output Components (2024Q1 = 100)</h3>
+              <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>Output Components (2023Q1 = 100)</h3>
               
               <div style={{ flex: 1, minHeight: '250px', marginBottom: '1.5rem', minWidth: 0 }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -284,6 +284,9 @@ function App() {
                 </ResponsiveContainer>
               </div>
             </div>
+          </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '1.5rem', lineHeight: 1.55 }}>
+            <strong style={{ color: 'var(--text-secondary)' }}>Caveat:</strong> the share metric (left) uses inverse-SSR — when observed output (white line, right) is near-flat, it mechanically favors whichever counterfactual stayed closest to flat, often the wedge that did the <em>least</em>. In that regime the right panel is more informative: large offsetting swings describe what each wedge would have done acting alone, even when its share is small.
           </div>
         </section>
 
