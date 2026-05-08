@@ -272,6 +272,24 @@ def main():
                 
             df_fred = df_fred.tail(8) # Show last 8 quarters in the demand chart
             df_fred = df_fred.ffill().fillna(0) # Robust fill
+
+            # Robustness: if the Investment-contribution ticker returned no
+            # usable data (either it failed and the column is missing, or the
+            # column came back all zero), reconstruct it from the BEA NIPA
+            # Table 1.1.2 identity Total = C + I + G + NX. The other three
+            # columns are independent fetches, so the residual is well-defined.
+            required = {"Consumption", "Government", "NetExports", "Total GDP Growth"}
+            if required.issubset(df_fred.columns):
+                investment_missing = ("Investment" not in df_fred.columns
+                                      or df_fred["Investment"].abs().max() == 0)
+                if investment_missing:
+                    df_fred["Investment"] = (df_fred["Total GDP Growth"]
+                                             - df_fred["Consumption"]
+                                             - df_fred["Government"]
+                                             - df_fred["NetExports"])
+                    print("Investment ticker returned no usable data; "
+                          "computed contribution as residual (Total - C - G - NX) "
+                          "per BEA NIPA Table 1.1.2 identity.")
             
             res_list = []
             for idx, row in df_fred.iterrows():
