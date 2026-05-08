@@ -49,7 +49,7 @@ interface BCAData {
   };
   wedge_decomposition: {
     current_levels: Record<string, { sd_from_mean: number; percentile: number; trend: string }>;
-    phi_statistics: Record<string, number>; // Output Fluctuation Explained by Wedge
+    f_statistics: Record<string, number>; // Output Fluctuation Explained by Wedge (BCKM Table 11 inverse-SSR over the eval window)
     cf_time_series: Array<{
       quarter: string;
       Data: number;
@@ -99,8 +99,8 @@ function App() {
     </div>;
   }
 
-  // Format phi-stats for the chart
-  const phiChartData = Object.entries(data.wedge_decomposition.phi_statistics).map(([name, value]) => ({
+  // Format f-stats for the chart
+  const fStatChartData = Object.entries(data.wedge_decomposition.f_statistics).map(([name, value]) => ({
     name: name.charAt(0).toUpperCase() + name.slice(1),
     value: value * 100 // convert to percentage
   }));
@@ -253,7 +253,7 @@ function App() {
               <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>Share of Output Fluctuation Explained by Wedge</h3>
               <div className="chart-container">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={phiChartData} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
+                  <BarChart data={fStatChartData} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" horizontal={true} vertical={false} />
                     <XAxis type="number" unit="%" stroke="var(--text-muted)" />
                     <YAxis dataKey="name" type="category" stroke="var(--text-muted)" />

@@ -22,7 +22,7 @@
       "investment": {"sd_from_mean": 0.2, "percentile": 55, "trend": "flat"},
       "government": {"sd_from_mean": 1.1, "percentile": 82, "trend": "improved"}
     },
-    "phi_statistics": {
+    "f_statistics": {
       "efficiency": 0.21,
       "labor": 0.41,
       "investment": 0.25,

@@ -49,7 +49,7 @@ def generate_hypotheses(stats_payload, gemini_key=None):
         print(f"Failed to initialize Gemini client: {e}")
         return {}
 
-    phi = stats_payload['wedge_decomposition']['phi_statistics']
+    f_stats = stats_payload['wedge_decomposition']['f_statistics']
     lvl = stats_payload['wedge_decomposition']['current_levels']
     cf_ts = stats_payload['wedge_decomposition']['cf_time_series']
 
@@ -70,10 +70,10 @@ def generate_hypotheses(stats_payload, gemini_key=None):
     Structural snapshot of the US economy, evaluated 2023Q1 to {stats_payload['quarter']}:
 
     f-statistics (share of output fluctuation attributed to each wedge):
-    - Efficiency: {phi['efficiency']:.2f}
-    - Labor:      {phi['labor']:.2f}
-    - Investment: {phi['investment']:.2f}
-    - Government: {phi['government']:.2f}
+    - Efficiency: {f_stats['efficiency']:.2f}
+    - Labor:      {f_stats['labor']:.2f}
+    - Investment: {f_stats['investment']:.2f}
+    - Government: {f_stats['government']:.2f}
 
     Current wedge standard deviations from mean:
     - Efficiency: {lvl['efficiency']['sd_from_mean']}
@@ -192,14 +192,14 @@ def main():
     win_start_idx = int(np.argmax(df.index >= eval_window_start))
     win_end_idx = len(df) - 1
 
-    phi_df = f_statistics_bckm(
+    f_df = f_statistics_bckm(
         r["data_hat"], r["cfs"],
         window=(win_start_idx, win_end_idx),
         anchor=win_start_idx,
     )
-    phi_stats = {}
+    f_stats_payload = {}
     for name in ["Efficiency", "Labor", "Investment", "Government"]:
-        phi_stats[name.lower()] = round(float(phi_df.loc[name.lower(), "y"]), 2)
+        f_stats_payload[name.lower()] = round(float(f_df.loc[name.lower(), "y"]), 2)
 
     # Counterfactual time series, rebased to 100 at the same window start used
     # for the f-stat anchor — so the dashboard's right panel and left panel
@@ -334,7 +334,7 @@ def main():
         },
         "wedge_decomposition": {
             "current_levels": current_levels,
-            "phi_statistics": phi_stats,
+            "f_statistics": f_stats_payload,
             "cf_time_series": cf_ts
         }
     }
