@@ -16,7 +16,7 @@ from datetime import datetime
 
 # Import from the local scripts/run_bca
 from scripts.run_bca import build_us_dataset, run_pipeline
-from bca_core.counterfactuals import phi_statistics
+from bca_core.counterfactuals import f_statistics_bckm
 from bca_core.params import CalibrationParams
 
 # Root of the repo
@@ -27,36 +27,68 @@ def compute_historical_percentile(series, val):
     return int((series < val).mean() * 100)
 
 def generate_hypotheses(stats_payload, gemini_key=None):
-    """Call Gemini Flash to identify patterns and mechanisms."""
+    """Call Gemini 2.5 Flash to generate the structured hypothesis layer.
+
+    Uses the ``google-genai`` SDK (the package pinned in pyproject.toml).
+    Returns ``{}`` on any failure so the rest of the build still succeeds.
+    """
     if not gemini_key:
         print("No GEMINI_API_KEY found. Skipping hypothesis generation.")
         return {}
 
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        
-        prompt = f"""
-        You are an expert macroeconomist specializing in Business Cycle Accounting (BCA).
-        Based on the following quarterly BCA results, provide a brief analysis.
-        
-        Data: {json.dumps(stats_payload)}
-        
-        Provide your response in JSON format with these keys:
-        - pattern_identification: A 2-3 sentence summary of which wedges are driving current output fluctuations.
-        - candidate_mechanisms: A list of 2 objects (wedge name and potential real-world mechanism) with citations and reasoning.
-        - what_to_watch: A list of 3 indicators to monitor in the coming months.
-        """
-        
-        response = model.generate_content(prompt)
-        # Extract JSON from response
-        text = response.text
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0]
-        return json.loads(text)
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=gemini_key)
+    except ImportError as e:
+        print(f"google-genai not installed ({e}). Skipping hypothesis generation.")
+        return {}
     except Exception as e:
-        print(f"Warning: Gemini hypothesis generation failed: {e}")
+        print(f"Failed to initialize Gemini client: {e}")
+        return {}
+
+    phi = stats_payload['wedge_decomposition']['phi_statistics']
+    lvl = stats_payload['wedge_decomposition']['current_levels']
+    prompt = f"""
+    You are an expert macroeconomist specializing in business cycle accounting (BCA).
+
+    Here is the structural snapshot of the US economy. The following statistics are evaluated for the period 2024Q1 to {stats_payload['quarter']}:
+    - Efficiency Wedge f-stat (output explained): {phi['efficiency']:.2f}
+    - Labor Wedge f-stat: {phi['labor']:.2f}
+    - Investment Wedge f-stat: {phi['investment']:.2f}
+    - Government Wedge f-stat: {phi['government']:.2f}
+
+    Current wedge standard deviations from mean:
+    Efficiency: {lvl['efficiency']['sd_from_mean']}
+    Labor: {lvl['labor']['sd_from_mean']}
+    Investment: {lvl['investment']['sd_from_mean']}
+    Government: {lvl['government']['sd_from_mean']}
+
+    Generate a structured JSON response identifying the pattern, candidate mechanisms based on the BCA literature (e.g. Mortensen & Pissarides, Bernanke Gertler Gilchrist, etc.), and what high-frequency indicators to watch.
+    IMPORTANT FOR CITATIONS: On candidate mechanisms, cite at most 3 papers, and strictly format them using only the author's last name and year of publication (e.g., 'Hall (2005)').
+    Make sure to follow this exact JSON schema:
+    {{
+      "pattern_identification": "string",
+      "candidate_mechanisms": [
+        {{"wedge": "string", "mechanism": "string", "citations": ["string"], "reasoning": "string"}}
+      ],
+      "what_to_watch": [
+        {{"mechanism": "string", "indicator": "string"}}
+      ]
+    }}
+    """
+
+    try:
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
+        )
+        return json.loads(response.text)
+    except Exception as e:
+        print(f"Gemini API call failed: {e}")
         return {}
 
 def main():
@@ -113,16 +145,20 @@ def main():
             "trend": "improved" if (val > series[-2] if name == "Efficiency" else val < series[-2]) else "worsened"
         }
 
-    # Variance decomposition (phi stats)
-    # USER REQUEST: Display results from 2024Q1 onwards
+    # Output-fluctuation decomposition (BCKM f-statistic) — anchored
+    # at the start of the dashboard window per vision-doc Panel 2B.
+    # f_statistics_bckm rebases each path to its window-start value so
+    # the SSR measures within-window shape, not the level offset that
+    # cf paths have accumulated since the MLE sample start.
     phi_start_dt = pd.Timestamp("2024-01-01")
-    phi_mask = df.index >= phi_start_dt
-    
-    # Slice r["data_hat"] and r["cfs"] for phi calculation
-    data_hat_phi = {k: v[phi_mask] for k, v in r["data_hat"].items()}
-    cfs_phi = {k: {vk: vv[phi_mask] for vk, vv in v.items()} for k, v in r["cfs"].items()}
-    
-    phi_df = phi_statistics(data_hat_phi, cfs_phi)
+    phi_start_idx = int(np.argmax(df.index >= phi_start_dt))
+    phi_end_idx = len(df) - 1
+
+    phi_df = f_statistics_bckm(
+        r["data_hat"], r["cfs"],
+        window=(phi_start_idx, phi_end_idx),
+        anchor=phi_start_idx,
+    )
     phi_stats = {}
     for name in ["Efficiency", "Labor", "Investment", "Government"]:
         phi_stats[name.lower()] = round(float(phi_df.loc[name.lower(), "y"]), 2)
@@ -194,7 +230,7 @@ def main():
             if df_fred.empty:
                 return []
                 
-            df_fred = df_fred.tail(24) # Get enough history
+            df_fred = df_fred.tail(8) # Show last 8 quarters in the demand chart
             df_fred = df_fred.ffill().fillna(0) # Robust fill
             
             res_list = []

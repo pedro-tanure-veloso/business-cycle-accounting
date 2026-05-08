@@ -44,7 +44,7 @@ interface BCAData {
     };
   };
   time_series: {
-    demand_contributions: Array<{ quarter: string; Consumption: number; Investment: number; Government: number; "Net Exports": number; "Total GDP Growth": number }>;
+    demand_contributions: Array<{ quarter: string; A_Consumption: number; B_Investment: number; C_Government: number; D_Exports: number; "Total GDP Growth": number }>;
     supply_contributions: Array<{ quarter: string; Goods: number; Services: number; Government: number }>;
   };
   wedge_decomposition: {
