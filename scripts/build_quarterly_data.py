@@ -136,7 +136,7 @@ def main():
     # 1. Run BCA Pipeline
     try:
         df, meta = build_us_dataset(start=args.start, end=args.end, detrend_method="calgz", base_year_quarter=args.base)
-        r = run_pipeline(df, meta, Path("."), "temp_slug", verbose=False)
+        r = run_pipeline(df, meta, Path("."), "temp_slug", verbose=False, n_shrink=2)
     except Exception as e:
         print(f"Failed to run BCA pipeline: {e}")
         print("Make sure you have FRED_API_KEY exported in your terminal.")

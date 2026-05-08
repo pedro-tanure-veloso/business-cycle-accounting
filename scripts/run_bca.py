@@ -202,6 +202,7 @@ def run_pipeline(
     slug: str,
     no_cache_mle: bool = False,
     verbose: bool = True,
+    n_shrink: int = 5,
 ) -> dict:
     """Run the full BCA pipeline on a pre-built dataset.
 
@@ -243,6 +244,7 @@ def run_pipeline(
         data_means=data_means,
         warm_start=(SBAR_BCKM, P_BCKM, QCHOL_BCKM),
         cache_path=mle_cache,
+        n_shrink=n_shrink,
     )
     if verbose:
         print(f"  Log-likelihood: {res['log_likelihood']:+.4f}")

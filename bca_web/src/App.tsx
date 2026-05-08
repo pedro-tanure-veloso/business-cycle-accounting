@@ -112,7 +112,7 @@ function App() {
   };
 
   const annualizeRate = (val: number) => (Math.pow(1 + val, 4) - 1) * 100;
-  const annualizeContrib = (val: number) => val * 4;
+
 
   return (
     <div className="app-container">
@@ -201,7 +201,7 @@ function App() {
                     <XAxis dataKey="quarter" stroke="var(--text-muted)" fontSize={10} tick={{ fontSize: 10 }} />
                     <YAxis stroke="var(--text-muted)" fontSize={10} tick={{ fontSize: 10 }} />
                     <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} />
-                    <Legend content={(props) => {
+                    <Legend content={() => {
                       const items = [
                         { label: 'Consumption', color: '#3b82f6' },
                         { label: 'Investment', color: '#8b5cf6' },

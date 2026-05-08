@@ -508,6 +508,7 @@ def estimate_var_mle(
     P_0_ols: np.ndarray | None = None,
     data_means: np.ndarray | None = None,
     eval_only: tuple | None = None,
+    n_shrink: int = 5,
     *,
     cache_path: str | os.PathLike | Path | None = None,
     **kwargs,
@@ -1075,11 +1076,10 @@ def estimate_var_mle(
     # optimization run, shrink x by pb=0.99 and re-optimize for nps
     # iterations, tracking the best F. Per runmleadj.m line 134-141.
     pb = 0.99
-    nps = 50
-    if verbose:
-        print(f"  BCKM multiplicative-shrink loop (pb={pb}, nps={nps}) ...")
+    if verbose and n_shrink > 0:
+        print(f"  BCKM multiplicative-shrink loop (pb={pb}, nps={n_shrink}) ...")
     x_shrink = best_theta.copy()
-    for k in range(nps):
+    for k in range(n_shrink):
         x_shrink = x_shrink * pb
         res = _minimize(_neg_ll_fast, x_shrink, method="L-BFGS-B",
                         options={"maxiter": 200, "ftol": 1e-11, "gtol": 1e-6})
