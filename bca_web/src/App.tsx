@@ -245,7 +245,7 @@ function App() {
             <div className="section-divider"></div>
           </div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1.5rem', lineHeight: 1.55 }}>
-            <strong style={{ color: 'var(--text-secondary)' }}>Evaluation window:</strong> 2023Q1 → {data.quarter}. Both panels are anchored at 2023Q1. Structural wedges reported up to {data.quarter} due to auxiliary data release lags.
+            <strong style={{ color: 'var(--text-secondary)' }}>Series:</strong> detrended real GDP per working-age person (15-64), normalized to 2023Q1 = 100. <strong style={{ color: 'var(--text-secondary)' }}>Evaluation window:</strong> 2023Q1 → {data.quarter}. Both panels are anchored at 2023Q1. Structural wedges reported up to {data.quarter} due to auxiliary data release lags.
           </div>
 
           <div className="grid-2">

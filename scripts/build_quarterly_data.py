@@ -53,16 +53,17 @@ def generate_hypotheses(stats_payload, gemini_key=None):
     lvl = stats_payload['wedge_decomposition']['current_levels']
     cf_ts = stats_payload['wedge_decomposition']['cf_time_series']
 
-    # Peak swing of each counterfactual relative to baseline (window start = 100).
-    # Captures the "what would output have done under THIS wedge alone" signal that
-    # f-stats lose when observed data is nearly flat.
+    # Mean signed deviation of each counterfactual from baseline (window start = 100).
+    # Captures net directional pull across the window — i.e. "what would output have
+    # done on average under THIS wedge alone" — which is what the prose claims of
+    # "expansionary"/"contractionary" actually require. Peak deviation overstated the
+    # signal whenever a wedge had a brief pulse that reverted within the window.
     data_path = [row["Data"] for row in cf_ts]
     data_range = round(max(data_path) - min(data_path), 1)
-    def _peak_dev(name):
+    def _mean_dev(name):
         path = [row[name] for row in cf_ts]
-        peak = max(path, key=lambda v: abs(v - 100))
-        return round(peak - 100, 1)
-    swings = {n: _peak_dev(n) for n in ["Efficiency", "Labor", "Investment", "Government"]}
+        return round(sum(path) / len(path) - 100, 1)
+    mean_devs = {n: _mean_dev(n) for n in ["Efficiency", "Labor", "Investment", "Government"]}
 
     prompt = f"""
     You are an expert macroeconomist specializing in business cycle accounting (BCA).
@@ -81,19 +82,19 @@ def generate_hypotheses(stats_payload, gemini_key=None):
     - Investment: {lvl['investment']['sd_from_mean']}
     - Government: {lvl['government']['sd_from_mean']}
 
-    Counterfactual peak swings (window start = 100; signed deviation at the path's most extreme point):
-    - Efficiency cf:  {swings['Efficiency']:+.1f}
-    - Labor cf:       {swings['Labor']:+.1f}
-    - Investment cf:  {swings['Investment']:+.1f}
-    - Government cf:  {swings['Government']:+.1f}
+    Counterfactual mean deviations (window start = 100; signed time-average of the cf path's distance from baseline across the window — positive ⇒ wedge pulled output above baseline on average, negative ⇒ below):
+    - Efficiency cf:  {mean_devs['Efficiency']:+.1f}
+    - Labor cf:       {mean_devs['Labor']:+.1f}
+    - Investment cf:  {mean_devs['Investment']:+.1f}
+    - Government cf:  {mean_devs['Government']:+.1f}
     - Observed data range across window: {data_range:.1f}
 
     Methodological caveat — read carefully before interpreting:
     - The f-statistic uses inverse-SSR, so it rewards the counterfactual closest to observed data. When the data range is small (output ~ flat), the f-stat mechanically favors whichever cf stayed closest to flat — often the wedge that did the LEAST. That is a degenerate ranking, not evidence the wedge "drove" output.
-    - In the flat-data regime, the meaningful signal lives in the cf SWINGS. Large OFFSETTING swings (e.g. labor cf strongly expansionary while investment cf strongly contractionary) tell the underlying story even when f-stats favor an inert wedge. Read each swing as "what would output have done under THIS wedge alone" — it describes the wedge's pull, not the realized fluctuation.
+    - In the flat-data regime, the meaningful signal lives in the cf MEAN DEVIATIONS. Large OFFSETTING deviations (e.g. labor cf systematically above baseline while investment cf systematically below) tell the underlying story even when f-stats favor an inert wedge. Read each value as "what would output have done on average under THIS wedge alone" — it describes the wedge's net pull across the window. A near-zero mean deviation is NOT expansionary or contractionary, even if the wedge had a sizeable peak — describe such cases as "balanced" or "reverting within the window."
     - The eval window is only 7 quarters, so f-stat rankings are fragile to start-date choice. Treat any single-wedge headline cautiously.
 
-    In your pattern_identification, lead with the offsetting-swings narrative when |swing| of multiple wedges is large relative to the data range. Use f-stats to corroborate, not as the headline.
+    In your pattern_identification, lead with the offsetting-deviations narrative when |mean deviation| of multiple wedges is large relative to the data range. Use f-stats to corroborate, not as the headline.
 
     Generate a structured JSON response identifying the pattern, candidate mechanisms grounded in the BCA literature (e.g. Mortensen & Pissarides, Bernanke Gertler Gilchrist, Chari Kehoe McGrattan), and what high-frequency indicators to watch.
     IMPORTANT FOR CITATIONS: On candidate mechanisms, cite at most 3 papers, and strictly format them using only the author's last name and year of publication (e.g., 'Hall (2005)').
