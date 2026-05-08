@@ -3,7 +3,7 @@
   "macro_quarter": "2026Q1",
   "macro_overview": {
     "gdp_growth_qoq": 0.004963,
-    "gdp_growth_yoy": -0.0122,
+    "gdp_growth_yoy": -0.0123,
     "components": {
       "consumption": {
         "growth_qoq": 0.003976,
@@ -14,7 +14,7 @@
         "contribution_to_gdp": 1.48
       },
       "government": {
-        "growth_qoq": 0.0524,
+        "growth_qoq": 0.010823,
         "contribution_to_gdp": 0.73
       },
       "exports": {
@@ -29,139 +29,11 @@
     "historical_percentiles": {
       "gdp": 63,
       "investment": 47,
-      "consumption": 68
+      "consumption": 65
     }
   },
   "time_series": {
     "demand_contributions": [
-      {
-        "quarter": "2020Q2",
-        "A_Consumption": -21.62,
-        "B_Investment": -8.92,
-        "C_Government": 1.82,
-        "D_Exports": 0.74,
-        "Total GDP Growth": -28.0
-      },
-      {
-        "quarter": "2020Q3",
-        "A_Consumption": 24.95,
-        "B_Investment": 13.54,
-        "C_Government": -1.14,
-        "D_Exports": -2.5,
-        "Total GDP Growth": 34.9
-      },
-      {
-        "quarter": "2020Q4",
-        "A_Consumption": 3.6,
-        "B_Investment": 2.46,
-        "C_Government": 0.08,
-        "D_Exports": -1.53,
-        "Total GDP Growth": 4.6
-      },
-      {
-        "quarter": "2021Q1",
-        "A_Consumption": 6.05,
-        "B_Investment": -0.4,
-        "C_Government": 1.05,
-        "D_Exports": -1.01,
-        "Total GDP Growth": 5.7
-      },
-      {
-        "quarter": "2021Q2",
-        "A_Consumption": 9.42,
-        "B_Investment": -0.78,
-        "C_Government": -0.85,
-        "D_Exports": -0.81,
-        "Total GDP Growth": 7.0
-      },
-      {
-        "quarter": "2021Q3",
-        "A_Consumption": 2.24,
-        "B_Investment": 2.6,
-        "C_Government": -0.54,
-        "D_Exports": -0.96,
-        "Total GDP Growth": 3.3
-      },
-      {
-        "quarter": "2021Q4",
-        "A_Consumption": 2.63,
-        "B_Investment": 4.71,
-        "C_Government": -0.01,
-        "D_Exports": -0.29,
-        "Total GDP Growth": 7.0
-      },
-      {
-        "quarter": "2022Q1",
-        "A_Consumption": 0.22,
-        "B_Investment": 1.45,
-        "C_Government": -0.54,
-        "D_Exports": -2.15,
-        "Total GDP Growth": -1.0
-      },
-      {
-        "quarter": "2022Q2",
-        "A_Consumption": 2.19,
-        "B_Investment": -1.69,
-        "C_Government": -0.26,
-        "D_Exports": 0.38,
-        "Total GDP Growth": 0.6
-      },
-      {
-        "quarter": "2022Q3",
-        "A_Consumption": 1.27,
-        "B_Investment": -1.26,
-        "C_Government": 0.28,
-        "D_Exports": 2.63,
-        "Total GDP Growth": 2.9
-      },
-      {
-        "quarter": "2022Q4",
-        "A_Consumption": 0.53,
-        "B_Investment": 1.43,
-        "C_Government": 0.69,
-        "D_Exports": 0.14,
-        "Total GDP Growth": 2.8
-      },
-      {
-        "quarter": "2023Q1",
-        "A_Consumption": 2.99,
-        "B_Investment": -1.33,
-        "C_Government": 0.69,
-        "D_Exports": 0.58,
-        "Total GDP Growth": 2.9
-      },
-      {
-        "quarter": "2023Q2",
-        "A_Consumption": 1.02,
-        "B_Investment": 1.27,
-        "C_Government": 0.56,
-        "D_Exports": -0.3,
-        "Total GDP Growth": 2.5
-      },
-      {
-        "quarter": "2023Q3",
-        "A_Consumption": 2.08,
-        "B_Investment": 1.66,
-        "C_Government": 0.87,
-        "D_Exports": 0.09,
-        "Total GDP Growth": 4.7
-      },
-      {
-        "quarter": "2023Q4",
-        "A_Consumption": 2.04,
-        "B_Investment": 0.65,
-        "C_Government": 0.79,
-        "D_Exports": -0.06,
-        "Total GDP Growth": 3.4
-      },
-      {
-        "quarter": "2024Q1",
-        "A_Consumption": 1.17,
-        "B_Investment": -0.29,
-        "C_Government": 0.39,
-        "D_Exports": -0.42,
-        "Total GDP Growth": 0.8
-      },
       {
         "quarter": "2024Q2",
         "A_Consumption": 2.61,
@@ -232,31 +104,31 @@
   "wedge_decomposition": {
     "current_levels": {
       "efficiency": {
-        "sd_from_mean": 1.44,
-        "percentile": 87,
+        "sd_from_mean": 1.41,
+        "percentile": 92,
         "trend": "improved"
       },
       "labor": {
-        "sd_from_mean": -0.63,
-        "percentile": 26,
+        "sd_from_mean": -0.6,
+        "percentile": 28,
         "trend": "worsened"
       },
       "investment": {
-        "sd_from_mean": 1.28,
-        "percentile": 87,
+        "sd_from_mean": 0.95,
+        "percentile": 80,
         "trend": "improved"
       },
       "government": {
-        "sd_from_mean": -0.24,
+        "sd_from_mean": -0.23,
         "percentile": 47,
         "trend": "worsened"
       }
     },
     "phi_statistics": {
-      "efficiency": 0.0,
-      "labor": 0.0,
-      "investment": 0.13,
-      "government": 0.87
+      "efficiency": 0.17,
+      "labor": 0.02,
+      "investment": 0.08,
+      "government": 0.73
     },
     "cf_time_series": [
       {
@@ -269,53 +141,112 @@
       },
       {
         "quarter": "2024Q2",
-        "Data": 100.32,
-        "Efficiency": 100.67,
-        "Labor": 101.1,
-        "Investment": 99.03,
-        "Government": 99.6
+        "Data": 100.31,
+        "Efficiency": 98.44,
+        "Labor": 105.21,
+        "Investment": 96.3,
+        "Government": 100.64
       },
       {
         "quarter": "2024Q3",
-        "Data": 100.61,
-        "Efficiency": 100.95,
-        "Labor": 101.72,
-        "Investment": 98.5,
-        "Government": 99.6
+        "Data": 100.57,
+        "Efficiency": 98.05,
+        "Labor": 107.17,
+        "Investment": 94.97,
+        "Government": 100.91
       },
       {
         "quarter": "2024Q4",
-        "Data": 100.65,
-        "Efficiency": 100.29,
-        "Labor": 102.67,
-        "Investment": 97.64,
-        "Government": 100.28
+        "Data": 100.61,
+        "Efficiency": 96.86,
+        "Labor": 109.84,
+        "Investment": 93.26,
+        "Government": 101.6
       },
       {
         "quarter": "2025Q1",
-        "Data": 98.58,
-        "Efficiency": 96.97,
-        "Labor": 110.22,
-        "Investment": 93.22,
-        "Government": 99.18
+        "Data": 98.55,
+        "Efficiency": 82.21,
+        "Labor": 150.82,
+        "Investment": 75.03,
+        "Government": 106.22
       },
       {
         "quarter": "2025Q2",
-        "Data": 98.98,
-        "Efficiency": 97.55,
-        "Labor": 103.51,
-        "Investment": 97.24,
-        "Government": 101.1
+        "Data": 98.94,
+        "Efficiency": 92.91,
+        "Labor": 114.47,
+        "Investment": 90.84,
+        "Government": 102.74
       },
       {
         "quarter": "2025Q3",
-        "Data": 99.39,
-        "Efficiency": 98.64,
-        "Labor": 100.23,
-        "Investment": 99.23,
-        "Government": 101.67
+        "Data": 99.33,
+        "Efficiency": 98.9,
+        "Labor": 100.63,
+        "Investment": 99.15,
+        "Government": 101.08
       }
     ]
   },
-  "hypothesis_layer": {}
+  "hypothesis_layer": {
+    "pattern_identification": "The US economy from 2024Q1 to 2025Q3 is primarily characterized by significant fluctuations driven by the Government Wedge, accounting for the vast majority of output variance (0.73). The Efficiency Wedge also plays a notable, albeit secondary, role (0.17), indicating changes in productivity or resource allocation as a factor. Currently, efficiency and investment conditions appear more favorable than their historical averages (positive deviations of 1.41 and 0.95 respectively), suggesting positive shocks in these areas. Conversely, labor market distortions and the overall impact of government actions are slightly less pronounced than average (negative deviations of -0.6 and -0.23 respectively). The Labor and Investment Wedges explain only a minor portion of overall output fluctuations.",
+    "candidate_mechanisms": [
+      {
+        "wedge": "Government Wedge",
+        "mechanism": "Fiscal policy shocks, including changes in government spending, taxation, or regulatory policies affecting aggregate demand and supply.",
+        "citations": [
+          "Ramey (2011)",
+          "Fatas and Mihov (2001)"
+        ],
+        "reasoning": "The exceptionally high f-stat (0.73) for the Government Wedge signifies that variations in government actions are the predominant source of business cycle fluctuations during this period. This suggests that changes in fiscal policy (e.g., significant government spending programs, tax reforms) or shifts in the regulatory environment have had the most substantial impact on economic output and its volatility. The current slightly below-average deviation (-0.23) indicates that the overall level of government-induced distortion might be marginally less than its historical average, yet the variability of these policies remains the primary driver of economic cycles."
+      },
+      {
+        "wedge": "Efficiency Wedge",
+        "mechanism": "Technology shocks, misallocation of resources due to financial frictions, or changes in market power and markups among firms.",
+        "citations": [
+          "Prescott (1986)",
+          "Chari, Kehoe, and McGrattan (2007)",
+          "Bernanke, Gertler, and Gilchrist (1999)"
+        ],
+        "reasoning": "The Efficiency Wedge, while secondary, explains a notable portion of output fluctuations (0.17). The significant positive current deviation (1.41 standard deviations above mean) suggests that the economy is currently experiencing higher-than-average aggregate productivity or more efficient resource utilization. This could stem from positive technological advancements, improved financial conditions easing resource allocation across firms and sectors, or perhaps a decrease in market power leading to more efficient production and lower markups."
+      },
+      {
+        "wedge": "Investment Wedge",
+        "mechanism": "Financial market imperfections affecting firms' ability to finance investment, or variations in capital adjustment costs.",
+        "citations": [
+          "Bernanke, Gertler, and Gilchrist (1999)",
+          "Jermann (1998)"
+        ],
+        "reasoning": "Although the Investment Wedge is a minor overall contributor to output fluctuations (0.08), its current positive deviation (0.95 standard deviations above mean) indicates that factors influencing investment efficiency or opportunities are currently more favorable than average. This might suggest a period of easier access to credit, lower costs of capital, or reduced frictions in undertaking new investment projects, leading to higher-than-average efficient investment levels and contributing positively to current output."
+      },
+      {
+        "wedge": "Labor Wedge",
+        "mechanism": "Labor market frictions (e.g., search and matching inefficiencies), sticky wages, or labor income taxation.",
+        "citations": [
+          "Mortensen and Pissarides (1994)",
+          "Shimer (2005)"
+        ],
+        "reasoning": "The very low f-stat (0.02) demonstrates that the Labor Wedge is not a significant driver of business cycle fluctuations in this period. The negative current deviation (-0.6 standard deviations below mean) further suggests that labor market distortions (such as high unemployment benefits, high labor taxes, or severe matching inefficiencies) are currently less pronounced than their historical average, implying a relatively well-functioning or less distorted labor market during this period."
+      }
+    ],
+    "what_to_watch": [
+      {
+        "mechanism": "Fiscal policy shocks",
+        "indicator": "Government spending announcements, legislative activity on tax reforms, federal budget deficit/surplus data, CBO budget outlooks, Treasury bond yields."
+      },
+      {
+        "mechanism": "Technology shocks, misallocation, market power",
+        "indicator": "Business R&D spending, venture capital funding, corporate profit margins, capacity utilization rates, multi-factor productivity growth statistics, financial market stress indices (e.g., Chicago Fed National Financial Conditions Index)."
+      },
+      {
+        "mechanism": "Financial market imperfections affecting investment",
+        "indicator": "Corporate bond spreads and yields, bank lending standards surveys (e.g., Senior Loan Officer Opinion Survey), business fixed investment data, capital goods new orders, housing starts, equity market volatility."
+      },
+      {
+        "mechanism": "Labor market frictions",
+        "indicator": "Job openings (JOLTS), unemployment rate, labor force participation rate, wage growth (e.g., average hourly earnings), Employment Cost Index, legislative changes impacting labor laws or taxation."
+      }
+    ]
+  }
 }
