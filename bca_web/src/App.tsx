@@ -311,58 +311,60 @@ function App() {
         </section>
 
         {/* SCREEN 3: HYPOTHESIS LAYER */}
-        <section>
-          <div className="section-header">
-            <BrainCircuit className="text-accent" size={24} color="var(--accent-secondary)" />
-            <h2 className="section-title" style={{ color: 'var(--accent-secondary)' }}>Hypothesis Layer</h2>
-            <div className="section-divider"></div>
-          </div>
-
-          <div className="glass-panel hypothesis-card">
-            <div className="hypothesis-header">
-              <Activity size={20} />
-              <h3 style={{ margin: 0 }}>Pattern Identification</h3>
+        {data.hypothesis_layer && data.hypothesis_layer.pattern_identification && (
+          <section>
+            <div className="section-header">
+              <BrainCircuit className="text-accent" size={24} color="var(--accent-secondary)" />
+              <h2 className="section-title" style={{ color: 'var(--accent-secondary)' }}>Hypothesis Layer</h2>
+              <div className="section-divider"></div>
             </div>
-            <p className="hypothesis-text">
-              {data.hypothesis_layer.pattern_identification}
-            </p>
-          </div>
 
-          <div className="grid-2" style={{ marginTop: '1.5rem' }}>
-            <div className="glass-panel">
-              <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>Candidate Mechanisms</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                {data.hypothesis_layer.candidate_mechanisms.map((mech, idx) => (
-                  <div key={idx} style={{ paddingBottom: '1.5rem', borderBottom: idx !== data.hypothesis_layer.candidate_mechanisms.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                      <span className="badge badge-purple">{mech.wedge} Wedge</span>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{mech.citations.join(', ')}</span>
+            <div className="glass-panel hypothesis-card">
+              <div className="hypothesis-header">
+                <Activity size={20} />
+                <h3 style={{ margin: 0 }}>Pattern Identification</h3>
+              </div>
+              <p className="hypothesis-text">
+                {data.hypothesis_layer.pattern_identification}
+              </p>
+            </div>
+
+            <div className="grid-2" style={{ marginTop: '1.5rem' }}>
+              <div className="glass-panel">
+                <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>Candidate Mechanisms</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  {data.hypothesis_layer.candidate_mechanisms?.map((mech, idx) => (
+                    <div key={idx} style={{ paddingBottom: '1.5rem', borderBottom: idx !== data.hypothesis_layer.candidate_mechanisms.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span className="badge badge-purple">{mech.wedge} Wedge</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{mech.citations?.join(', ')}</span>
+                      </div>
+                      <h4 style={{ color: 'white' }}>{mech.mechanism}</h4>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>{mech.reasoning}</p>
                     </div>
-                    <h4 style={{ color: 'white' }}>{mech.mechanism}</h4>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>{mech.reasoning}</p>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              </div>
+
+              <div className="glass-panel">
+                <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>What to Watch</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {data.hypothesis_layer.what_to_watch?.map((watch, idx) => (
+                    <div key={idx} style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)' }}>
+                      <h5 style={{ color: 'white', marginBottom: '0.25rem' }}>{watch.mechanism}</h5>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{watch.indicator}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className="glass-panel">
-              <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>What to Watch</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {data.hypothesis_layer.what_to_watch.map((watch, idx) => (
-                  <div key={idx} style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)' }}>
-                    <h5 style={{ color: 'white', marginBottom: '0.25rem' }}>{watch.mechanism}</h5>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{watch.indicator}</p>
-                  </div>
-                ))}
-              </div>
+            <div className="ai-warning">
+              <AlertTriangle size={20} />
+              <span><strong>Hypotheses generated by AI — not structural findings.</strong> Treat as a starting point for analysis, not a conclusion. Based on Gemini 2.5 Flash.</span>
             </div>
-          </div>
-
-          <div className="ai-warning">
-            <AlertTriangle size={20} />
-            <span><strong>Hypotheses generated by AI — not structural findings.</strong> Treat as a starting point for analysis, not a conclusion. Based on Gemini 2.5 Flash.</span>
-          </div>
-        </section>
+          </section>
+        )}
 
       </main>
     </div>
