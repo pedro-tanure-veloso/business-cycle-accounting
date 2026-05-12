@@ -203,11 +203,11 @@ function App() {
                     <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} />
                     <Legend content={() => {
                       const items = [
-                        { label: 'Consumption', color: '#3b82f6' },
-                        { label: 'Investment', color: '#8b5cf6' },
-                        { label: 'Government', color: '#10b981' },
-                        { label: 'Net Exports', color: '#f59e0b' },
-                        { label: 'Total GDP Growth', color: '#ffffff', isLine: true }
+                        { label: 'Consumption', color: '#7A0019' },
+                        { label: 'Investment', color: '#002A5C' },
+                        { label: 'Government', color: '#00759A' },
+                        { label: 'Net Exports', color: '#B8860B' },
+                        { label: 'Total GDP Growth', color: '#231F20', isLine: true }
                       ];
                       return (
                         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '1.5rem', marginTop: '1rem', fontSize: '0.875rem' }}>
@@ -225,11 +225,11 @@ function App() {
                         </div>
                       );
                     }} />
-                    <Bar dataKey="A_Consumption" name="Consumption" stackId="a" fill="#3b82f6" />
-                    <Bar dataKey="B_Investment" name="Investment" stackId="a" fill="#8b5cf6" />
-                    <Bar dataKey="C_Government" name="Government" stackId="a" fill="#10b981" />
-                    <Bar dataKey="D_Exports" name="Net Exports" stackId="a" fill="#f59e0b" />
-                    <Line type="monotone" dataKey="Total GDP Growth" stroke="#ffffff" strokeWidth={2} dot={{ r: 3, fill: '#ffffff' }} />
+                    <Bar dataKey="A_Consumption" name="Consumption" stackId="a" fill="#7A0019" />
+                    <Bar dataKey="B_Investment" name="Investment" stackId="a" fill="#002A5C" />
+                    <Bar dataKey="C_Government" name="Government" stackId="a" fill="#00759A" />
+                    <Bar dataKey="D_Exports" name="Net Exports" stackId="a" fill="#B8860B" />
+                    <Line type="monotone" dataKey="Total GDP Growth" stroke="#231F20" strokeWidth={2} dot={{ r: 3, fill: '#231F20' }} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -260,7 +260,7 @@ function App() {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" horizontal={true} vertical={false} />
                     <XAxis type="number" unit="%" stroke="var(--text-muted)" />
                     <YAxis dataKey="name" type="category" stroke="var(--text-muted)" />
-                    <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)', borderRadius: '8px' }} />
+                    <Tooltip cursor={{ fill: 'rgba(35,31,32,0.05)' }} contentStyle={{ backgroundColor: 'var(--bg-surface-elevated)', borderColor: 'var(--border-color)', borderRadius: '8px' }} />
                     <Bar dataKey="value" fill="var(--accent-primary)" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -278,18 +278,18 @@ function App() {
                     <YAxis stroke="var(--text-muted)" fontSize={10} domain={['auto', 'auto']} tick={{ fontSize: 10 }} />
                     <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} />
                     <Legend />
-                    <Line type="monotone" dataKey="Data" stroke="#ffffff" strokeWidth={3} dot={false} />
-                    <Line type="monotone" dataKey="Efficiency" stroke="#3b82f6" strokeDasharray="5 5" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="Labor" stroke="#10b981" strokeDasharray="3 4 5 4" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="Investment" stroke="#8b5cf6" strokeDasharray="1 3" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="Government" stroke="#f59e0b" strokeDasharray="2 2" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="Data" stroke="#231F20" strokeWidth={3} dot={false} />
+                    <Line type="monotone" dataKey="Efficiency" stroke="#7A0019" strokeDasharray="5 5" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="Labor" stroke="#00759A" strokeDasharray="3 4 5 4" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="Investment" stroke="#002A5C" strokeDasharray="1 3" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="Government" stroke="#B8860B" strokeDasharray="2 2" strokeWidth={2} dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
             </div>
           </div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '1.5rem', lineHeight: 1.55 }}>
-            <strong style={{ color: 'var(--text-secondary)' }}>Caveat:</strong> the share metric (left) uses inverse-SSR — when observed output (white line, right) is near-flat, it mechanically favors whichever counterfactual stayed closest to flat, often the wedge that did the <em>least</em>. In that regime the right panel is more informative: large offsetting swings describe what each wedge would have done acting alone, even when its share is small.
+            <strong style={{ color: 'var(--text-secondary)' }}>Caveat:</strong> the share metric (left) uses inverse-SSR — when observed output (solid black line, right) is near-flat, it mechanically favors whichever counterfactual stayed closest to flat, often the wedge that did the <em>least</em>. In that regime the right panel is more informative: large offsetting swings describe what each wedge would have done acting alone, even when its share is small.
           </div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', marginTop: '0.75rem', lineHeight: 1.55 }}>
             <strong style={{ color: 'var(--text-secondary)' }}>Per-capita denominator:</strong> OECD MEI working-age (15-64) population, smoothed to remove the ~1pp Q1 step that the annual Census-control benchmark release injects into the raw series.
@@ -298,22 +298,22 @@ function App() {
 
         {/* WEDGE EXPLANATION BOX */}
         <section>
-          <div className="glass-panel" style={{ background: 'rgba(59, 130, 246, 0.05)', borderLeft: '4px solid var(--accent-primary)' }}>
+          <div className="glass-panel" style={{ background: 'rgba(122, 0, 25, 0.04)', borderLeft: '4px solid var(--accent-primary)' }}>
             <h3 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <ActivitySquare size={20} color="var(--accent-primary)" /> What do these wedges represent?
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '1.25rem 1.75rem' }}>
               <div>
-                <strong style={{ color: '#3b82f6' }}>Efficiency Wedge:</strong> Acts like a technology parameter. It captures anything that lowers aggregate productivity (e.g., input financing frictions, resource misallocation, or trade disruptions).
+                <strong style={{ color: '#7A0019' }}>Efficiency Wedge:</strong> Acts like a technology parameter. It captures anything that lowers aggregate productivity (e.g., input financing frictions, resource misallocation, or trade disruptions).
               </div>
               <div>
-                <strong style={{ color: '#10b981' }}>Labor Wedge:</strong> Acts like a tax on labor income. It represents anything that drives a wedge between the marginal rate of substitution and the marginal product of labor (e.g., search frictions, sticky wages, labor taxes).
+                <strong style={{ color: '#00759A' }}>Labor Wedge:</strong> Acts like a tax on labor income. It represents anything that drives a wedge between the marginal rate of substitution and the marginal product of labor (e.g., search frictions, sticky wages, labor taxes).
               </div>
               <div>
-                <strong style={{ color: '#8b5cf6' }}>Investment Wedge:</strong> Acts like a tax on investment. It captures anything that makes it harder or more expensive to turn today's resources into tomorrow's capital, such as firm financing frictions, liquidity constraints, or uncertainty shocks.
+                <strong style={{ color: '#002A5C' }}>Investment Wedge:</strong> Acts like a tax on investment. It captures anything that makes it harder or more expensive to turn today's resources into tomorrow's capital, such as firm financing frictions, liquidity constraints, or uncertainty shocks.
               </div>
               <div>
-                <strong style={{ color: '#f59e0b' }}>Government Wedge:</strong> Represents output that is absorbed outside of domestic private consumption and investment. It is measured directly from the data as the sum of government consumption and net exports.
+                <strong style={{ color: '#B8860B' }}>Government Wedge:</strong> Represents output that is absorbed outside of domestic private consumption and investment. It is measured directly from the data as the sum of government consumption and net exports.
               </div>
             </div>
           </div>
@@ -323,8 +323,8 @@ function App() {
         {data.hypothesis_layer && data.hypothesis_layer.pattern_identification && (
           <section>
             <div className="section-header">
-              <BrainCircuit className="text-accent" size={24} color="var(--accent-secondary)" />
-              <h2 className="section-title" style={{ color: 'var(--accent-secondary)' }}>Hypothesis Layer</h2>
+              <BrainCircuit className="text-accent" size={24} color="var(--accent-primary)" />
+              <h2 className="section-title" style={{ color: 'var(--accent-primary)' }}>Hypothesis Layer</h2>
               <div className="section-divider"></div>
             </div>
 
@@ -353,7 +353,7 @@ function App() {
                         <span className="badge badge-purple">{mech.wedge} Wedge</span>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{mech.citations?.join(', ')}</span>
                       </div>
-                      <h4 style={{ color: 'white' }}>{mech.mechanism}</h4>
+                      <h4 style={{ color: 'var(--text-primary)' }}>{mech.mechanism}</h4>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>{mech.reasoning}</p>
                     </div>
                   ))}
@@ -364,8 +364,8 @@ function App() {
                 <h3 style={{ marginBottom: '1.5rem', color: 'var(--text-secondary)' }}>What to Watch</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   {data.hypothesis_layer.what_to_watch?.map((watch, idx) => (
-                    <div key={idx} style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)' }}>
-                      <h5 style={{ color: 'white', marginBottom: '0.25rem' }}>{watch.mechanism}</h5>
+                    <div key={idx} style={{ padding: '1rem', background: 'rgba(35,31,32,0.03)', borderRadius: 'var(--radius-md)' }}>
+                      <h5 style={{ color: 'var(--text-primary)', marginBottom: '0.25rem' }}>{watch.mechanism}</h5>
                       <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{watch.indicator}</p>
                     </div>
                   ))}
